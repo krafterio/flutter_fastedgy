@@ -5,7 +5,6 @@
 
 import 'package:flutter/widgets.dart';
 import 'fetcher.dart';
-import 'fetcher_mixin.dart';
 
 /// A widget that provides a Fetcher instance with automatic disposal
 ///

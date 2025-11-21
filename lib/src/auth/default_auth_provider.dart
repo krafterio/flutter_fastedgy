@@ -57,7 +57,7 @@ class DefaultAuthProvider implements AuthProvider {
       _currentUser = data['user'] as Map<String, dynamic>?;
 
       // Fire auth:logged event
-      _bus.fire(AuthLoggedEvent());
+      _bus.fire(const AuthLoggedEvent());
 
       _log.info('Login successful');
 
@@ -100,7 +100,7 @@ class DefaultAuthProvider implements AuthProvider {
       _currentUser = data['user'] as Map<String, dynamic>?;
 
       // Fire auth:logged event
-      _bus.fire(AuthLoggedEvent());
+      _bus.fire(const AuthLoggedEvent());
 
       _log.info('Registration successful');
 
@@ -126,7 +126,7 @@ class DefaultAuthProvider implements AuthProvider {
     _currentUser = null;
 
     // Fire auth:logout event
-    _bus.fire(AuthLogoutEvent());
+    _bus.fire(const AuthLogoutEvent());
 
     _log.info('Logout complete');
   }
