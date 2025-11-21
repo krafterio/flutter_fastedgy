@@ -20,9 +20,14 @@ library;
 export 'src/initializer.dart';
 
 // Container (DI)
-export 'src/container/container.dart';
-export 'package:get_it/get_it.dart' show GetIt;
-export 'package:injectable/injectable.dart';
+export 'src/container/container.dart' show
+  container,
+  initializeContainer,
+  getService,
+  hasService,
+  singleton,
+  lazySingleton,
+  injectable;
 
 // Event Bus
 export 'src/bus/bus.dart';

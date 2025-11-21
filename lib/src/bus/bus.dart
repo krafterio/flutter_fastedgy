@@ -4,7 +4,7 @@
  */
 
 import 'package:event_bus/event_bus.dart';
-import 'package:injectable/injectable.dart';
+import '../container/container.dart';
 
 /// Application-wide event bus for communication between components
 ///

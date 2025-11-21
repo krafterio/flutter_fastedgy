@@ -4,7 +4,7 @@
  */
 
 import 'package:get_it/get_it.dart';
-import 'package:injectable/injectable.dart';
+import 'package:injectable/injectable.dart' as inj;
 import 'container.config.dart';
 
 /// Global container instance (GetIt service locator)
@@ -22,59 +22,63 @@ final container = GetIt.instance;
 ///   runApp(MyApp());
 /// }
 /// ```
-@InjectableInit()
+@inj.InjectableInit()
 void initializeContainer() => container.init();
 
-/// Register a singleton instance in the container
+/// Retrieve an instance of type [T] from the container
+///
+/// Throws a [StateError] if the type [T] is not registered.
 ///
 /// Example:
 /// ```dart
-/// registerSingleton<EventBus>(EventBus());
-/// ```
-void registerSingleton<T extends Object>(T instance) {
-  container.registerSingleton<T>(instance);
-}
-
-/// Register a lazy singleton factory in the container
-///
-/// The factory is called only once, the first time the service is requested.
-///
-/// Example:
-/// ```dart
-/// registerLazySingleton<ApiClient>(() => ApiClient());
-/// ```
-void registerLazySingleton<T extends Object>(T Function() factory) {
-  container.registerLazySingleton<T>(factory);
-}
-
-/// Register a factory in the container
-///
-/// A new instance is created each time the service is requested.
-///
-/// Example:
-/// ```dart
-/// registerFactory<UserRepository>(() => UserRepository());
-/// ```
-void registerFactory<T extends Object>(T Function() factory) {
-  container.registerFactory<T>(factory);
-}
-
-/// Get a service from the container
-///
-/// Example:
-/// ```dart
-/// final eventBus = getService<EventBus>();
+/// final bus = getService<Bus>();
 /// ```
 T getService<T extends Object>() {
   return container.get<T>();
 }
 
-/// Check if a service is registered in the container
-bool isRegistered<T extends Object>() {
+/// Check if a type [T] is registered in the container
+///
+/// Example:
+/// ```dart
+/// if (hasService<Bus>()) {
+///   // Use the bus
+/// }
+/// ```
+bool hasService<T extends Object>() {
   return container.isRegistered<T>();
 }
 
-/// Reset the container (useful for testing)
-void resetContainer() {
-  container.reset();
-}
+// Injectable annotations aliases for easier usage
+/// Mark a class as a singleton (single instance for the entire app lifetime)
+///
+/// Example:
+/// ```dart
+/// @singleton
+/// class MyService {
+///   // ...
+/// }
+/// ```
+const singleton = inj.singleton;
+
+/// Mark a class as a lazy singleton (created only when first accessed)
+///
+/// Example:
+/// ```dart
+/// @lazySingleton
+/// class MyService {
+///   // ...
+/// }
+/// ```
+const lazySingleton = inj.lazySingleton;
+
+/// Mark a class as injectable (new instance created each time)
+///
+/// Example:
+/// ```dart
+/// @injectable
+/// class MyService {
+///   // ...
+/// }
+/// ```
+const injectable = inj.injectable;
