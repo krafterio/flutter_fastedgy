@@ -10,10 +10,16 @@
 /// - HTTP client with automatic authentication
 /// - JWT token management
 /// - Event bus for application-wide events
+/// - Dependency injection container
 /// - Provider-based state management
 /// - Internationalization support
 /// - Logging utilities
 library;
+
+// Container (DI)
+export 'src/container/container.dart';
+export 'package:get_it/get_it.dart' show GetIt;
+export 'package:injectable/injectable.dart';
 
 // Logging
 export 'src/logging/logging.dart';
