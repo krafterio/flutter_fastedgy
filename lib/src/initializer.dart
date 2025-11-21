@@ -24,7 +24,7 @@ import 'bus/bus.dart';
 /// - All core services (Bus, TokenStorage, etc.)
 /// - Authentication provider (default or custom)
 ///
-/// You can override any service by providing your own implementation.
+/// Factory functions are called in order, allowing dependencies to be resolved.
 ///
 /// Example:
 /// ```dart
@@ -33,47 +33,62 @@ import 'bus/bus.dart';
 ///
 /// // With custom services
 /// await initializeFastEdgy(
-///   bus: MyCustomBus(),
-///   tokenStorage: MyCustomTokenStorage(),
-///   authProvider: MyCustomAuthProvider(),
+///   busFactory: () => MyCustomBus(),
+///   tokenStorageFactory: () => MyCustomTokenStorage(),
+///   authProviderFactory: () => MyCustomAuthProvider(),
 /// );
 /// ```
 Future<void> initializeFastEdgy({
   String? envFile,
   Level? logLevel,
 
-  // Core services (overridable)
-  Bus? bus,
-  Fetcher? fetcher,
-  TokenStorage? tokenStorage,
-  AuthProvider? authProvider,
+  // Core services factories (overridable)
+  Bus Function()? busFactory,
+  TokenStorage Function()? tokenStorageFactory,
+  Fetcher Function()? fetcherFactory,
+  AuthProvider Function()? authProviderFactory,
 }) async {
   await dotenv.load(fileName: envFile ?? '.env');
 
   // Initialize container
   initializeContainer();
 
-  // Register core services
-  container.registerSingleton<Bus>(
-    bus ?? Bus(),
-  );
+  // Register core services in order (respecting dependencies)
 
-  container.registerSingleton<Fetcher>(
-    fetcher ?? Fetcher.create(),
-  );
+  // Bus
+  if (!hasService<Bus>()) {
+    container.registerSingleton<Bus>(
+      busFactory?.call() ?? Bus(),
+    );
+  }
 
-  container.registerSingleton<TokenStorage>(
-    tokenStorage ?? TokenStorage(),
-  );
+  // TokenStorage
+  if (!hasService<TokenStorage>()) {
+    container.registerSingleton<TokenStorage>(
+      tokenStorageFactory?.call() ?? TokenStorage(),
+    );
+  }
 
+  // Fetcher
+  if (!hasService<Fetcher>()) {
+    container.registerSingleton<Fetcher>(
+      fetcherFactory?.call() ?? Fetcher.create(),
+    );
+  }
+
+  // i18n
   initializeLogger(logLevel: logLevel);
   await initializeI18n();
 
-  container.registerSingleton<AuthProvider>(
-    authProvider ?? DefaultAuthProvider(
-      getService<Fetcher>(),
-      getService<TokenStorage>(),
-      getService<Bus>(),
-    ),
-  );
+  // AuthProvider
+  if (!hasService<AuthProvider>()) {
+    container.registerSingleton<AuthProvider>(
+      authProviderFactory?.call() ??
+          DefaultAuthProvider(
+            getService<Fetcher>(),
+            getService<TokenStorage>(),
+            getService<Bus>(),
+          ),
+    );
+  }
 }
