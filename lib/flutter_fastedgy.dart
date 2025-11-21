@@ -16,6 +16,9 @@
 /// - Logging utilities
 library;
 
+// Core
+export 'src/initializer.dart';
+
 // Container (DI)
 export 'src/container/container.dart';
 export 'package:get_it/get_it.dart' show GetIt;
