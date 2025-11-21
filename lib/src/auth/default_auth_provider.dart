@@ -30,7 +30,7 @@ class DefaultAuthProvider implements AuthProvider {
   Future<AuthResult> login(String username, String password) async {
     try {
       final apiBaseUrl = dotenv.env['API_BASE_URL'] ?? '';
-      final url = '$apiBaseUrl/api/auth/token';
+      final url = '$apiBaseUrl/auth/token';
 
       _log.info('Attempting login to $url');
 
@@ -79,7 +79,7 @@ class DefaultAuthProvider implements AuthProvider {
   Future<AuthResult> register(Map<String, dynamic> userData) async {
     try {
       final apiBaseUrl = dotenv.env['API_BASE_URL'] ?? '';
-      final url = '$apiBaseUrl/api/auth/register';
+      final url = '$apiBaseUrl/auth/register';
 
       _log.info('Attempting registration to $url');
 
@@ -151,7 +151,7 @@ class DefaultAuthProvider implements AuthProvider {
       }
 
       final apiBaseUrl = dotenv.env['API_BASE_URL'] ?? '';
-      final url = '$apiBaseUrl/api/auth/refresh';
+      final url = '$apiBaseUrl/auth/refresh';
 
       _log.info('Refreshing token');
 
@@ -201,7 +201,7 @@ class DefaultAuthProvider implements AuthProvider {
     if (await isAuthenticated()) {
       try {
         final apiBaseUrl = dotenv.env['API_BASE_URL'] ?? '';
-        final url = '$apiBaseUrl/api/auth/me';
+        final url = '$apiBaseUrl/auth/me';
 
         final response = await _fetcher.get(url);
         _currentUser = response.data as Map<String, dynamic>?;
