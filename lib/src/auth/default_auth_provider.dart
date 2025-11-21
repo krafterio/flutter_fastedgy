@@ -4,7 +4,7 @@
  */
 
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import '../fetcher/fetcher.dart';
+import '../fetcher/client.dart';
 import '../fetcher/http_error.dart';
 import '../logging/logger.dart';
 import '../bus/bus.dart';

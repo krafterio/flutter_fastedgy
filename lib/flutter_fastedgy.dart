@@ -41,8 +41,8 @@ export 'package:easy_localization/easy_localization.dart'
   show StringTranslateExtension, BuildContextEasyLocalizationExtension;
 
 // Fetcher
-export 'src/fetcher/fetcher_module.dart';
+export 'src/fetcher/fetcher.dart';
 export 'package:dio/dio.dart' show Response, ResponseType;
 
 // Auth
-export 'src/auth/auth_module.dart';
+export 'src/auth/auth.dart';

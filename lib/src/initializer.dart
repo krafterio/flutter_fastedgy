@@ -11,7 +11,7 @@ import 'logging/logger.dart';
 import 'auth/auth_provider.dart';
 import 'auth/default_auth_provider.dart';
 import 'auth/token_storage.dart';
-import 'fetcher/fetcher.dart';
+import 'fetcher/client.dart';
 import 'bus/bus.dart';
 
 /// Initialize FastEdgy with default configuration
