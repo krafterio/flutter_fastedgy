@@ -46,3 +46,6 @@ export 'package:dio/dio.dart' show Response, ResponseType;
 
 // Auth
 export 'src/auth/auth.dart';
+
+// API Models
+export 'src/api/api.dart';
