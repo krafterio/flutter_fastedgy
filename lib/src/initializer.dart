@@ -21,44 +21,59 @@ import 'bus/bus.dart';
 /// - Dependency injection container
 /// - Logger system
 /// - Internationalization (i18n)
+/// - All core services (Bus, TokenStorage, etc.)
 /// - Authentication provider (default or custom)
+///
+/// You can override any service by providing your own implementation.
 ///
 /// Example:
 /// ```dart
-/// Future<void> main() async {
-///   WidgetsFlutterBinding.ensureInitialized();
-///   await initializeFastEdgy(
-///     authProvider: MyCustomAuthProvider(), // Optional
-///   );
-///   runApp(
-///     useI18n(
-///       supportedLocales: [Locale('en'), Locale('fr')],
-///       child: MyApp(),
-///     ),
-///   );
-/// }
+/// // Default usage
+/// await initializeFastEdgy();
+///
+/// // With custom services
+/// await initializeFastEdgy(
+///   bus: MyCustomBus(),
+///   tokenStorage: MyCustomTokenStorage(),
+///   authProvider: MyCustomAuthProvider(),
+/// );
 /// ```
 Future<void> initializeFastEdgy({
   String? envFile,
   Level? logLevel,
+
+  // Core services (overridable)
+  Bus? bus,
+  Fetcher? fetcher,
+  TokenStorage? tokenStorage,
   AuthProvider? authProvider,
 }) async {
   await dotenv.load(fileName: envFile ?? '.env');
+
+  // Initialize container
   initializeContainer();
+
+  // Register core services
+  container.registerSingleton<Bus>(
+    bus ?? Bus(),
+  );
+
+  container.registerSingleton<Fetcher>(
+    fetcher ?? Fetcher.create(),
+  );
+
+  container.registerSingleton<TokenStorage>(
+    tokenStorage ?? TokenStorage(),
+  );
+
   initializeLogger(logLevel: logLevel);
   await initializeI18n();
 
-  // Register AuthProvider (custom or default)
-  if (authProvider != null) {
-    container.registerSingleton<AuthProvider>(authProvider);
-  } else {
-    // Register default implementation
-    container.registerSingleton<AuthProvider>(
-      DefaultAuthProvider(
-        Fetcher.create(),
-        getService<TokenStorage>(),
-        getService<Bus>(),
-      ),
-    );
-  }
+  container.registerSingleton<AuthProvider>(
+    authProvider ?? DefaultAuthProvider(
+      getService<Fetcher>(),
+      getService<TokenStorage>(),
+      getService<Bus>(),
+    ),
+  );
 }

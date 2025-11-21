@@ -4,7 +4,6 @@
  */
 
 import 'package:event_bus/event_bus.dart';
-import '../container/container.dart';
 
 /// Application-wide event bus for communication between components
 ///
@@ -24,7 +23,6 @@ import '../container/container.dart';
 ///   print('User logged in: ${event.userId}');
 /// });
 /// ```
-@singleton
 class Bus {
   final EventBus _bus = EventBus();
 

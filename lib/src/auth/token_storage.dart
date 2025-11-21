@@ -4,10 +4,8 @@
  */
 
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:injectable/injectable.dart';
 
 /// Storage for authentication tokens
-@singleton
 class TokenStorage {
   static const String _accessTokenKey = 'access_token';
   static const String _refreshTokenKey = 'refresh_token';

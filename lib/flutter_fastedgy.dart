@@ -24,10 +24,7 @@ export 'src/container/container.dart' show
   container,
   initializeContainer,
   getService,
-  hasService,
-  singleton,
-  lazySingleton,
-  injectable;
+  hasService;
 
 // Event Bus
 export 'src/bus/bus.dart';
