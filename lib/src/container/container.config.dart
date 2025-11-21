@@ -9,6 +9,7 @@
 // coverage:ignore-file
 
 // ignore_for_file: no_leading_underscores_for_library_prefixes
+import 'package:flutter_fastedgy/src/auth/token_storage.dart' as _i230;
 import 'package:flutter_fastedgy/src/bus/bus.dart' as _i240;
 import 'package:get_it/get_it.dart' as _i174;
 import 'package:injectable/injectable.dart' as _i526;
@@ -20,6 +21,7 @@ extension GetItInjectableX on _i174.GetIt {
     _i526.EnvironmentFilter? environmentFilter,
   }) {
     final gh = _i526.GetItHelper(this, environment, environmentFilter);
+    gh.singleton<_i230.TokenStorage>(() => _i230.TokenStorage());
     gh.singleton<_i240.Bus>(() => _i240.Bus());
     return this;
   }

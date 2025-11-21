@@ -46,3 +46,6 @@ export 'package:easy_localization/easy_localization.dart'
 // Fetcher
 export 'src/fetcher/fetcher_module.dart';
 export 'package:dio/dio.dart' show Response, ResponseType;
+
+// Auth
+export 'src/auth/auth_module.dart';
