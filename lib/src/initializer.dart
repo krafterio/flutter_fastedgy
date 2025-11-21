@@ -31,6 +31,14 @@ import 'bus/bus.dart';
 /// // Default usage
 /// await initializeFastEdgy();
 ///
+/// // With custom API interceptors
+/// await initializeFastEdgy(
+///   apiInterceptors: [
+///     InterceptorConfig(MyCustomInterceptor(), priority: 100),
+///     OtherCustomInterceptor(), // priority = 100 by default
+///   ],
+/// );
+///
 /// // With custom services
 /// await initializeFastEdgy(
 ///   busFactory: () => MyCustomBus(),
@@ -41,6 +49,9 @@ import 'bus/bus.dart';
 Future<void> initializeFastEdgy({
   String? envFile,
   Level? logLevel,
+
+  // API interceptors (List<InterceptorConfig> or List<Interceptor>)
+  List<dynamic>? apiInterceptors,
 
   // Core services factories (overridable)
   Bus Function()? busFactory,
@@ -72,7 +83,8 @@ Future<void> initializeFastEdgy({
   // Fetcher
   if (!hasService<Fetcher>()) {
     container.registerSingleton<Fetcher>(
-      fetcherFactory?.call() ?? Fetcher.create(),
+      fetcherFactory?.call() ??
+          Fetcher.create(customInterceptors: apiInterceptors),
     );
   }
 

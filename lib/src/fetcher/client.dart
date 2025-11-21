@@ -11,6 +11,7 @@ import '../auth/token_storage.dart';
 import '../auth/auth_provider.dart';
 import 'events.dart';
 import 'http_error.dart';
+import 'interceptor_config.dart';
 import 'interceptors/interceptors.dart';
 
 /// Lightweight wrapper over Dio with event bus integration
@@ -29,19 +30,35 @@ class Fetcher {
   })  : _dio = dio ?? Dio(),
         _bus = bus ?? getService<Bus>();
 
-  /// Create a new Fetcher instance with default interceptors
+  /// Create a new Fetcher instance with configurable interceptors
   ///
   /// Automatically configures:
   /// - Base URL from environment
-  /// - Auth interceptor (Bearer token injection)
-  /// - Refresh token interceptor (auto-refresh on 401)
-  /// - Logging interceptor (HTTP request/response logs)
-  /// - Error interceptor (uniform error handling)
+  /// - Default interceptors with priorities (Auth, RefreshToken, Logging, Error)
   ///
-  /// You can disable interceptors or provide a custom Dio instance.
+  /// You can add custom interceptors with [customInterceptors].
+  /// Accepts [InterceptorConfig] (with priority) or [Interceptor] (default priority).
+  /// Interceptors are sorted by priority (highest first).
+  ///
+  /// Default priorities:
+  /// - Auth: 50
+  /// - RefreshToken: 40
+  /// - Logging: 30
+  /// - Error: 10
+  ///
+  /// Example:
+  /// ```dart
+  /// Fetcher.create(
+  ///   customInterceptors: [
+  ///     InterceptorConfig(AppPrefixInterceptor(), priority: 100),
+  ///     MyCustomInterceptor(), // priority = 0 (default)
+  ///   ],
+  /// );
+  /// ```
   factory Fetcher.create({
     Dio? dio,
     Bus? bus,
+    List<dynamic>? customInterceptors,
     bool enableAuth = true,
     bool enableRefreshToken = true,
     bool enableLogging = true,
@@ -65,30 +82,66 @@ class Fetcher {
           ),
         );
 
-    // Add interceptors in order
+    // Build list of interceptors with priorities
+    final allInterceptors = <InterceptorConfig>[];
+
+    // Add default interceptors
     if (enableAuth && hasService<TokenStorage>()) {
-      dioInstance.interceptors.add(
-        AuthInterceptor(getService<TokenStorage>()),
+      allInterceptors.add(
+        InterceptorConfig(
+          AuthInterceptor(getService<TokenStorage>()),
+          priority: 50,
+        ),
       );
     }
 
     if (enableRefreshToken && hasService<AuthProvider>()) {
-      dioInstance.interceptors.add(
-        RefreshTokenInterceptor(getService<AuthProvider>(), dioInstance),
+      allInterceptors.add(
+        InterceptorConfig(
+          RefreshTokenInterceptor(getService<AuthProvider>(), dioInstance),
+          priority: 40,
+        ),
       );
     }
 
     if (enableLogging) {
-      dioInstance.interceptors.add(
-        LoggingInterceptor(
-          logHeaders: logHeaders,
-          logBody: logBody,
+      allInterceptors.add(
+        InterceptorConfig(
+          LoggingInterceptor(
+            logHeaders: logHeaders,
+            logBody: logBody,
+          ),
+          priority: 30,
         ),
       );
     }
 
     if (enableErrorTransform) {
-      dioInstance.interceptors.add(ErrorInterceptor());
+      allInterceptors.add(
+        InterceptorConfig(
+          ErrorInterceptor(),
+          priority: 10,
+        ),
+      );
+    }
+
+    // Add custom interceptors
+    if (customInterceptors != null) {
+      for (final item in customInterceptors) {
+        if (item is InterceptorConfig) {
+          allInterceptors.add(item);
+        } else if (item is Interceptor) {
+          allInterceptors.add(InterceptorConfig(item));
+        }
+      }
+    }
+
+    // Sort by priority (highest first)
+    allInterceptors.sort((a, b) => b.priority.compareTo(a.priority));
+
+    // Add interceptors to Dio
+    for (final config in allInterceptors) {
+      dioInstance.interceptors.add(config.interceptor);
     }
 
     return Fetcher._(dio: dioInstance, bus: bus);
