@@ -26,6 +26,13 @@ dependencies:
 flutter pub get
 ```
 
+### To update submodule
+
+```bash
+git submodule update --init --remote deps/flutter_fastedgy
+flutter pub get
+```
+
 ## Commit message format convention
 
 This project uses the **[Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0)** naming convention.
