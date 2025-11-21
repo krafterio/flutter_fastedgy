@@ -36,3 +36,9 @@ export 'src/bus/events.dart';
 // Logging
 export 'src/logging/logging.dart';
 export 'package:logging/logging.dart' show Level, Logger, LogRecord;
+
+// I18n
+export 'src/i18n/i18n.dart';
+export 'package:flutter/widgets.dart' show Locale;
+export 'package:easy_localization/easy_localization.dart'
+  show StringTranslateExtension, BuildContextEasyLocalizationExtension;
