@@ -49,3 +49,6 @@ export 'src/auth/auth.dart';
 
 // API Models
 export 'src/api/api.dart';
+
+// Metadata
+export 'src/metadata/metadata.dart';

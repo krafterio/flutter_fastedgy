@@ -13,6 +13,8 @@ import 'auth/default_auth_provider.dart';
 import 'auth/token_storage.dart';
 import 'fetcher/client.dart';
 import 'bus/bus.dart';
+import 'metadata/metadata_provider.dart';
+import 'metadata/default_metadata_provider.dart';
 
 /// Initialize FastEdgy with default configuration
 ///
@@ -58,6 +60,7 @@ Future<void> initializeFastEdgy({
   TokenStorage Function()? tokenStorageFactory,
   Fetcher Function()? fetcherFactory,
   AuthProvider Function()? authProviderFactory,
+  MetadataProvider Function()? metadataProviderFactory,
 }) async {
   await dotenv.load(fileName: envFile ?? '.env');
 
@@ -99,6 +102,18 @@ Future<void> initializeFastEdgy({
           DefaultAuthProvider(
             getService<Fetcher>(),
             getService<TokenStorage>(),
+            getService<Bus>(),
+          ),
+    );
+  }
+
+  // MetadataProvider
+  if (!hasService<MetadataProvider>()) {
+    container.registerSingleton<MetadataProvider>(
+      metadataProviderFactory?.call() ??
+          DefaultMetadataProvider(
+            getService<Fetcher>(),
+            getService<AuthProvider>(),
             getService<Bus>(),
           ),
     );
