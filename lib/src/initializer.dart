@@ -15,6 +15,7 @@ import 'fetcher/client.dart';
 import 'bus/bus.dart';
 import 'metadata/metadata_provider.dart';
 import 'metadata/default_metadata_provider.dart';
+import 'image/image_cache.dart';
 
 /// Initialize FastEdgy with default configuration
 ///
@@ -61,6 +62,7 @@ Future<void> initializeFastEdgy({
   Fetcher Function()? fetcherFactory,
   AuthProvider Function()? authProviderFactory,
   MetadataProvider Function()? metadataProviderFactory,
+  ImageCache Function()? imageCacheFactory,
 }) async {
   await dotenv.load(fileName: envFile ?? '.env');
 
@@ -116,6 +118,13 @@ Future<void> initializeFastEdgy({
             getService<AuthProvider>(),
             getService<Bus>(),
           ),
+    );
+  }
+
+  // ImageCache
+  if (!hasService<ImageCache>()) {
+    container.registerSingleton<ImageCache>(
+      imageCacheFactory?.call() ?? ImageCache(getService<Bus>()),
     );
   }
 }

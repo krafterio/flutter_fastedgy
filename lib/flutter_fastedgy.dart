@@ -52,3 +52,6 @@ export 'src/api/api.dart';
 
 // Metadata
 export 'src/metadata/metadata.dart';
+
+// Image
+export 'src/image/image.dart';
