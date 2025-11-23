@@ -13,7 +13,7 @@ import '../../logging/logger.dart';
 /// - Response: status code, headers, body
 /// - Errors: error type, message, stack trace
 class LoggingInterceptor extends Interceptor {
-  final _log = getLogger('HTTP');
+  final _logger = getLogger('HTTP');
   final bool logHeaders;
   final bool logBody;
 
@@ -24,14 +24,14 @@ class LoggingInterceptor extends Interceptor {
 
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
-    _log.info('→ ${options.method} ${options.uri}');
+    _logger.fine('→ ${options.method} ${options.uri}');
 
     if (logHeaders && options.headers.isNotEmpty) {
-      _log.fine('Headers: ${options.headers}');
+      _logger.finer('Headers: ${options.headers}');
     }
 
     if (logBody && options.data != null) {
-      _log.fine('Body: ${options.data}');
+      _logger.finer('Body: ${options.data}');
     }
 
     handler.next(options);
@@ -43,14 +43,14 @@ class LoggingInterceptor extends Interceptor {
     final method = response.requestOptions.method;
     final uri = response.requestOptions.uri;
 
-    _log.info('← $statusCode $method $uri');
+    _logger.fine('← $statusCode $method $uri');
 
     if (logHeaders && response.headers.map.isNotEmpty) {
-      _log.fine('Headers: ${response.headers.map}');
+      _logger.finer('Headers: ${response.headers.map}');
     }
 
     if (logBody && response.data != null) {
-      _log.fine('Body: ${response.data}');
+      _logger.finer('Body: ${response.data}');
     }
 
     handler.next(response);
@@ -62,13 +62,13 @@ class LoggingInterceptor extends Interceptor {
     final method = err.requestOptions.method;
     final uri = err.requestOptions.uri;
 
-    _log.warning('✖ $statusCode $method $uri');
+    _logger.warning('✖ $statusCode $method $uri');
 
     if (err.response != null && logBody && err.response!.data != null) {
-      _log.fine('Error body: ${err.response!.data}');
+      _logger.fine('Error body: ${err.response!.data}');
     }
 
-    _log.fine('Error: ${err.message}');
+    _logger.fine('Error: ${err.message}');
 
     handler.next(err);
   }

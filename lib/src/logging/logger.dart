@@ -12,6 +12,8 @@ import './log_listener.dart';
 /// List of registered log listeners
 final List<LogListener> _listeners = [];
 
+const defaultLogLevel = Level.INFO;
+
 /// Configuration for the logging system
 class LogConfig {
   /// The log level
@@ -71,7 +73,7 @@ void initializeLogger({
   // Setup logging
   Logger.root.onRecord.listen((record) {
     for (final listener in _listeners) {
-      if (listener.isEnabled && record.level <= level) {
+      if (listener.isEnabled) {
         listener.onData(record);
       }
     }
@@ -109,17 +111,17 @@ Logger getLogger(String name) {
 LogConfig parseLogConfigFromEnv() {
   if (!dotenv.isInitialized) {
     return const LogConfig(
-      level: Level.ALL,
+      level: defaultLogLevel,
       listeners: [],
     );
   }
 
   final levelStr = dotenv.env['LOG_LEVEL']?.toUpperCase();
   final level = levelStr == null || levelStr.isEmpty
-      ? Level.ALL
+      ? defaultLogLevel
       : Level.LEVELS.firstWhere(
           (l) => l.name == levelStr,
-          orElse: () => Level.INFO,
+          orElse: () => defaultLogLevel,
         );
 
   final outputStr = dotenv.env['LOG_OUTPUT']?.toLowerCase();

@@ -20,7 +20,7 @@ class DefaultAuthProvider implements AuthProvider {
   final Fetcher _fetcher;
   final TokenStorage _tokenStorage;
   final Bus _bus;
-  final _log = getLogger('DefaultAuthProvider');
+  final _logger = getLogger('AuthProvider');
 
   Map<String, dynamic>? _currentUser;
 
@@ -32,7 +32,7 @@ class DefaultAuthProvider implements AuthProvider {
       final apiBaseUrl = dotenv.env['API_BASE_URL'] ?? '';
       final url = '$apiBaseUrl/auth/token';
 
-      _log.info('Attempting login to $url');
+      _logger.finer('Attempting login to $url');
 
       final response = await _fetcher.post(
         url,
@@ -59,7 +59,7 @@ class DefaultAuthProvider implements AuthProvider {
       // Fire auth:logged event
       _bus.fire(const AuthLoggedEvent());
 
-      _log.info('Login successful');
+      _logger.finer('Login successful');
 
       return AuthResult.success(
         accessToken: accessToken,
@@ -67,10 +67,10 @@ class DefaultAuthProvider implements AuthProvider {
         user: _currentUser,
       );
     } on HttpError catch (e) {
-      _log.severe('Login failed: ${e.message}');
+      _logger.severe('Login failed: ${e.message}');
       return AuthResult.failure(e.message);
     } catch (e, stackTrace) {
-      _log.severe('Unexpected error during login', e, stackTrace);
+      _logger.severe('Unexpected error during login', e, stackTrace);
       return AuthResult.failure('An unexpected error occurred');
     }
   }
@@ -81,7 +81,7 @@ class DefaultAuthProvider implements AuthProvider {
       final apiBaseUrl = dotenv.env['API_BASE_URL'] ?? '';
       final url = '$apiBaseUrl/auth/register';
 
-      _log.info('Attempting registration to $url');
+      _logger.finer('Attempting registration to $url');
 
       final response = await _fetcher.post(url, userData);
 
@@ -102,7 +102,7 @@ class DefaultAuthProvider implements AuthProvider {
       // Fire auth:logged event
       _bus.fire(const AuthLoggedEvent());
 
-      _log.info('Registration successful');
+      _logger.finer('Registration successful');
 
       return AuthResult.success(
         accessToken: accessToken,
@@ -110,17 +110,17 @@ class DefaultAuthProvider implements AuthProvider {
         user: _currentUser,
       );
     } on HttpError catch (e) {
-      _log.severe('Registration failed: ${e.message}');
+      _logger.severe('Registration failed: ${e.message}');
       return AuthResult.failure(e.message);
     } catch (e, stackTrace) {
-      _log.severe('Unexpected error during registration', e, stackTrace);
+      _logger.severe('Unexpected error during registration', e, stackTrace);
       return AuthResult.failure('An unexpected error occurred');
     }
   }
 
   @override
   Future<void> logout() async {
-    _log.info('Logging out');
+    _logger.finer('Logging out');
 
     await _tokenStorage.clearTokens();
     _currentUser = null;
@@ -128,7 +128,7 @@ class DefaultAuthProvider implements AuthProvider {
     // Fire auth:logout event
     _bus.fire(const AuthLogoutEvent());
 
-    _log.info('Logout complete');
+    _logger.finer('Logout complete');
   }
 
   @override
@@ -146,14 +146,14 @@ class DefaultAuthProvider implements AuthProvider {
     try {
       final refreshToken = await _tokenStorage.getRefreshToken();
       if (refreshToken == null) {
-        _log.warning('No refresh token available');
+        _logger.warning('No refresh token available');
         return false;
       }
 
       final apiBaseUrl = dotenv.env['API_BASE_URL'] ?? '';
       final url = '$apiBaseUrl/auth/refresh';
 
-      _log.info('Refreshing token');
+      _logger.finer('Refreshing token');
 
       final response = await _fetcher.post(
         url,
@@ -167,19 +167,19 @@ class DefaultAuthProvider implements AuthProvider {
 
       if (newAccessToken != null) {
         await _tokenStorage.saveAccessToken(newAccessToken);
-        _log.info('Token refreshed successfully');
+        _logger.finer('Token refreshed successfully');
         return true;
       }
 
-      _log.warning('No access token in refresh response');
+      _logger.warning('No access token in refresh response');
       return false;
     } on HttpError catch (e) {
-      _log.severe('Token refresh failed: ${e.message}');
+      _logger.severe('Token refresh failed: ${e.message}');
       // If refresh fails, logout
       await logout();
       return false;
     } catch (e, stackTrace) {
-      _log.severe('Unexpected error during token refresh', e, stackTrace);
+      _logger.severe('Unexpected error during token refresh', e, stackTrace);
       await logout();
       return false;
     }
@@ -207,7 +207,7 @@ class DefaultAuthProvider implements AuthProvider {
         _currentUser = response.data as Map<String, dynamic>?;
         return _currentUser;
       } catch (e) {
-        _log.warning('Failed to fetch current user: $e');
+        _logger.warning('Failed to fetch current user: $e');
       }
     }
 

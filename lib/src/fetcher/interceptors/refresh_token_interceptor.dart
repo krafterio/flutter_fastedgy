@@ -16,7 +16,7 @@ import '../../logging/logger.dart';
 class RefreshTokenInterceptor extends Interceptor {
   final AuthProvider _authProvider;
   final Dio _dio;
-  final _log = getLogger('RefreshTokenInterceptor');
+  final _logger = getLogger('RefreshTokenInterceptor');
 
   RefreshTokenInterceptor(this._authProvider, this._dio);
 
@@ -30,24 +30,24 @@ class RefreshTokenInterceptor extends Interceptor {
       return handler.next(err);
     }
 
-    _log.info('401 Unauthorized detected, attempting token refresh');
+    _logger.fine('401 Unauthorized detected, attempting token refresh');
 
     try {
       // Try to refresh the token
       final refreshed = await _authProvider.refreshToken();
 
       if (!refreshed) {
-        _log.warning('Token refresh failed');
+        _logger.warning('Token refresh failed');
         return handler.next(err);
       }
 
-      _log.info('Token refreshed successfully, retrying request');
+      _logger.finer('Token refreshed successfully, retrying request');
 
       // Get the new access token
       final newToken = await _authProvider.getAccessToken();
 
       if (newToken == null) {
-        _log.warning('No access token after refresh');
+        _logger.warning('No access token after refresh');
         return handler.next(err);
       }
 
@@ -61,7 +61,7 @@ class RefreshTokenInterceptor extends Interceptor {
       // Return the successful response
       return handler.resolve(response);
     } catch (e, stackTrace) {
-      _log.severe('Error during token refresh', e, stackTrace);
+      _logger.severe('Error during token refresh', e, stackTrace);
       return handler.next(err);
     }
   }
