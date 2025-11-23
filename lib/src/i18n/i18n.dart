@@ -4,12 +4,15 @@
  */
 
 import 'package:easy_localization/easy_localization.dart';
+import 'package:easy_logger/easy_logger.dart';
 import 'package:flutter/widgets.dart';
+import 'package:logging/logging.dart';
 
 /// Initialize EasyLocalization
 ///
 /// This is called automatically by initializeFastEdgy().
 Future<void> initializeI18n() async {
+  EasyLocalization.logger.enableLevels = _mapLogLevelToEasyLogger(Logger.root.level);
   await EasyLocalization.ensureInitialized();
 }
 
@@ -116,4 +119,28 @@ Future<void> setLocale(BuildContext context, Locale locale) async {
 /// Get supported locales
 List<Locale> supportedLocales(BuildContext context) {
   return context.supportedLocales;
+}
+
+
+/// Map logging Level to EasyLogger levels
+List<LevelMessages> _mapLogLevelToEasyLogger(Level level) {
+  final levels = <LevelMessages>[];
+
+  if (level <= Level.SEVERE) {
+    levels.add(LevelMessages.error);
+  }
+
+  if (level <= Level.WARNING) {
+    levels.add(LevelMessages.warning);
+  }
+
+  if (level <= Level.INFO) {
+    levels.add(LevelMessages.info);
+  }
+
+  if (level <= Level.CONFIG) {
+    levels.add(LevelMessages.debug);
+  }
+
+  return levels;
 }
