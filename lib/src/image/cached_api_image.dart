@@ -32,15 +32,18 @@ enum ImageMode {
 /// Downloads and caches images from the FastEdgy storage API.
 /// Supports image optimization with width, height, mode, and format parameters.
 ///
+/// The widget automatically applies the correct BoxFit based on the mode:
+/// - ImageMode.cover → BoxFit.cover (fills container, may crop)
+/// - ImageMode.contain → BoxFit.contain (fits inside container, may letterbox)
+///
 /// Example:
 /// ```dart
 /// CachedApiImage(
 ///   path: 'users/123/avatar.jpg',
 ///   width: 100,
 ///   height: 100,
-///   mode: ImageMode.cover,
+///   mode: ImageMode.cover, // Automatically uses BoxFit.cover
 ///   format: 'webp',
-///   fit: BoxFit.cover,
 ///   placeholder: Icon(Icons.person, size: 48),
 ///   fadeInDuration: Duration(milliseconds: 300),
 /// )
@@ -49,7 +52,6 @@ class CachedApiImage extends StatefulWidget {
   final String path;
   final double? width;
   final double? height;
-  final BoxFit? fit;
   final ImageMode mode;
   final String? format;
   final Widget Function(BuildContext, Object, StackTrace?)? errorBuilder;
@@ -65,7 +67,6 @@ class CachedApiImage extends StatefulWidget {
     required this.path,
     this.width,
     this.height,
-    this.fit,
     this.mode = ImageMode.cover,
     this.format = 'webp',
     this.errorBuilder,
@@ -135,14 +136,14 @@ class _CachedApiImageState extends State<CachedApiImage> {
 
     final params = <String, String>{};
     if (widget.width != null && widget.width!.isFinite) {
-      params['width'] = widget.width!.toInt().toString();
+      params['w'] = widget.width!.toInt().toString();
     }
     if (widget.height != null && widget.height!.isFinite) {
-      params['height'] = widget.height!.toInt().toString();
+      params['h'] = widget.height!.toInt().toString();
     }
-    params['mode'] = widget.mode.value;
+    params['m'] = widget.mode.value;
     if (widget.format != null) {
-      params['format'] = widget.format!;
+      params['e'] = widget.format!;
     }
 
     if (params.isEmpty) {
@@ -284,11 +285,14 @@ class _CachedApiImageState extends State<CachedApiImage> {
       return const SizedBox.shrink();
     }
 
+    // Map ImageMode to BoxFit automatically
+    final boxFit = widget.mode == ImageMode.cover ? BoxFit.cover : BoxFit.contain;
+
     final image = Image.memory(
       _imageBytes!,
       width: widget.width,
       height: widget.height,
-      fit: widget.fit,
+      fit: boxFit,
       alignment: widget.alignment,
       color: widget.color,
       colorBlendMode: widget.colorBlendMode,

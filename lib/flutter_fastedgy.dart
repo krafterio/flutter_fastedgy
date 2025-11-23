@@ -55,3 +55,6 @@ export 'src/metadata/metadata.dart';
 
 // Image
 export 'src/image/image.dart';
+
+// Storage
+export 'src/storage/storage.dart';

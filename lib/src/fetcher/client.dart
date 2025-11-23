@@ -175,10 +175,20 @@ class Fetcher {
   ///
   /// Example:
   /// ```dart
+  /// // Simple POST
   /// final response = await fetcher.post('/users', {
   ///   'name': 'John Doe',
   ///   'email': 'john@example.com',
   /// });
+  ///
+  /// // POST with progress tracking
+  /// final response = await fetcher.post(
+  ///   '/upload',
+  ///   formData,
+  ///   onSendProgress: (sent, total) {
+  ///     print('Progress: ${(sent / total * 100).toStringAsFixed(0)}%');
+  ///   },
+  /// );
   /// ```
   Future<Response> post(
     String path,
@@ -186,7 +196,22 @@ class Fetcher {
     Map<String, dynamic>? params,
     Map<String, dynamic>? headers,
     String? id,
+    void Function(int sent, int total)? onSendProgress,
   }) async {
+    // If onSendProgress is provided, use direct Dio call to access it
+    if (onSendProgress != null) {
+      return _requestWithProgress(
+        path,
+        method: 'POST',
+        data: data,
+        queryParameters: params,
+        headers: headers,
+        id: id,
+        onSendProgress: onSendProgress,
+      );
+    }
+
+    // Otherwise, use standard request method
     return _request(
       path,
       method: 'POST',
@@ -288,6 +313,84 @@ class Fetcher {
           responseType: options['responseType'] as ResponseType?,
         ),
         cancelToken: cancelToken,
+      );
+
+      // Fire success event
+      _bus.fire(FetchSuccessEvent(
+        path,
+        response.statusCode ?? 200,
+        response.data,
+        response.headers.map,
+      ));
+
+      // Clean up cancel token
+      if (id != null) {
+        _cancelTokens.remove(id);
+      }
+
+      return response;
+    } on DioException catch (e) {
+      final httpError = HttpError.fromDioException(e);
+
+      // Fire error event
+      _bus.fire(FetchErrorEvent(path, httpError, e.stackTrace));
+
+      // Clean up cancel token
+      if (id != null) {
+        _cancelTokens.remove(id);
+      }
+
+      throw httpError;
+    } catch (e, stackTrace) {
+      // Fire error event for non-Dio errors
+      _bus.fire(FetchErrorEvent(path, e, stackTrace));
+
+      // Clean up cancel token
+      if (id != null) {
+        _cancelTokens.remove(id);
+      }
+
+      rethrow;
+    }
+  }
+
+  /// Internal request method with progress tracking
+  Future<Response> _requestWithProgress(
+    String path, {
+    required String method,
+    dynamic data,
+    Map<String, dynamic>? queryParameters,
+    Map<String, dynamic>? headers,
+    String? id,
+    void Function(int sent, int total)? onSendProgress,
+  }) async {
+    // Create cancel token for this request
+    final cancelToken = CancelToken();
+    if (id != null) {
+      _cancelTokens[id] = cancelToken;
+    }
+
+    // Build options
+    final options = <String, dynamic>{
+      'method': method,
+      'headers': headers ?? {},
+      'queryParameters': queryParameters ?? {},
+    };
+
+    // Fire request event
+    _bus.fire(FetchRequestEvent(path, options));
+
+    try {
+      final response = await _dio.request(
+        path,
+        data: data,
+        queryParameters: options['queryParameters'] as Map<String, dynamic>?,
+        options: Options(
+          method: method,
+          headers: options['headers'] as Map<String, dynamic>?,
+        ),
+        cancelToken: cancelToken,
+        onSendProgress: onSendProgress,
       );
 
       // Fire success event
