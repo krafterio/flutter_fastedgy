@@ -13,6 +13,7 @@ import 'events.dart';
 import 'http_error.dart';
 import 'interceptor_config.dart';
 import 'interceptors/interceptors.dart';
+import 'timezone_provider.dart';
 
 /// Lightweight wrapper over Dio with event bus integration
 ///
@@ -42,6 +43,7 @@ class Fetcher {
   ///
   /// Default priorities:
   /// - Auth: 50
+  /// - Timezone: 45
   /// - RefreshToken: 40
   /// - Logging: 30
   /// - Error: 10
@@ -60,6 +62,7 @@ class Fetcher {
     Bus? bus,
     List<dynamic>? customInterceptors,
     bool enableAuth = true,
+    bool enableTimezone = true,
     bool enableRefreshToken = true,
     bool enableLogging = true,
     bool enableErrorTransform = true,
@@ -91,6 +94,15 @@ class Fetcher {
         InterceptorConfig(
           AuthInterceptor(getService<TokenStorage>()),
           priority: 50,
+        ),
+      );
+    }
+
+    if (enableTimezone && hasService<TimezoneProvider>()) {
+      allInterceptors.add(
+        InterceptorConfig(
+          TimezoneInterceptor(getService<TimezoneProvider>()),
+          priority: 45,
         ),
       );
     }
