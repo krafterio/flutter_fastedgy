@@ -12,6 +12,7 @@ import '../container/container.dart';
 import '../fetcher/client.dart';
 import '../logging/logger.dart';
 import 'models.dart';
+import '../api/attachment.dart';
 
 /// Service for uploading files to FastEdgy storage
 class StorageUploader {
@@ -205,6 +206,165 @@ class StorageUploader {
       fileName: newFileName,
       mimeType: options.format.mimeType,
     );
+  }
+
+  /// Upload multiple attachments
+  ///
+  /// Example:
+  /// ```dart
+  /// final uploader = StorageUploader.instance();
+  /// final attachments = await uploader.uploadAttachments(
+  ///   {
+  ///     'file1': File('/path/to/file1.pdf'),
+  ///     'file2': File('/path/to/file2.jpg'),
+  ///   },
+  ///   onProgress: (sent, total) {
+  ///     print('Progress: ${(sent / total * 100).toStringAsFixed(0)}%');
+  ///   },
+  /// );
+  /// print('Uploaded ${attachments.length} attachments');
+  /// ```
+  Future<List<Attachment>> uploadAttachments(
+    Map<String, File> files, {
+    void Function(int sent, int total)? onProgress,
+  }) async {
+    _logger.fine('Uploading ${files.length} attachments');
+
+    // Create form data with all files
+    final formData = FormData();
+
+    for (final entry in files.entries) {
+      final file = entry.value;
+      final fileName = path.basename(file.path);
+      final mimeType = _getMimeType(file.path);
+
+      final multipartFile = await MultipartFile.fromFile(
+        file.path,
+        filename: fileName,
+        contentType: mimeType != null ? DioMediaType.parse(mimeType) : null,
+      );
+
+      formData.files.add(MapEntry(entry.key, multipartFile));
+    }
+
+    // Upload all files
+    final url = '/storage/upload/attachments';
+    _logger.fine('Uploading to $url');
+
+    final response = await _fetcher.post(
+      url,
+      formData,
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      onSendProgress: onProgress,
+    );
+
+    final responseData = response.data as Map<String, dynamic>;
+    final attachmentsList = responseData['attachments'] as List;
+
+    final attachments = attachmentsList
+        .map((item) => Attachment.fromJson(item as Map<String, dynamic>))
+        .toList();
+
+    _logger.info('Uploaded ${attachments.length} attachments successfully');
+
+    return attachments;
+  }
+
+  /// Upload multiple attachments from bytes
+  ///
+  /// Example:
+  /// ```dart
+  /// final uploader = StorageUploader.instance();
+  /// final attachments = await uploader.uploadAttachmentsFromBytes(
+  ///   {
+  ///     'file1': bytes1,
+  ///     'file2': bytes2,
+  ///   },
+  ///   filenames: {
+  ///     'file1': 'document.pdf',
+  ///     'file2': 'image.jpg',
+  ///   },
+  /// );
+  /// ```
+  Future<List<Attachment>> uploadAttachmentsFromBytes(
+    Map<String, Uint8List> filesBytes, {
+    required Map<String, String> filenames,
+    void Function(int sent, int total)? onProgress,
+  }) async {
+    _logger.fine('Uploading ${filesBytes.length} attachments from bytes');
+
+    // Create form data with all files
+    final formData = FormData();
+
+    for (final entry in filesBytes.entries) {
+      final fileName = filenames[entry.key] ?? '${entry.key}.bin';
+      final mimeType = _getMimeTypeFromFilename(fileName);
+
+      final multipartFile = MultipartFile.fromBytes(
+        entry.value,
+        filename: fileName,
+        contentType: mimeType != null ? DioMediaType.parse(mimeType) : null,
+      );
+
+      formData.files.add(MapEntry(entry.key, multipartFile));
+    }
+
+    // Upload all files
+    final url = '/storage/upload/attachments';
+    _logger.fine('Uploading to $url');
+
+    final response = await _fetcher.post(
+      url,
+      formData,
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      onSendProgress: onProgress,
+    );
+
+    final responseData = response.data as Map<String, dynamic>;
+    final attachmentsList = responseData['attachments'] as List;
+
+    final attachments = attachmentsList
+        .map((item) => Attachment.fromJson(item as Map<String, dynamic>))
+        .toList();
+
+    _logger.info('Uploaded ${attachments.length} attachments successfully');
+
+    return attachments;
+  }
+
+  /// Get MIME type from filename
+  String? _getMimeTypeFromFilename(String fileName) {
+    final ext = path.extension(fileName).toLowerCase().replaceAll('.', '');
+    switch (ext) {
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'png':
+        return 'image/png';
+      case 'webp':
+        return 'image/webp';
+      case 'heic':
+      case 'heif':
+        return 'image/heic';
+      case 'pdf':
+        return 'application/pdf';
+      case 'doc':
+      case 'docx':
+        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      case 'xls':
+      case 'xlsx':
+        return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      case 'txt':
+        return 'text/plain';
+      case 'zip':
+        return 'application/zip';
+      default:
+        return null;
+    }
   }
 }
 

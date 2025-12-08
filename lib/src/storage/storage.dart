@@ -4,4 +4,7 @@
  */
 
 export 'models.dart';
+export 'storage_download_helper.dart';
+export 'storage_downloader.dart';
+export 'storage_helper.dart';
 export 'storage_uploader.dart';

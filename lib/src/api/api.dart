@@ -4,5 +4,6 @@
  */
 
 export 'api_model.dart';
-export 'pagination_result.dart';
 export 'api_query.dart';
+export 'attachment.dart';
+export 'pagination_result.dart';
