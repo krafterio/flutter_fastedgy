@@ -201,7 +201,7 @@ class DefaultAuthProvider implements AuthProvider {
     if (await isAuthenticated()) {
       try {
         final apiBaseUrl = dotenv.env['API_BASE_URL'] ?? '';
-        final url = '$apiBaseUrl/auth/me';
+        final url = '$apiBaseUrl/me';
 
         final response = await _fetcher.get(url);
         _currentUser = response.data as Map<String, dynamic>?;
