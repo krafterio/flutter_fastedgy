@@ -47,7 +47,7 @@ import 'api_query.dart';
 /// // Usage
 /// final userApi = UserApi();
 /// final users = await userApi.list(params: {'page': 1, 'limit': 25});
-/// final user = await userApi.get('123');
+/// final user = await userApi.get(123); // or '123'
 /// final created = await userApi.create({'name': 'John', 'email': 'john@example.com'});
 /// ```
 abstract class ApiModel<T> {
@@ -112,19 +112,19 @@ abstract class ApiModel<T> {
 
   /// Get a single resource by ID
   ///
-  /// [id] is the resource identifier
+  /// [id] is the resource identifier (String or int)
   /// [options] includes field selection
   /// [params] includes prefix and headers overrides
   ///
   /// Example:
   /// ```dart
   /// final item = await api.get(
-  ///   '123',
+  ///   123, // or '123'
   ///   options: FieldsOptions(fields: ['id', 'name']),
   /// );
   /// ```
   Future<T> get(
-    String id, {
+    Object id, {
     FieldsOptions? options,
     ApiParams? params,
   }) async {
@@ -134,7 +134,7 @@ abstract class ApiModel<T> {
     final headers = _buildHeaders(optionsMap, paramsMap);
 
     final response = await _fetcher.get(
-      '$basePath/$id',
+      '$basePath/${id.toString()}',
       headers: headers,
     );
 
@@ -177,7 +177,7 @@ abstract class ApiModel<T> {
 
   /// Update an existing resource (PATCH)
   ///
-  /// [id] is the resource identifier
+  /// [id] is the resource identifier (String or int)
   /// [payload] is the updated resource data
   /// [options] includes field selection for response
   /// [params] includes prefix and headers overrides
@@ -187,13 +187,13 @@ abstract class ApiModel<T> {
   /// Example:
   /// ```dart
   /// final updated = await api.update(
-  ///   '123',
+  ///   123, // or '123'
   ///   {'name': 'Jane'},
   ///   options: FieldsOptions(fields: ['id', 'name']),
   /// );
   /// ```
   Future<T> update(
-    String id,
+    Object id,
     Map<String, dynamic> payload, {
     FieldsOptions? options,
     ApiParams? params,
@@ -204,7 +204,7 @@ abstract class ApiModel<T> {
     final headers = _buildHeaders(optionsMap, paramsMap);
 
     final response = await _fetcher.patch(
-      '$basePath/$id',
+      '$basePath/${id.toString()}',
       payload,
       headers: headers,
     );
@@ -214,22 +214,22 @@ abstract class ApiModel<T> {
 
   /// Delete a resource
   ///
-  /// [id] is the resource identifier
+  /// [id] is the resource identifier (String or int)
   /// [params] includes prefix and headers overrides
   ///
   /// Example:
   /// ```dart
-  /// await api.delete('123');
+  /// await api.delete(123); // or '123'
   /// ```
   Future<void> delete(
-    String id, {
+    Object id, {
     ApiParams? params,
   }) async {
     final paramsMap = params?.toMap() ?? {};
     final headers = paramsMap['headers'] as Map<String, dynamic>?;
 
     await _fetcher.delete(
-      '$basePath/$id',
+      '$basePath/${id.toString()}',
       headers: headers,
     );
   }
