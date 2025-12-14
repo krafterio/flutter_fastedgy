@@ -40,7 +40,10 @@ class ValidationError {
 
 /// HTTP error with response details
 ///
-/// Thrown when an HTTP request fails with a non-2xx status code
+/// Thrown when an HTTP request fails with a non-2xx status code.
+/// Subclasses provide more specific error types:
+/// - [UnauthorizedError] for 401 status code
+/// - [NetworkError] for connection/timeout errors
 class HttpError implements Exception {
   /// The original Dio response
   final Response? response;
@@ -107,6 +110,23 @@ class HttpError implements Exception {
       message = e.message ?? t('Network error');
     }
 
+    // Return specific error type based on status code or error type
+    if (statusCode == 401) {
+      return UnauthorizedError(
+        message: message,
+        response: response,
+        data: data,
+      );
+    }
+
+    if (statusCode == null || e.type == DioExceptionType.connectionError || e.type == DioExceptionType.connectionTimeout) {
+      return NetworkError(
+        message: message,
+        response: response,
+        data: data,
+      );
+    }
+
     return HttpError(
       message: message,
       response: response,
@@ -116,6 +136,34 @@ class HttpError implements Exception {
     );
   }
 
+  /// Whether this error has validation errors
+  bool get hasValidationErrors => validationErrors?.isNotEmpty ?? false;
+
+  /// Whether this is a single body-level validation error
+  bool get isSingleBodyError {
+    if (validationErrors == null || validationErrors!.length != 1) return false;
+    final loc = validationErrors!.first.loc;
+    return loc.length == 1 && loc.first == 'body';
+  }
+
   @override
   String toString() => message;
+}
+
+/// Error thrown when the server returns a 401 Unauthorized response
+class UnauthorizedError extends HttpError {
+  UnauthorizedError({
+    required super.message,
+    super.response,
+    super.data,
+  }) : super(statusCode: 401);
+}
+
+/// Error thrown when there is a network connectivity issue
+class NetworkError extends HttpError {
+  NetworkError({
+    required super.message,
+    super.response,
+    super.data,
+  }) : super(statusCode: null);
 }
