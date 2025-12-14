@@ -3,10 +3,10 @@
  * MIT License (see LICENSE file).
  */
 
-import 'dart:convert';
 import 'package:dio/dio.dart';
 import '../fetcher/client.dart';
 import '../container/container.dart';
+import 'api_helpers.dart';
 import 'pagination_result.dart';
 import 'api_query.dart';
 
@@ -95,13 +95,10 @@ abstract class ApiModel<T> {
     final queryMap = query?.toMap() ?? {};
     final paramsMap = params?.toMap() ?? {};
 
-    final queryParams = _buildQueryParams(queryMap);
-    final headers = _buildHeaders(queryMap, paramsMap);
-
     final response = await _fetcher.get(
       basePath,
-      params: queryParams,
-      headers: headers,
+      params: ApiHelpers.buildQueryParams(queryMap),
+      headers: ApiHelpers.buildHeaders(queryMap, extraHeaders: paramsMap['headers'] as Map<String, dynamic>?),
     );
 
     return PaginationResult.fromJson(
@@ -131,7 +128,7 @@ abstract class ApiModel<T> {
     final optionsMap = options?.toMap() ?? {};
     final paramsMap = params?.toMap() ?? {};
 
-    final headers = _buildHeaders(optionsMap, paramsMap);
+    final headers = ApiHelpers.buildHeaders(optionsMap, extraHeaders: paramsMap['headers'] as Map<String, dynamic>?);
 
     final response = await _fetcher.get(
       '$basePath/${id.toString()}',
@@ -164,7 +161,7 @@ abstract class ApiModel<T> {
     final optionsMap = options?.toMap() ?? {};
     final paramsMap = params?.toMap() ?? {};
 
-    final headers = _buildHeaders(optionsMap, paramsMap);
+    final headers = ApiHelpers.buildHeaders(optionsMap, extraHeaders: paramsMap['headers'] as Map<String, dynamic>?);
 
     final response = await _fetcher.post(
       basePath,
@@ -201,7 +198,7 @@ abstract class ApiModel<T> {
     final optionsMap = options?.toMap() ?? {};
     final paramsMap = params?.toMap() ?? {};
 
-    final headers = _buildHeaders(optionsMap, paramsMap);
+    final headers = ApiHelpers.buildHeaders(optionsMap, extraHeaders: paramsMap['headers'] as Map<String, dynamic>?);
 
     final response = await _fetcher.patch(
       '$basePath/${id.toString()}',
@@ -261,13 +258,11 @@ abstract class ApiModel<T> {
     }
 
     final paramsMap = params?.toMap() ?? {};
-    final queryParams = _buildQueryParams(queryMap);
-    final headers = _buildHeaders(queryMap, paramsMap);
 
     return _fetcher.get(
       '$basePath/export',
-      params: queryParams,
-      headers: headers,
+      params: ApiHelpers.buildQueryParams(queryMap),
+      headers: ApiHelpers.buildHeaders(queryMap, extraHeaders: paramsMap['headers'] as Map<String, dynamic>?),
       responseType: ResponseType.bytes,
     );
   }
@@ -307,99 +302,5 @@ abstract class ApiModel<T> {
       formData,
       headers: headers,
     );
-  }
-
-  /// Custom GET request on this resource
-  ///
-  /// Useful for custom endpoints like `/users/me` or `/users/search`
-  Future<Response> customGet(
-    String path, {
-    Map<String, dynamic>? params,
-    Map<String, dynamic>? headers,
-    String? id,
-  }) async {
-    return _fetcher.get(
-      '$basePath$path',
-      params: params,
-      headers: headers,
-      id: id,
-    );
-  }
-
-  /// Custom POST request on this resource
-  ///
-  /// Useful for custom actions like `/users/bulk-create`
-  Future<Response> customPost(
-    String path,
-    dynamic data, {
-    Map<String, dynamic>? params,
-    Map<String, dynamic>? headers,
-    String? id,
-  }) async {
-    return _fetcher.post(
-      '$basePath$path',
-      data,
-      params: params,
-      headers: headers,
-      id: id,
-    );
-  }
-
-  /// Build query parameters from standardized query object
-  Map<String, dynamic> _buildQueryParams(Map<String, dynamic> query) {
-    final queryParams = <String, dynamic>{};
-
-    // Standard pagination (page + size → limit + offset)
-    if (query['page'] != null && query['size'] != null) {
-      final page = query['page'] as int;
-      final size = query['size'] as int;
-      queryParams['limit'] = size;
-      queryParams['offset'] = (page - 1) * size;
-    } else {
-      if (query['size'] != null) queryParams['limit'] = query['size'];
-    }
-
-    // Direct limit/offset
-    if (query['limit'] != null) queryParams['limit'] = query['limit'];
-    if (query['offset'] != null) queryParams['offset'] = query['offset'];
-
-    // Standard ordering (orderBy → order_by)
-    if (query['orderBy'] != null) {
-      final orderBy = query['orderBy'];
-      queryParams['order_by'] = orderBy is List
-          ? orderBy.join(',')
-          : orderBy.toString();
-    }
-
-    // Export format
-    if (query['format'] != null) queryParams['format'] = query['format'];
-
-    return queryParams;
-  }
-
-  /// Build headers from standardized query and params
-  Map<String, dynamic> _buildHeaders(
-    Map<String, dynamic> query,
-    Map<String, dynamic> params,
-  ) {
-    final headers = <String, dynamic>{
-      ...?params['headers'] as Map<String, dynamic>?,
-    };
-
-    // X-Fields header for field selection
-    if (query['fields'] != null) {
-      final fields = query['fields'];
-      headers['X-Fields'] =
-          fields is List ? fields.join(',') : fields.toString();
-    }
-
-    // X-Filter header for filtering
-    if (query['filter'] != null) {
-      final filter = query['filter'];
-      headers['X-Filter'] =
-          filter is String ? filter : jsonEncode(filter);
-    }
-
-    return headers;
   }
 }
