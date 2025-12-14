@@ -4,47 +4,68 @@
  */
 
 import 'package:dio/dio.dart';
-import '../../auth/auth_provider.dart';
+import '../../auth/token_storage.dart';
 import '../../logging/logger.dart';
+import 'refresh_token_lock.dart';
 
 /// Interceptor that automatically refreshes the access token on 401 errors
 ///
 /// When a request fails with 401 (Unauthorized), this interceptor:
-/// 1. Tries to refresh the token via AuthProvider
-/// 2. Retries the original request with the new token
-/// 3. If refresh fails, lets the error propagate
+/// 1. Uses RefreshTokenLock to coordinate with other requests
+/// 2. Waits if a refresh is already in progress (single-flight pattern)
+/// 3. Retries the original request with the new token
+/// 4. If refresh fails, lets the error propagate
+///
+/// Similar to the Vue.js vue-fastedgy fetch:error handler in plugins/fetcher.js
 class RefreshTokenInterceptor extends Interceptor {
-  final AuthProvider _authProvider;
+  final RefreshTokenLock _lock;
   final Dio _dio;
+  final TokenStorage _tokenStorage;
   final _logger = getLogger('RefreshTokenInterceptor');
 
-  RefreshTokenInterceptor(this._authProvider, this._dio);
+  RefreshTokenInterceptor(this._lock, this._dio, this._tokenStorage);
 
   @override
   Future<void> onError(
     DioException err,
     ErrorInterceptorHandler handler,
   ) async {
-    // Only handle 401 errors
-    if (err.response?.statusCode != 401) {
+    // Only handle 401 errors, exclude auth/refresh to avoid infinite loop
+    // (like Vue.js: error?.response?.status !== 401 || url.includes('auth/refresh'))
+    if (err.response?.statusCode != 401 ||
+        err.requestOptions.path.contains('auth/refresh')) {
+      return handler.next(err);
+    }
+
+    // Check if user can refresh (has refresh token) - like Vue.js canRefreshToken
+    if (!await _tokenStorage.canRefreshToken()) {
+      _logger.finer('No refresh token available, skipping refresh');
       return handler.next(err);
     }
 
     _logger.fine('401 Unauthorized detected, attempting token refresh');
 
     try {
-      // Try to refresh the token
-      final refreshed = await _authProvider.refreshToken();
+      // Use the shared lock to refresh token (handles queuing)
+      final refreshed = await _lock.triggerRefresh(
+        cancelToken: err.requestOptions.cancelToken,
+      );
 
       if (!refreshed) {
         _logger.warning('Token refresh failed');
         return handler.next(err);
       }
 
+      // Check if request was cancelled while waiting
+      if (err.requestOptions.cancelToken?.isCancelled ?? false) {
+        _logger.finer('Request was cancelled while waiting for refresh');
+        return handler.next(err);
+      }
+
       _logger.finer('Token refreshed successfully, retrying request');
 
       // Get the new access token
-      final newToken = await _authProvider.getAccessToken();
+      final newToken = await _tokenStorage.getAccessToken();
 
       if (newToken == null) {
         _logger.warning('No access token after refresh');

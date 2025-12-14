@@ -88,11 +88,17 @@ class Fetcher {
     // Build list of interceptors with priorities
     final allInterceptors = <InterceptorConfig>[];
 
+    // Create shared RefreshTokenLock if both auth and refresh token are enabled
+    RefreshTokenLock? refreshTokenLock;
+    if (enableRefreshToken && hasService<AuthProvider>()) {
+      refreshTokenLock = RefreshTokenLock(getService<AuthProvider>());
+    }
+
     // Add default interceptors
     if (enableAuth && hasService<TokenStorage>()) {
       allInterceptors.add(
         InterceptorConfig(
-          AuthInterceptor(getService<TokenStorage>()),
+          AuthInterceptor(getService<TokenStorage>(), refreshTokenLock),
           priority: 50,
         ),
       );
@@ -107,10 +113,14 @@ class Fetcher {
       );
     }
 
-    if (enableRefreshToken && hasService<AuthProvider>()) {
+    if (enableRefreshToken && refreshTokenLock != null && hasService<TokenStorage>()) {
       allInterceptors.add(
         InterceptorConfig(
-          RefreshTokenInterceptor(getService<AuthProvider>(), dioInstance),
+          RefreshTokenInterceptor(
+            refreshTokenLock,
+            dioInstance,
+            getService<TokenStorage>(),
+          ),
           priority: 40,
         ),
       );
