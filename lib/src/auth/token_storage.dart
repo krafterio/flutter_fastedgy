@@ -7,7 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// Storage for authentication tokens
 class TokenStorage {
-  static const String _accessTokenKey = 'access_token';
+  static const String _accessTokenKey = 'token';
   static const String _refreshTokenKey = 'refresh_token';
 
   /// Save access token
