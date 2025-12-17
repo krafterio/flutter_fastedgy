@@ -114,6 +114,27 @@ class ExportQuery {
   }
 }
 
+/// Import template query parameters
+class ImportTemplateQuery {
+  /// Template format (csv, xlsx, ods)
+  final String? format;
+
+  /// Fields to include in template (string or list of strings)
+  final dynamic fields;
+
+  const ImportTemplateQuery({
+    this.format,
+    this.fields,
+  });
+
+  Map<String, dynamic> toMap() {
+    final map = <String, dynamic>{};
+    if (format != null) map['format'] = format;
+    if (fields != null) map['fields'] = fields;
+    return map;
+  }
+}
+
 /// API call parameters
 class ApiParams {
   /// API prefix override (e.g., '/admin')

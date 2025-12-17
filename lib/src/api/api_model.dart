@@ -303,4 +303,39 @@ abstract class ApiModel<T> {
       headers: headers,
     );
   }
+
+  /// Download import template
+  ///
+  /// [query] includes format and fields selection
+  /// [params] includes prefix and headers overrides
+  ///
+  /// Returns the raw response data (typically bytes for files)
+  ///
+  /// Example:
+  /// ```dart
+  /// final response = await api.importTemplate(
+  ///   query: ImportTemplateQuery(
+  ///     format: 'xlsx',
+  ///     fields: ['id', 'name'],
+  ///   ),
+  /// );
+  /// ```
+  Future<Response> importTemplate({
+    ImportTemplateQuery? query,
+    ApiParams? params,
+  }) async {
+    final queryMap = query?.toMap() ?? {};
+    if (queryMap['format'] == null) {
+      queryMap['format'] = 'xlsx';
+    }
+
+    final paramsMap = params?.toMap() ?? {};
+
+    return _fetcher.get(
+      '$basePath/import/template',
+      params: ApiHelpers.buildQueryParams(queryMap),
+      headers: ApiHelpers.buildHeaders(queryMap, extraHeaders: paramsMap['headers'] as Map<String, dynamic>?),
+      responseType: ResponseType.bytes,
+    );
+  }
 }
