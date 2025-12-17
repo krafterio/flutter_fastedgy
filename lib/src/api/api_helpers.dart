@@ -88,6 +88,10 @@ class ApiHelpers {
       final entry = orderBy.entries.first;
       return '${entry.key}:${entry.value}';
     }
+    // Handle Dart Record (tuple) like ('field', 'direction')
+    if (orderBy is (String, String)) {
+      return '${orderBy.$1}:${orderBy.$2}';
+    }
     return orderBy.toString();
   }
 
@@ -100,9 +104,9 @@ class ApiHelpers {
       final entry = item.entries.first;
       return '${entry.key}:${entry.value}';
     }
-    if (item is Record) {
-      final values = item.toString().replaceAll('(', '').replaceAll(')', '').split(', ');
-      if (values.length == 2) return '${values[0]}:${values[1]}';
+    // Handle Dart Record (tuple) like ('field', 'direction')
+    if (item is (String, String)) {
+      return '${item.$1}:${item.$2}';
     }
     return item.toString();
   }
