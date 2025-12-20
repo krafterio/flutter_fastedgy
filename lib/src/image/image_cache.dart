@@ -94,13 +94,20 @@ class ImageCache {
   final Map<String, Future<Uint8List>> _pendingRequests = {};
   final Set<String> _pinnedPaths = {};
 
-  static const int maxCacheEntries = 50;
-  static const int maxCacheSizeBytes = 20 * 1024 * 1024; // 20MB
+  /// Maximum number of images to cache
+  final int maxCacheEntries;
+
+  /// Maximum cache size in bytes
+  final int maxCacheSizeBytes;
 
   int _cacheHits = 0;
   int _cacheMisses = 0;
 
-  ImageCache(this._bus) {
+  ImageCache(
+    this._bus, {
+    this.maxCacheEntries = 150,
+    this.maxCacheSizeBytes = 50 * 1024 * 1024, // 50MB
+  }) {
     _setupEventListeners();
   }
 

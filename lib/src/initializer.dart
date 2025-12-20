@@ -58,6 +58,10 @@ Future<void> initializeFastEdgy({
   // API interceptors (List<InterceptorConfig> or List<Interceptor>)
   List<dynamic>? apiInterceptors,
 
+  // Image cache configuration
+  int? imageCacheMaxEntries,
+  int? imageCacheMaxSizeBytes,
+
   // Core services factories (overridable)
   Bus Function()? busFactory,
   TokenStorage Function()? tokenStorageFactory,
@@ -128,7 +132,12 @@ Future<void> initializeFastEdgy({
   // ImageCache
   if (!hasService<ImageCache>()) {
     container.registerSingleton<ImageCache>(
-      imageCacheFactory?.call() ?? ImageCache(getService<Bus>()),
+      imageCacheFactory?.call() ??
+          ImageCache(
+            getService<Bus>(),
+            maxCacheEntries: imageCacheMaxEntries ?? 150,
+            maxCacheSizeBytes: imageCacheMaxSizeBytes ?? 50 * 1024 * 1024,
+          ),
     );
   }
 
