@@ -102,6 +102,7 @@ class _CachedApiImageState extends State<CachedApiImage> {
   bool _isLoading = false;
   Object? _error;
   bool _isDisposed = false;
+  BoxConstraints? _lastConstraints;
 
   @override
   void initState() {
@@ -119,16 +120,36 @@ class _CachedApiImageState extends State<CachedApiImage> {
     super.dispose();
   }
 
-  (int?, int?) _getPhysicalDimensions() {
+  (int?, int?) _getPhysicalDimensions({BoxConstraints? constraints}) {
     if (!widget.autoCalculatePhysicalDimensions || !mounted) {
       return (widget.width?.toInt(), widget.height?.toInt());
     }
 
-    return ImageDimensionsHelper.calculatePhysicalDimensions(
-      context,
-      width: widget.width,
-      height: widget.height,
-    );
+    // If explicit dimensions are provided, use them
+    if (widget.width != null || widget.height != null) {
+      return ImageDimensionsHelper.calculatePhysicalDimensions(
+        context,
+        width: widget.width,
+        height: widget.height,
+      );
+    }
+
+    // Otherwise, try to infer from constraints
+    if (constraints != null) {
+      final inferredWidth = ImageDimensionsHelper.inferDimensionFromConstraints(
+        context,
+        constraints,
+        Axis.horizontal,
+      );
+      final inferredHeight = ImageDimensionsHelper.inferDimensionFromConstraints(
+        context,
+        constraints,
+        Axis.vertical,
+      );
+      return (inferredWidth, inferredHeight);
+    }
+
+    return (null, null);
   }
 
   @override
@@ -149,20 +170,20 @@ class _CachedApiImageState extends State<CachedApiImage> {
     }
   }
 
-  String _getCacheKey() {
-    final (physicalWidth, physicalHeight) = _getPhysicalDimensions();
+  String _getCacheKey({BoxConstraints? constraints}) {
+    final (physicalWidth, physicalHeight) = _getPhysicalDimensions(constraints: constraints);
     final widthStr = physicalWidth?.toString() ?? 'auto';
     final heightStr = physicalHeight?.toString() ?? 'auto';
     final format = widget.format ?? 'webp';
     return '${widget.path}|${widthStr}x${heightStr}|${widget.mode.value}|$format';
   }
 
-  String _buildUrl() {
+  String _buildUrl({BoxConstraints? constraints}) {
     final apiBaseUrl = dotenv.env['API_BASE_URL'] ?? '';
     final url = '$apiBaseUrl/storage/download/${widget.path}';
 
     final params = <String, String>{};
-    final (physicalWidth, physicalHeight) = _getPhysicalDimensions();
+    final (physicalWidth, physicalHeight) = _getPhysicalDimensions(constraints: constraints);
 
     if (physicalWidth != null) {
       params['w'] = physicalWidth.toString();
@@ -186,10 +207,10 @@ class _CachedApiImageState extends State<CachedApiImage> {
     return '$url?$queryString';
   }
 
-  Future<void> _loadImage() async {
+  Future<void> _loadImage({BoxConstraints? constraints}) async {
     if (!mounted || _isDisposed) return;
 
-    final cacheKey = _getCacheKey();
+    final cacheKey = _getCacheKey(constraints: constraints);
     final imageCache = getService<fastedgy_cache.ImageCache>();
 
     // Check cache
@@ -243,7 +264,7 @@ class _CachedApiImageState extends State<CachedApiImage> {
       if (!mounted || _isDisposed) return;
 
       final fetcher = getService<Fetcher>();
-      final url = _buildUrl();
+      final url = _buildUrl(constraints: constraints);
 
       _logger.finer('Loading image from $url');
 
@@ -280,59 +301,85 @@ class _CachedApiImageState extends State<CachedApiImage> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      if (widget.loadingBuilder != null) {
-        return widget.loadingBuilder!(context);
-      }
-      if (widget.placeholder != null) {
-        return SizedBox(
+    // Use LayoutBuilder to detect parent constraints when dimensions are not provided
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Load image with constraints if not already loaded or if constraints changed
+        if (_imageBytes == null && !_isLoading && _error == null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && !_isDisposed) {
+              _loadImage(constraints: constraints);
+            }
+          });
+        } else if (_lastConstraints != constraints && widget.width == null && widget.height == null) {
+          // Reload if constraints changed and no explicit dimensions
+          _lastConstraints = constraints;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && !_isDisposed) {
+              setState(() {
+                _imageBytes = null;
+                _error = null;
+              });
+              _loadImage(constraints: constraints);
+            }
+          });
+        }
+
+        if (_isLoading) {
+          if (widget.loadingBuilder != null) {
+            return widget.loadingBuilder!(context);
+          }
+          if (widget.placeholder != null) {
+            return SizedBox(
+              width: widget.width,
+              height: widget.height,
+              child: widget.placeholder,
+            );
+          }
+          return SizedBox(
+            width: widget.width,
+            height: widget.height,
+            child: const Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        if (_error != null) {
+          if (widget.errorBuilder != null) {
+            return widget.errorBuilder!(context, _error!, StackTrace.empty);
+          }
+          return Container(
+            width: widget.width,
+            height: widget.height,
+            color: Colors.grey[300],
+            child: const Icon(Icons.broken_image, color: Colors.grey),
+          );
+        }
+
+        if (_imageBytes == null) {
+          return const SizedBox.shrink();
+        }
+
+        // Map ImageMode to BoxFit automatically
+        final boxFit = widget.mode == ImageMode.cover ? BoxFit.cover : BoxFit.contain;
+
+        final image = Image.memory(
+          _imageBytes!,
           width: widget.width,
           height: widget.height,
-          child: widget.placeholder,
+          fit: boxFit,
+          alignment: widget.alignment,
+          color: widget.color,
+          colorBlendMode: widget.colorBlendMode,
+          filterQuality: FilterQuality.medium,
+          gaplessPlayback: true,
         );
-      }
-      return SizedBox(
-        width: widget.width,
-        height: widget.height,
-        child: const Center(child: CircularProgressIndicator()),
-      );
-    }
 
-    if (_error != null) {
-      if (widget.errorBuilder != null) {
-        return widget.errorBuilder!(context, _error!, StackTrace.empty);
-      }
-      return Container(
-        width: widget.width,
-        height: widget.height,
-        color: Colors.grey[300],
-        child: const Icon(Icons.broken_image, color: Colors.grey),
-      );
-    }
-
-    if (_imageBytes == null) {
-      return const SizedBox.shrink();
-    }
-
-    // Map ImageMode to BoxFit automatically
-    final boxFit = widget.mode == ImageMode.cover ? BoxFit.cover : BoxFit.contain;
-
-    final image = Image.memory(
-      _imageBytes!,
-      width: widget.width,
-      height: widget.height,
-      fit: boxFit,
-      alignment: widget.alignment,
-      color: widget.color,
-      colorBlendMode: widget.colorBlendMode,
-      filterQuality: FilterQuality.medium,
-      gaplessPlayback: true,
-    );
-
-    // Fade-in animation
-    return AnimatedSwitcher(
-      duration: widget.fadeInDuration,
-      child: image,
+        // Fade-in animation
+        return AnimatedSwitcher(
+          duration: widget.fadeInDuration,
+          child: image,
+        );
+      },
     );
   }
 }
