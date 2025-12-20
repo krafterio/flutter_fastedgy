@@ -11,6 +11,7 @@ import '../container/container.dart';
 import '../fetcher/client.dart';
 import '../logging/logger.dart';
 import 'image_cache.dart' as fastedgy_cache;
+import 'image_dimensions_helper.dart';
 
 /// Image resize mode for API requests
 enum ImageMode {
@@ -36,6 +37,11 @@ enum ImageMode {
 /// - ImageMode.cover → BoxFit.cover (fills container, may crop)
 /// - ImageMode.contain → BoxFit.contain (fits inside container, may letterbox)
 ///
+/// By default, automatically calculates physical dimensions based on device pixel ratio:
+/// - iPhone Retina (3x): width 100 → downloads 300px
+/// - Android HD (2x): width 100 → downloads 200px
+/// - Standard (1x): width 100 → downloads 100px
+///
 /// Example:
 /// ```dart
 /// CachedApiImage(
@@ -54,6 +60,12 @@ class CachedApiImage extends StatefulWidget {
   final double? height;
   final ImageMode mode;
   final String? format;
+
+  /// If true, automatically calculates physical dimensions based on devicePixelRatio
+  /// This ensures optimal image quality for each device (Retina, HD, etc.)
+  /// Default: true
+  final bool autoCalculatePhysicalDimensions;
+
   final Widget Function(BuildContext, Object, StackTrace?)? errorBuilder;
   final Widget Function(BuildContext)? loadingBuilder;
   final Widget? placeholder;
@@ -69,6 +81,7 @@ class CachedApiImage extends StatefulWidget {
     this.height,
     this.mode = ImageMode.cover,
     this.format = 'webp',
+    this.autoCalculatePhysicalDimensions = true,
     this.errorBuilder,
     this.loadingBuilder,
     this.placeholder,
@@ -106,6 +119,18 @@ class _CachedApiImageState extends State<CachedApiImage> {
     super.dispose();
   }
 
+  (int?, int?) _getPhysicalDimensions() {
+    if (!widget.autoCalculatePhysicalDimensions || !mounted) {
+      return (widget.width?.toInt(), widget.height?.toInt());
+    }
+
+    return ImageDimensionsHelper.calculatePhysicalDimensions(
+      context,
+      width: widget.width,
+      height: widget.height,
+    );
+  }
+
   @override
   void didUpdateWidget(CachedApiImage oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -113,7 +138,8 @@ class _CachedApiImageState extends State<CachedApiImage> {
         oldWidget.width != widget.width ||
         oldWidget.height != widget.height ||
         oldWidget.mode != widget.mode ||
-        oldWidget.format != widget.format) {
+        oldWidget.format != widget.format ||
+        oldWidget.autoCalculatePhysicalDimensions != widget.autoCalculatePhysicalDimensions) {
       setState(() {
         _isLoading = false;
         _error = null;
@@ -124,8 +150,9 @@ class _CachedApiImageState extends State<CachedApiImage> {
   }
 
   String _getCacheKey() {
-    final widthStr = widget.width?.toInt().toString() ?? 'auto';
-    final heightStr = widget.height?.toInt().toString() ?? 'auto';
+    final (physicalWidth, physicalHeight) = _getPhysicalDimensions();
+    final widthStr = physicalWidth?.toString() ?? 'auto';
+    final heightStr = physicalHeight?.toString() ?? 'auto';
     final format = widget.format ?? 'webp';
     return '${widget.path}|${widthStr}x${heightStr}|${widget.mode.value}|$format';
   }
@@ -135,11 +162,13 @@ class _CachedApiImageState extends State<CachedApiImage> {
     final url = '$apiBaseUrl/storage/download/${widget.path}';
 
     final params = <String, String>{};
-    if (widget.width != null && widget.width!.isFinite) {
-      params['w'] = widget.width!.toInt().toString();
+    final (physicalWidth, physicalHeight) = _getPhysicalDimensions();
+
+    if (physicalWidth != null) {
+      params['w'] = physicalWidth.toString();
     }
-    if (widget.height != null && widget.height!.isFinite) {
-      params['h'] = widget.height!.toInt().toString();
+    if (physicalHeight != null) {
+      params['h'] = physicalHeight.toString();
     }
     params['m'] = widget.mode.value;
     if (widget.format != null) {
