@@ -249,6 +249,15 @@ class ImageCache {
     _cacheMisses = 0;
   }
 
+  /// Reset cache statistics
+  ///
+  /// Resets hits and misses counters without clearing the cache.
+  /// Useful to measure hit rate from a specific point in time.
+  void resetStats() {
+    _cacheHits = 0;
+    _cacheMisses = 0;
+  }
+
   /// Evict entries if cache limits are exceeded
   ///
   /// Uses LRU eviction strategy, but preserves pinned entries.
@@ -324,5 +333,38 @@ class ImageCache {
       misses: cacheMisses,
       hitRate: hitRate,
     );
+  }
+
+  /// Get all cache keys
+  ///
+  /// Returns a list of all cached image keys.
+  /// Useful for debugging and analysis.
+  List<String> getAllKeys() {
+    return _cache.keys.toList();
+  }
+
+  /// Get cache entry info by key
+  ///
+  /// Returns information about a specific cache entry.
+  /// Useful for debugging.
+  Map<String, dynamic>? getCacheEntryInfo(String key) {
+    final entry = _cache[key];
+    if (entry == null) return null;
+
+    return {
+      'key': key,
+      'sizeBytes': entry.bytes.lengthInBytes,
+      'sizeMB': entry.bytes.lengthInBytes / (1024 * 1024),
+      'isPinned': entry.isPinned,
+      'lastAccessed': entry.lastAccessed.toIso8601String(),
+    };
+  }
+
+  /// Get all cache entries info
+  ///
+  /// Returns detailed information about all cache entries.
+  /// Useful for debugging and analysis.
+  List<Map<String, dynamic>> getAllEntriesInfo() {
+    return _cache.keys.map((key) => getCacheEntryInfo(key)!).toList();
   }
 }
