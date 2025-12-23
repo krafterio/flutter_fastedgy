@@ -107,11 +107,15 @@ class _CachedApiImageState extends State<CachedApiImage> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && !_isDisposed) {
-        _loadImage();
-      }
-    });
+    // Only load immediately if explicit dimensions are provided
+    // Otherwise, wait for LayoutBuilder in build() to provide constraints
+    if (widget.width != null || widget.height != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_isDisposed) {
+          _loadImage();
+        }
+      });
+    }
   }
 
   @override
@@ -306,23 +310,30 @@ class _CachedApiImageState extends State<CachedApiImage> {
       builder: (context, constraints) {
         // Load image with constraints if not already loaded or if constraints changed
         if (_imageBytes == null && !_isLoading && _error == null) {
+          _lastConstraints = constraints;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted && !_isDisposed) {
               _loadImage(constraints: constraints);
             }
           });
         } else if (_lastConstraints != constraints && widget.width == null && widget.height == null) {
-          // Reload if constraints changed and no explicit dimensions
+          // Reload if constraints changed significantly and no explicit dimensions
+          final oldDims = _getPhysicalDimensions(constraints: _lastConstraints);
+          final newDims = _getPhysicalDimensions(constraints: constraints);
           _lastConstraints = constraints;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted && !_isDisposed) {
-              setState(() {
-                _imageBytes = null;
-                _error = null;
-              });
-              _loadImage(constraints: constraints);
-            }
-          });
+
+          // Only reload if dimensions actually changed
+          if (oldDims != newDims) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted && !_isDisposed) {
+                setState(() {
+                  _imageBytes = null;
+                  _error = null;
+                });
+                _loadImage(constraints: constraints);
+              }
+            });
+          }
         }
 
         if (_isLoading) {
