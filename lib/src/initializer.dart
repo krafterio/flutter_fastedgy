@@ -93,7 +93,20 @@ Future<void> initializeFastEdgy({
     );
   }
 
-  // Fetcher
+  // AuthProvider (registered BEFORE Fetcher to break circular dependency)
+  // The AuthProvider will retrieve the Fetcher from the container when needed
+  if (!hasService<AuthProvider>()) {
+    container.registerSingleton<AuthProvider>(
+      authProviderFactory?.call() ??
+          DefaultAuthProvider(
+            null, // Fetcher will be retrieved from container
+            getService<TokenStorage>(),
+            getService<Bus>(),
+          ),
+    );
+  }
+
+  // Fetcher (can now use AuthProvider for refresh token interceptor)
   if (!hasService<Fetcher>()) {
     container.registerSingleton<Fetcher>(
       fetcherFactory?.call() ??
@@ -104,18 +117,6 @@ Future<void> initializeFastEdgy({
   // i18n
   initializeLogger(logLevel: logLevel);
   await initializeI18n();
-
-  // AuthProvider
-  if (!hasService<AuthProvider>()) {
-    container.registerSingleton<AuthProvider>(
-      authProviderFactory?.call() ??
-          DefaultAuthProvider(
-            getService<Fetcher>(),
-            getService<TokenStorage>(),
-            getService<Bus>(),
-          ),
-    );
-  }
 
   // MetadataProvider
   if (!hasService<MetadataProvider>()) {

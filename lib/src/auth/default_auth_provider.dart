@@ -3,7 +3,7 @@
  * MIT License (see LICENSE file).
  */
 
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import '../container/container.dart';
 import '../fetcher/client.dart';
 import '../fetcher/http_error.dart';
 import '../logging/logger.dart';
@@ -17,7 +17,7 @@ import 'auth_events.dart';
 ///
 /// Provides standard FastEdgy authentication with JWT tokens.
 class DefaultAuthProvider implements AuthProvider {
-  final Fetcher _fetcher;
+  final Fetcher? _fetcher;
   final TokenStorage _tokenStorage;
   final Bus _bus;
   final _logger = getLogger('AuthProvider');
@@ -26,16 +26,19 @@ class DefaultAuthProvider implements AuthProvider {
 
   DefaultAuthProvider(this._fetcher, this._tokenStorage, this._bus);
 
+  /// Get the Fetcher instance
+  ///
+  /// Uses the stored _fetcher if provided, otherwise retrieves from container.
+  /// This allows breaking the circular dependency during initialization.
+  Fetcher get _getFetcher => _fetcher ?? getService<Fetcher>();
+
   @override
   Future<AuthResult> login(String username, String password) async {
     try {
-      final apiBaseUrl = dotenv.env['API_BASE_URL'] ?? '';
-      final url = '$apiBaseUrl/auth/token';
+      _logger.finer('Attempting login');
 
-      _logger.finer('Attempting login to $url');
-
-      final response = await _fetcher.post(
-        url,
+      final response = await _getFetcher.post(
+        '/auth/token',
         {
           'username': username,
           'password': password,
@@ -78,12 +81,9 @@ class DefaultAuthProvider implements AuthProvider {
   @override
   Future<AuthResult> register(Map<String, dynamic> userData) async {
     try {
-      final apiBaseUrl = dotenv.env['API_BASE_URL'] ?? '';
-      final url = '$apiBaseUrl/auth/register';
+      _logger.finer('Attempting registration');
 
-      _logger.finer('Attempting registration to $url');
-
-      final response = await _fetcher.post(url, userData);
+      final response = await _getFetcher.post('/auth/register', userData);
 
       final data = response.data as Map<String, dynamic>;
       final accessToken = data['access_token'] as String?;
@@ -150,13 +150,10 @@ class DefaultAuthProvider implements AuthProvider {
         return false;
       }
 
-      final apiBaseUrl = dotenv.env['API_BASE_URL'] ?? '';
-      final url = '$apiBaseUrl/auth/refresh';
-
       _logger.finer('Refreshing token');
 
-      final response = await _fetcher.post(
-        url,
+      final response = await _getFetcher.post(
+        '/auth/refresh',
         {
           'refresh_token': refreshToken,
         },
@@ -200,10 +197,7 @@ class DefaultAuthProvider implements AuthProvider {
     // Try to fetch user data from API
     if (await isAuthenticated()) {
       try {
-        final apiBaseUrl = dotenv.env['API_BASE_URL'] ?? '';
-        final url = '$apiBaseUrl/me';
-
-        final response = await _fetcher.get(url);
+        final response = await _getFetcher.get('/me');
         _currentUser = response.data as Map<String, dynamic>?;
         return _currentUser;
       } catch (e) {
