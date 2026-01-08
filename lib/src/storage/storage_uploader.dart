@@ -248,7 +248,7 @@ class StorageUploader {
     }
 
     // Upload all files
-    final url = '/storage/upload/attachments';
+    const url = '/storage/upload/attachments';
     _logger.fine('Uploading to $url');
 
     final response = await _fetcher.post(
@@ -312,7 +312,7 @@ class StorageUploader {
     }
 
     // Upload all files
-    final url = '/storage/upload/attachments';
+    const url = '/storage/upload/attachments';
     _logger.fine('Uploading to $url');
 
     final response = await _fetcher.post(

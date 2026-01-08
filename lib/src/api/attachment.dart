@@ -14,8 +14,8 @@ class Attachment {
   final int sizeBytes;
   final int? width;
   final int? height;
-  final DateTime createdAt;
-  final DateTime updatedAt;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
 
   Attachment({
     required this.id,
@@ -25,8 +25,8 @@ class Attachment {
     required this.sizeBytes,
     this.width,
     this.height,
-    required this.createdAt,
-    required this.updatedAt,
+    this.createdAt,
+    this.updatedAt,
   });
 
   factory Attachment.fromJson(Map<String, dynamic> json) {
@@ -38,8 +38,8 @@ class Attachment {
       sizeBytes: json['size_bytes'] as int,
       width: json['width'] as int?,
       height: json['height'] as int?,
-      createdAt: DateTime.parse(json['created_at'] as String).toLocal(),
-      updatedAt: DateTime.parse(json['updated_at'] as String).toLocal(),
+      createdAt: json['created_at'] != null ? DateTime.parse(json['created_at'] as String).toLocal() : null,
+      updatedAt: json['updated_at'] != null ? DateTime.parse(json['updated_at'] as String).toLocal() : null,
     );
   }
 
@@ -52,8 +52,8 @@ class Attachment {
       'size_bytes': sizeBytes,
       'width': width,
       'height': height,
-      'created_at': createdAt.toIso8601String(),
-      'updated_at': updatedAt.toIso8601String(),
+      'created_at': createdAt?.toIso8601String(),
+      'updated_at': updatedAt?.toIso8601String(),
     };
   }
 

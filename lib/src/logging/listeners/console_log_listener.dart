@@ -3,6 +3,7 @@
  * MIT License (see LICENSE file).
  */
 
+import 'package:flutter/cupertino.dart';
 import 'package:logging/logging.dart';
 import '../log_listener.dart';
 
@@ -13,7 +14,7 @@ class ConsoleLogListener implements LogListener {
 
   @override
   void onData(LogRecord record) {
-    print(record.toString());
+    debugPrint(record.toString());
 
     if (record.error != null && record.stackTrace != null) {
       onError(record.error!, record.stackTrace!);
@@ -26,10 +27,10 @@ class ConsoleLogListener implements LogListener {
 
   @override
   void onError(Object error, StackTrace stackTrace) {
-    print('Error: $error');
+    debugPrint('Error: $error');
 
     if (stackTrace != StackTrace.empty) {
-      print('Stack trace: $stackTrace');
+      debugPrint('Stack trace: $stackTrace');
     }
   }
 

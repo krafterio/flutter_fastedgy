@@ -78,8 +78,8 @@ class MetadataModel {
     required this.labelPlural,
     required this.searchable,
     required this.sortable,
-    this.sortableField,
     required this.fields,
+    this.sortableField,
   });
 
   /// Create a MetadataModel from JSON

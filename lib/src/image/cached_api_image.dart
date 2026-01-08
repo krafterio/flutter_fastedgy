@@ -75,8 +75,8 @@ class CachedApiImage extends StatefulWidget {
   final BlendMode? colorBlendMode;
 
   const CachedApiImage({
-    super.key,
     required this.path,
+    super.key,
     this.width,
     this.height,
     this.mode = ImageMode.cover,
