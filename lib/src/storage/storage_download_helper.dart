@@ -142,6 +142,15 @@ class StorageDownloadHelper {
     } else if (Platform.isIOS) {
       // On iOS, use app documents directory (accessible via Files app)
       return await getApplicationDocumentsDirectory();
+    } else if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
+      // On desktop platforms, try to get the Downloads directory
+      final downloadsDir = await getDownloadsDirectory();
+      if (downloadsDir != null) {
+        return downloadsDir;
+      }
+
+      // Fallback to application documents directory
+      return await getApplicationDocumentsDirectory();
     }
 
     throw StorageException('Unsupported platform');
