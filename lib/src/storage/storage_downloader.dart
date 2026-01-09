@@ -6,27 +6,22 @@
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
-import '../container/container.dart';
 import '../fetcher/client.dart';
 import '../logging/logger.dart';
 
 /// Service for downloading files from FastEdgy storage
 class StorageDownloader {
   final Fetcher _fetcher;
+  final String? prefix;
   final _logger = getLogger('StorageDownloader');
 
-  StorageDownloader(this._fetcher);
-
-  /// Factory to get StorageDownloader from DI container
-  factory StorageDownloader.instance() {
-    return StorageDownloader(getService<Fetcher>());
-  }
+  StorageDownloader(this._fetcher, {this.prefix});
 
   /// Download attachment as bytes
   ///
   /// Example:
   /// ```dart
-  /// final downloader = StorageDownloader.instance();
+  /// final downloader = getService<StorageDownloader>();
   /// final bytes = await downloader.downloadAttachment(
   ///   123,
   ///   forceDownload: true,
@@ -50,7 +45,7 @@ class StorageDownloader {
     if (outputFormat != null) params['e'] = outputFormat;
 
     final response = await _fetcher.get(
-      '/storage/download/attachments/$attachmentId',
+      '${prefix ?? ''}/storage/download/attachments/$attachmentId',
       params: params,
       responseType: ResponseType.bytes,
     );
@@ -65,7 +60,7 @@ class StorageDownloader {
   ///
   /// Example:
   /// ```dart
-  /// final downloader = StorageDownloader.instance();
+  /// final downloader = getService<StorageDownloader>();
   /// final file = await downloader.downloadAttachmentToFile(
   ///   123,
   ///   '/path/to/save/file.pdf',
@@ -95,7 +90,7 @@ class StorageDownloader {
   ///
   /// Example:
   /// ```dart
-  /// final downloader = StorageDownloader.instance();
+  /// final downloader = getService<StorageDownloader>();
   /// final bytes = await downloader.downloadPath(
   ///   'documents/123/file.pdf',
   ///   forceDownload: true,
@@ -122,7 +117,7 @@ class StorageDownloader {
     final cleanPath = path.startsWith('/') ? path.substring(1) : path;
 
     final response = await _fetcher.get(
-      '/storage/download/$cleanPath',
+      '${prefix ?? ''}/storage/download/$cleanPath',
       params: params,
       responseType: ResponseType.bytes,
     );
@@ -177,7 +172,7 @@ class StorageDownloader {
     if (outputFormat != null) params.add('e=$outputFormat');
 
     final queryString = params.isNotEmpty ? '?${params.join('&')}' : '';
-    return '/storage/download/attachments/$attachmentId$queryString';
+    return '${prefix ?? ''}/storage/download/attachments/$attachmentId$queryString';
   }
 
   /// Get file download URL from path
@@ -206,6 +201,6 @@ class StorageDownloader {
     final cleanPath = path.startsWith('/') ? path.substring(1) : path;
     final queryString = params.isNotEmpty ? '?${params.join('&')}' : '';
 
-    return '/storage/download/$cleanPath$queryString';
+    return '${prefix ?? ''}/storage/download/$cleanPath$queryString';
   }
 }

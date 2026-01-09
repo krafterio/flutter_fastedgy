@@ -62,6 +62,8 @@ Future<void> initializeFastEdgy({
   int? imageCacheMaxEntries,
   int? imageCacheMaxSizeBytes,
 
+  String? storagePrefix,
+
   // Core services factories (overridable)
   Bus Function()? busFactory,
   TokenStorage Function()? tokenStorageFactory,
@@ -146,7 +148,7 @@ Future<void> initializeFastEdgy({
   if (!hasService<StorageDownloader>()) {
     container.registerSingleton<StorageDownloader>(
       storageDownloaderFactory?.call() ??
-          StorageDownloader(getService<Fetcher>()),
+          StorageDownloader(getService<Fetcher>(), prefix: storagePrefix ?? ''),
     );
   }
 
@@ -154,7 +156,7 @@ Future<void> initializeFastEdgy({
   if (!hasService<StorageUploader>()) {
     container.registerSingleton<StorageUploader>(
       storageUploaderFactory?.call() ??
-          StorageUploader(getService<Fetcher>()),
+          StorageUploader(getService<Fetcher>(), prefix: storagePrefix ?? ''),
     );
   }
 }

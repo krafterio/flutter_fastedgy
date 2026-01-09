@@ -8,7 +8,6 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as path;
-import '../container/container.dart';
 import '../fetcher/client.dart';
 import '../logging/logger.dart';
 import 'models.dart';
@@ -17,20 +16,16 @@ import '../api/attachment.dart';
 /// Service for uploading files to FastEdgy storage
 class StorageUploader {
   final Fetcher _fetcher;
+  final String? prefix;
   final _logger = getLogger('StorageUploader');
 
-  StorageUploader(this._fetcher);
-
-  /// Factory to get StorageUploader from DI container
-  factory StorageUploader.instance() {
-    return StorageUploader(getService<Fetcher>());
-  }
+  StorageUploader(this._fetcher, {this.prefix});
 
   /// Upload a file to a model field
   ///
   /// Example:
   /// ```dart
-  /// final uploader = StorageUploader.instance();
+  /// final uploader = getService<StorageUploader>();
   /// final result = await uploader.uploadModelField(
   ///   model: 'user',
   ///   modelId: 123,
@@ -88,7 +83,7 @@ class StorageUploader {
     });
 
     // Upload with optional progress tracking
-    final url = '/storage/upload/$model/$modelId/$field';
+    final url = '${prefix ?? ''}/storage/upload/$model/$modelId/$field';
     _logger.fine('Uploading to $url (${fileBytes.length} bytes)');
 
     final response = await _fetcher.post(
@@ -113,7 +108,7 @@ class StorageUploader {
     required int modelId,
     required String field,
   }) async {
-    final url = '/storage/file/$model/$modelId/$field';
+    final url = '${prefix ?? ''}/storage/file/$model/$modelId/$field';
     _logger.fine('Deleting file at $url');
 
     await _fetcher.delete(url);
@@ -212,7 +207,7 @@ class StorageUploader {
   ///
   /// Example:
   /// ```dart
-  /// final uploader = StorageUploader.instance();
+  /// final uploader = getService<StorageUploader>();
   /// final attachments = await uploader.uploadAttachments(
   ///   {
   ///     'file1': File('/path/to/file1.pdf'),
@@ -248,7 +243,7 @@ class StorageUploader {
     }
 
     // Upload all files
-    const url = '/storage/upload/attachments';
+    final url = '${prefix ?? ''}/storage/upload/attachments';
     _logger.fine('Uploading to $url');
 
     final response = await _fetcher.post(
@@ -276,7 +271,7 @@ class StorageUploader {
   ///
   /// Example:
   /// ```dart
-  /// final uploader = StorageUploader.instance();
+  /// final uploader = getService<StorageUploader>();
   /// final attachments = await uploader.uploadAttachmentsFromBytes(
   ///   {
   ///     'file1': bytes1,
@@ -312,7 +307,7 @@ class StorageUploader {
     }
 
     // Upload all files
-    const url = '/storage/upload/attachments';
+    final url = '${prefix ?? ''}/storage/upload/attachments';
     _logger.fine('Uploading to $url');
 
     final response = await _fetcher.post(
