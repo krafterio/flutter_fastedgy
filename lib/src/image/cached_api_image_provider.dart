@@ -6,10 +6,8 @@
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:dio/dio.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../container/container.dart';
-import '../fetcher/client.dart';
+import '../storage/storage_downloader.dart';
 import '../logging/logger.dart';
 import 'image_cache.dart' as fastedgy_cache;
 import 'image_dimensions_helper.dart';
@@ -84,34 +82,6 @@ class CachedApiImageProvider extends ImageProvider<CachedApiImageProvider> {
     return '$path|${widthStr}x$heightStr|$mode|$fmt';
   }
 
-  String _buildUrl({Size? configurationSize}) {
-    final apiBaseUrl = dotenv.env['API_BASE_URL'] ?? '';
-    final url = '$apiBaseUrl/storage/download/$path';
-
-    final params = <String, String>{};
-    final (physicalWidth, physicalHeight) = _getPhysicalDimensions(configurationSize: configurationSize);
-
-    if (physicalWidth != null) {
-      params['w'] = physicalWidth.toString();
-    }
-    if (physicalHeight != null) {
-      params['h'] = physicalHeight.toString();
-    }
-    params['m'] = mode;
-    if (format != null) {
-      params['e'] = format!;
-    }
-
-    if (params.isEmpty) {
-      return url;
-    }
-
-    final queryString = params.entries
-        .map((e) => '${Uri.encodeComponent(e.key)}=${Uri.encodeComponent(e.value)}')
-        .join('&');
-
-    return '$url?$queryString';
-  }
 
   @override
   Future<CachedApiImageProvider> obtainKey(ImageConfiguration configuration) {
@@ -177,17 +147,19 @@ class CachedApiImageProvider extends ImageProvider<CachedApiImageProvider> {
     }
 
     // Start new request
-    final fetcher = getService<Fetcher>();
-    final url = _buildUrl(configurationSize: configurationSize);
+    final downloader = getService<StorageDownloader>();
+    final (physicalWidth, physicalHeight) = _getPhysicalDimensions(configurationSize: configurationSize);
 
     final logger = getLogger('CachedApiImageProvider');
-    logger.finer('Loading image from $url');
+    logger.finer('Loading image from path: $path with dimensions: ${physicalWidth}x$physicalHeight');
 
-    final future = fetcher
-        .get(url, responseType: ResponseType.bytes)
-        .then((response) {
-      return Uint8List.fromList(response.data as List<int>);
-    });
+    final future = downloader.downloadPath(
+      path,
+      width: physicalWidth,
+      height: physicalHeight,
+      resizeMode: mode,
+      outputFormat: format,
+    );
 
     imageCache.setPendingRequest(cacheKey, future);
 

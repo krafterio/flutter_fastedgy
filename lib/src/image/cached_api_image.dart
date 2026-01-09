@@ -4,11 +4,9 @@
  */
 
 import 'dart:typed_data';
-import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../container/container.dart';
-import '../fetcher/client.dart';
+import '../storage/storage_downloader.dart';
 import '../logging/logger.dart';
 import 'image_cache.dart' as fastedgy_cache;
 import 'image_dimensions_helper.dart';
@@ -182,34 +180,6 @@ class _CachedApiImageState extends State<CachedApiImage> {
     return '${widget.path}|${widthStr}x${heightStr}|${widget.mode.value}|$format';
   }
 
-  String _buildUrl({BoxConstraints? constraints}) {
-    final apiBaseUrl = dotenv.env['API_BASE_URL'] ?? '';
-    final url = '$apiBaseUrl/storage/download/${widget.path}';
-
-    final params = <String, String>{};
-    final (physicalWidth, physicalHeight) = _getPhysicalDimensions(constraints: constraints);
-
-    if (physicalWidth != null) {
-      params['w'] = physicalWidth.toString();
-    }
-    if (physicalHeight != null) {
-      params['h'] = physicalHeight.toString();
-    }
-    params['m'] = widget.mode.value;
-    if (widget.format != null) {
-      params['e'] = widget.format!;
-    }
-
-    if (params.isEmpty) {
-      return url;
-    }
-
-    final queryString = params.entries
-        .map((e) => '${Uri.encodeComponent(e.key)}=${Uri.encodeComponent(e.value)}')
-        .join('&');
-
-    return '$url?$queryString';
-  }
 
   Future<void> _loadImage({BoxConstraints? constraints}) async {
     if (!mounted || _isDisposed) return;
@@ -267,16 +237,18 @@ class _CachedApiImageState extends State<CachedApiImage> {
     try {
       if (!mounted || _isDisposed) return;
 
-      final fetcher = getService<Fetcher>();
-      final url = _buildUrl(constraints: constraints);
+      final downloader = getService<StorageDownloader>();
+      final (physicalWidth, physicalHeight) = _getPhysicalDimensions(constraints: constraints);
 
-      _logger.finer('Loading image from $url');
+      _logger.finer('Loading image from path: ${widget.path} with dimensions: ${physicalWidth}x$physicalHeight');
 
-      final future = fetcher
-          .get(url, responseType: ResponseType.bytes)
-          .then((response) {
-        return Uint8List.fromList(response.data as List<int>);
-      });
+      final future = downloader.downloadPath(
+        widget.path,
+        width: physicalWidth,
+        height: physicalHeight,
+        resizeMode: widget.mode.value,
+        outputFormat: widget.format,
+      );
 
       imageCache.setPendingRequest(cacheKey, future);
 
