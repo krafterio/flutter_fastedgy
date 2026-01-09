@@ -8,5 +8,6 @@ export 'api_model.dart';
 export 'api_query.dart';
 export 'attachment.dart';
 export 'base_model.dart';
+export 'dataset.dart';
 export 'mixins.dart';
 export 'pagination_result.dart';
