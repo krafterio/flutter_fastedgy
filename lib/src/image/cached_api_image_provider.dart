@@ -91,23 +91,14 @@ class CachedApiImageProvider extends ImageProvider<CachedApiImageProvider> {
   @override
   ImageStreamCompleter loadImage(CachedApiImageProvider key, ImageDecoderCallback decode) {
     return MultiFrameImageStreamCompleter(
-      codec: _loadAsync(key, decode, null),
-      scale: 1.0,
-    );
-  }
-
-  @override
-  ImageStreamCompleter loadBuffer(CachedApiImageProvider key, DecoderBufferCallback decode) {
-    return MultiFrameImageStreamCompleter(
-      codec: _loadAsync(key, null, decode),
+      codec: _loadAsync(key, decode),
       scale: 1.0,
     );
   }
 
   Future<ui.Codec> _loadAsync(
     CachedApiImageProvider key,
-    ImageDecoderCallback? legacyDecode,
-    DecoderBufferCallback? decode,
+    ImageDecoderCallback decode,
   ) async {
     // Try to get size from the key's context if available
     Size? configurationSize;
@@ -127,11 +118,7 @@ class CachedApiImageProvider extends ImageProvider<CachedApiImageProvider> {
     final cachedImage = imageCache.getCachedImage(cacheKey);
     if (cachedImage != null) {
       final buffer = await ui.ImmutableBuffer.fromUint8List(cachedImage);
-      if (decode != null) {
-        return decode(buffer);
-      } else if (legacyDecode != null) {
-        return legacyDecode(buffer);
-      }
+      return decode(buffer);
     }
 
     // Check pending request
@@ -139,11 +126,7 @@ class CachedApiImageProvider extends ImageProvider<CachedApiImageProvider> {
     if (pendingRequest != null) {
       final bytes = await pendingRequest;
       final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
-      if (decode != null) {
-        return decode(buffer);
-      } else if (legacyDecode != null) {
-        return legacyDecode(buffer);
-      }
+      return decode(buffer);
     }
 
     // Start new request
@@ -167,15 +150,7 @@ class CachedApiImageProvider extends ImageProvider<CachedApiImageProvider> {
     imageCache.cacheImage(cacheKey, bytes);
 
     final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
-
-    // Use the appropriate decode callback
-    if (decode != null) {
-      return decode(buffer);
-    } else if (legacyDecode != null) {
-      return legacyDecode(buffer);
-    } else {
-      throw StateError('No decode callback provided');
-    }
+    return decode(buffer);
   }
 
   @override

@@ -177,7 +177,7 @@ class _CachedApiImageState extends State<CachedApiImage> {
     final widthStr = physicalWidth?.toString() ?? 'auto';
     final heightStr = physicalHeight?.toString() ?? 'auto';
     final format = widget.format ?? 'webp';
-    return '${widget.path}|${widthStr}x${heightStr}|${widget.mode.value}|$format';
+    return '${widget.path}|${widthStr}x$heightStr|${widget.mode.value}|$format';
   }
 
 
