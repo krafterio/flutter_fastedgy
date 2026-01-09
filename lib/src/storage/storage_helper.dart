@@ -55,17 +55,25 @@ String getFileTypeIcon(String mimeType) {
   if (mimeType.contains('pdf')) return 'picture_as_pdf';
   if (mimeType.contains('word') ||
       mimeType.contains('document') ||
-      mimeType.contains('text/plain')) return 'description';
+      mimeType.contains('text/plain')) {
+    return 'description';
+  }
   if (mimeType.contains('sheet') ||
       mimeType.contains('excel') ||
-      mimeType.contains('csv')) return 'table_chart';
+      mimeType.contains('csv')) {
+    return 'table_chart';
+  }
   if (mimeType.contains('presentation') ||
-      mimeType.contains('powerpoint')) return 'slideshow';
+      mimeType.contains('powerpoint')) {
+    return 'slideshow';
+  }
   if (mimeType.contains('zip') ||
       mimeType.contains('rar') ||
       mimeType.contains('7z') ||
       mimeType.contains('tar') ||
-      mimeType.contains('gz')) return 'folder_zip';
+      mimeType.contains('gz')) {
+    return 'folder_zip';
+  }
 
   return 'insert_drive_file';
 }
