@@ -14,7 +14,7 @@ void main() {
   // Initialize dotenv for tests (required by Fetcher.create)
   setUpAll(() async {
     // Create a test .env file content in memory
-    dotenv.testLoad(fileInput: 'API_BASE_URL=http://localhost:8000');
+    dotenv.loadFromString(envString: 'API_BASE_URL=http://localhost:8000');
   });
 
   group('TimezoneProvider', () {
