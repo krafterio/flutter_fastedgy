@@ -3,6 +3,8 @@
  * MIT License (see LICENSE file).
  */
 
+import 'package:flutter_fastedgy/flutter_fastedgy.dart';
+
 import '../api/api.dart';
 
 /// Attachment model
@@ -52,4 +54,38 @@ class AttachmentApi extends ApiModel<Attachment> {
 
   @override
   Attachment fromJson(Map<String, dynamic> json) => Attachment.fromJson(json);
+
+  @override
+  Future<Attachment> create(
+    Map<String, dynamic> payload, {
+    FieldsOptions? options,
+    ApiParams? params,
+  }) async {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<Response> export({
+    ExportQuery? query,
+    ApiParams? params,
+  }) async {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<Response> import(
+    List<int> file,
+    String fileName, {
+    ApiParams? params,
+  }) async {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<Response> importTemplate({
+    ImportTemplateQuery? query,
+    ApiParams? params,
+  }) async {
+    throw UnimplementedError();
+  }
 }
