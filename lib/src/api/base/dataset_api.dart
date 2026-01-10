@@ -1,4 +1,4 @@
-import 'package:flutter_fastedgy/flutter_fastedgy.dart';
+import '../../fetcher/client.dart';
 
 /// Request schema for resequencing records within a list while allowing group reassignment.
 class ResequenceRequest {
@@ -58,11 +58,11 @@ class Resequence {
 
   const Resequence({
     required this.modelName,
+    required this.records,
     this.sequenceField,
     this.sequenceOffset = 0,
     this.groupField,
     this.groupValue,
-    required this.records,
   });
 
   factory Resequence.fromJson(Map<String, dynamic> json) => Resequence(
@@ -88,14 +88,14 @@ class Resequence {
 
 /// Dataset API
 class DatasetApi {
-  final String basePath;
-
   final Fetcher _fetcher;
 
-  DatasetApi(this._fetcher, {this.basePath = ''});
+  final String? basePath;
+
+  DatasetApi(this._fetcher, {this.basePath});
 
   Future<Resequence> resequence(ResequenceRequest request) async {
-    final response = await _fetcher.put('$basePath/dataset/resequence', request);
+    final response = await _fetcher.put('${basePath ?? ''}/dataset/resequence', request);
     return Resequence.fromJson(response.data as Map<String, dynamic>);
   }
 }

@@ -3,9 +3,10 @@
  * MIT License (see LICENSE file).
  */
 
-import 'package:flutter_fastedgy/flutter_fastedgy.dart';
-
-import '../api/api.dart';
+import 'package:dio/dio.dart';
+import '../base_model.dart';
+import '../api_model.dart';
+import '../api_query.dart';
 
 /// Attachment model
 class Attachment extends BaseModel {
@@ -50,7 +51,7 @@ class Attachment extends BaseModel {
 
 /// Attachment API
 class AttachmentApi extends ApiModel<Attachment> {
-  AttachmentApi({String prefix = '/{app}'}) : super('$prefix/attachments');
+  AttachmentApi(String? basePath) : super('${basePath ?? ''}/attachments');
 
   @override
   Attachment fromJson(Map<String, dynamic> json) => Attachment.fromJson(json);

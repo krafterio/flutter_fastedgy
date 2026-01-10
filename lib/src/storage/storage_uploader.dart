@@ -10,8 +10,8 @@ import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as path;
 import '../fetcher/client.dart';
 import '../logging/logger.dart';
+import '../api/base/attachment_api.dart';
 import 'models.dart';
-import '../api/attachment.dart';
 
 /// Service for uploading files to FastEdgy storage
 class StorageUploader {
