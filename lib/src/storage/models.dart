@@ -4,30 +4,14 @@
  */
 
 import 'package:image/image.dart' as img;
+import '../api/base_model.dart';
 
 /// Result of a storage upload operation
-class StorageUploadResult {
-  /// The storage path of the uploaded file
-  final String path;
+class StorageUploadResult extends DynamicSchema<StorageUploadResult> {
+  StorageUploadResult(super.data);
 
-  const StorageUploadResult({
-    required this.path,
-  });
-
-  factory StorageUploadResult.fromJson(Map<String, dynamic> json) {
-    return StorageUploadResult(
-      path: json['path'] as String,
-    );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'path': path,
-    };
-  }
-
-  @override
-  String toString() => 'StorageUploadResult(path: $path)';
+  String get path => getString('path')!;
+  set path(String value) => setString('path', value);
 }
 
 /// Image format for compression

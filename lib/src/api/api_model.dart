@@ -6,9 +6,21 @@
 import 'package:dio/dio.dart';
 import '../fetcher/client.dart';
 import '../container/container.dart';
+import 'base_model.dart';
 import 'api_helpers.dart';
 import 'pagination_result.dart';
 import 'api_query.dart';
+
+enum ApiAction {
+  list,
+  get,
+  create,
+  update,
+  delete,
+  export,
+  import,
+  importTemplate,
+}
 
 /// Base class for API Models
 ///
@@ -17,31 +29,18 @@ import 'api_query.dart';
 ///
 /// Example:
 /// ```dart
-/// class User {
-///   final String id;
-///   final String name;
-///   final String email;
+/// class User extends BaseModel<User> {
+///   User(super.data);
 ///
-///   User({required this.id, required this.name, required this.email});
+///   String get name => getString('name')!;
+///   set name(String value) => setString('name', value);
 ///
-///   factory User.fromJson(Map<String, dynamic> json) {
-///     return User(
-///       id: json['id'] as String,
-///       name: json['name'] as String,
-///       email: json['email'] as String,
-///     );
-///   }
-///
-///   Map<String, dynamic> toJson() {
-///     return {'id': id, 'name': name, 'email': email};
-///   }
+///   String get email => getString('email')!;
+///   set email(String value) => setString('email', value);
 /// }
 ///
 /// class UserApi extends ApiModel<User> {
 ///   UserApi() : super('/users');
-///
-///   @override
-///   User fromJson(Map<String, dynamic> json) => User.fromJson(json);
 /// }
 ///
 /// // Usage
@@ -50,12 +49,14 @@ import 'api_query.dart';
 /// final user = await userApi.get(123); // or '123'
 /// final created = await userApi.create({'name': 'John', 'email': 'john@example.com'});
 /// ```
-abstract class ApiModel<T> {
+abstract class ApiModel<T extends BaseModel<T>> {
   /// The base path for this resource (e.g., '/users')
   final String basePath;
 
   /// The HTTP client used for requests
   final Fetcher _fetcher;
+
+  Set<ApiAction> get disabledActions => {};
 
   /// Create an API model for a specific resource
   ///
@@ -67,7 +68,7 @@ abstract class ApiModel<T> {
   /// Convert JSON to model instance
   ///
   /// Must be implemented by subclasses.
-  T fromJson(Map<String, dynamic> json);
+  T fromJson(Map<String, dynamic> json) => DynamicSchema<T>(json) as T;
 
   /// List resources with pagination
   ///
@@ -92,6 +93,10 @@ abstract class ApiModel<T> {
     ListQuery? query,
     ApiParams? params,
   }) async {
+    if (disabledActions.contains(ApiAction.list)) {
+      throw Exception('List action is not available for this model');
+    }
+
     final queryMap = query?.toMap() ?? {};
     final paramsMap = params?.toMap() ?? {};
 
@@ -101,10 +106,7 @@ abstract class ApiModel<T> {
       headers: ApiHelpers.buildHeaders(queryMap, extraHeaders: paramsMap['headers'] as Map<String, dynamic>?),
     );
 
-    return PaginationResult.fromJson(
-      response.data as Map<String, dynamic>,
-      fromJson,
-    );
+    return PaginationResult.fromJson(response.data, fromJson);
   }
 
   /// Get a single resource by ID
@@ -125,6 +127,10 @@ abstract class ApiModel<T> {
     FieldsOptions? options,
     ApiParams? params,
   }) async {
+    if (disabledActions.contains(ApiAction.get)) {
+      throw Exception('Get action is not available for this model');
+    }
+
     final optionsMap = options?.toMap() ?? {};
     final paramsMap = params?.toMap() ?? {};
 
@@ -135,7 +141,7 @@ abstract class ApiModel<T> {
       headers: headers,
     );
 
-    return fromJson(response.data as Map<String, dynamic>);
+    return fromJson(response.data);
   }
 
   /// Create a new resource
@@ -154,10 +160,14 @@ abstract class ApiModel<T> {
   /// );
   /// ```
   Future<T> create(
-    Map<String, dynamic> payload, {
+    DynamicSchema<T> payload, {
     FieldsOptions? options,
     ApiParams? params,
   }) async {
+    if (disabledActions.contains(ApiAction.create)) {
+      throw Exception('Create action is not available for this model');
+    }
+
     final optionsMap = options?.toMap() ?? {};
     final paramsMap = params?.toMap() ?? {};
 
@@ -165,11 +175,11 @@ abstract class ApiModel<T> {
 
     final response = await _fetcher.post(
       basePath,
-      payload,
+      payload.toJson(),
       headers: headers,
     );
 
-    return fromJson(response.data as Map<String, dynamic>);
+    return fromJson(response.data);
   }
 
   /// Update an existing resource (PATCH)
@@ -191,10 +201,14 @@ abstract class ApiModel<T> {
   /// ```
   Future<T> update(
     Object id,
-    Map<String, dynamic> payload, {
+    DynamicSchema<T> payload, {
     FieldsOptions? options,
     ApiParams? params,
   }) async {
+    if (disabledActions.contains(ApiAction.update)) {
+      throw Exception('Update action is not available for this model');
+    }
+
     final optionsMap = options?.toMap() ?? {};
     final paramsMap = params?.toMap() ?? {};
 
@@ -202,11 +216,11 @@ abstract class ApiModel<T> {
 
     final response = await _fetcher.patch(
       '$basePath/${id.toString()}',
-      payload,
+      payload.toJson(),
       headers: headers,
     );
 
-    return fromJson(response.data as Map<String, dynamic>);
+    return fromJson(response.data);
   }
 
   /// Delete a resource
@@ -222,6 +236,10 @@ abstract class ApiModel<T> {
     Object id, {
     ApiParams? params,
   }) async {
+    if (disabledActions.contains(ApiAction.delete)) {
+      throw Exception('Delete action is not available for this model');
+    }
+
     final paramsMap = params?.toMap() ?? {};
     final headers = paramsMap['headers'] as Map<String, dynamic>?;
 
@@ -252,6 +270,10 @@ abstract class ApiModel<T> {
     ExportQuery? query,
     ApiParams? params,
   }) async {
+    if (disabledActions.contains(ApiAction.export)) {
+      throw Exception('Export action is not available for this model');
+    }
+
     final queryMap = query?.toMap() ?? {};
     if (queryMap['format'] == null) {
       queryMap['format'] = 'csv';
@@ -287,6 +309,10 @@ abstract class ApiModel<T> {
     String fileName, {
     ApiParams? params,
   }) async {
+    if (disabledActions.contains(ApiAction.import)) {
+      throw Exception('Import action is not available for this model');
+    }
+
     final formData = FormData.fromMap({
       'file': MultipartFile.fromBytes(
         file,
@@ -324,6 +350,10 @@ abstract class ApiModel<T> {
     ImportTemplateQuery? query,
     ApiParams? params,
   }) async {
+    if (disabledActions.contains(ApiAction.importTemplate)) {
+      throw Exception('Import template action is not available for this model');
+    }
+
     final queryMap = query?.toMap() ?? {};
     if (queryMap['format'] == null) {
       queryMap['format'] = 'xlsx';
@@ -339,3 +369,14 @@ abstract class ApiModel<T> {
     );
   }
 }
+
+// Generic base model and api model
+class GenericBaseModel extends BaseModel<GenericBaseModel> {
+  GenericBaseModel(super.data);
+}
+
+class GenericApiModel extends ApiModel<GenericBaseModel> {
+  GenericApiModel(super.basePath, {super.fetcher});
+}
+
+GenericApiModel useGenericApiModel(String basePath) => GenericApiModel(basePath);

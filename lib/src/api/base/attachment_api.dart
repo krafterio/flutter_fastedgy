@@ -3,16 +3,12 @@
  * MIT License (see LICENSE file).
  */
 
-import 'package:dio/dio.dart';
 import '../base_model.dart';
 import '../api_model.dart';
-import '../api_query.dart';
 
 /// Attachment model
 class Attachment extends BaseModel<Attachment> {
   Attachment(super.data);
-
-  factory Attachment.fromJson(Map<String, dynamic> json) => Attachment(json);
 
   String get name => getString('name')!;
   set name(String value) => setString('name', value);
@@ -44,9 +40,6 @@ class Attachment extends BaseModel<Attachment> {
       mimeType.contains('pdf') ||
       mimeType.contains('document') ||
       mimeType.contains('text');
-
-  @override
-  String toString() => 'Attachment(id: $id, name: $filename, size: $sizeBytes)';
 }
 
 /// Attachment API
@@ -54,39 +47,10 @@ class AttachmentApi extends ApiModel<Attachment> {
   AttachmentApi(String? basePath) : super('${basePath ?? ''}/attachments');
 
   @override
-  Attachment fromJson(Map<String, dynamic> json) => Attachment.fromJson(json);
-
-  @override
-  Future<Attachment> create(
-    Map<String, dynamic> payload, {
-    FieldsOptions? options,
-    ApiParams? params,
-  }) async {
-    throw UnimplementedError();
-  }
-
-  @override
-  Future<Response> export({
-    ExportQuery? query,
-    ApiParams? params,
-  }) async {
-    throw UnimplementedError();
-  }
-
-  @override
-  Future<Response> import(
-    List<int> file,
-    String fileName, {
-    ApiParams? params,
-  }) async {
-    throw UnimplementedError();
-  }
-
-  @override
-  Future<Response> importTemplate({
-    ImportTemplateQuery? query,
-    ApiParams? params,
-  }) async {
-    throw UnimplementedError();
-  }
+  Set<ApiAction> get disabledActions => {
+    ApiAction.create,
+    ApiAction.export,
+    ApiAction.import,
+    ApiAction.importTemplate,
+  };
 }

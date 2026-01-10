@@ -95,7 +95,7 @@ class StorageUploader {
       onSendProgress: onProgress,
     );
 
-    final result = StorageUploadResult.fromJson(response.data as Map<String, dynamic>);
+    final result = StorageUploadResult(response.data);
     _logger.info('Upload successful: ${result.path}');
 
     return result;
@@ -259,7 +259,7 @@ class StorageUploader {
     final attachmentsList = responseData['attachments'] as List;
 
     final attachments = attachmentsList
-        .map((item) => Attachment.fromJson(item as Map<String, dynamic>))
+        .map((item) => Attachment(item))
         .toList();
 
     _logger.info('Uploaded ${attachments.length} attachments successfully');
@@ -323,7 +323,7 @@ class StorageUploader {
     final attachmentsList = responseData['attachments'] as List;
 
     final attachments = attachmentsList
-        .map((item) => Attachment.fromJson(item as Map<String, dynamic>))
+        .map((item) => Attachment(item))
         .toList();
 
     _logger.info('Uploaded ${attachments.length} attachments successfully');

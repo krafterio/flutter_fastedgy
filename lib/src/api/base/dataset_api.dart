@@ -1,93 +1,75 @@
 import '../../fetcher/client.dart';
+import '../base_model.dart';
 
 /// Request schema for resequencing records within a list while allowing group reassignment.
-class ResequenceRequest {
-  final String modelName;
+class ResequenceRequest extends DynamicSchema<ResequenceRequest> {
+  ResequenceRequest._(super.data);
 
-  final String? sequenceField;
+  factory ResequenceRequest({
+    required String modelName,
+    required List<int> ids,
+    String? sequenceField,
+    int sequenceOffset = 0,
+    String? groupField,
+    dynamic groupValue,
+    Map<String, dynamic>? extra,
+  }) {
+    final data = <String, dynamic>{
+      'model_name': modelName,
+      'sequence_offset': sequenceOffset,
+      if (sequenceField != null) 'sequence_field': sequenceField,
+      if (groupField != null) 'group_field': groupField,
+      if (groupValue != null) 'group_value': groupValue,
+      'ids': ids,
+      if (extra != null) ...extra,
+    };
+    return ResequenceRequest._(data);
+  }
 
-  final int sequenceOffset;
+  String get modelName => getString('model_name')!;
+  set modelName(String value) => setString('model_name', value);
 
-  final String? groupField;
+  String? get sequenceField => getString('sequence_field');
+  set sequenceField(String? value) => setString('sequence_field', value);
 
-  final dynamic groupValue;
+  int get sequenceOffset => getInt('sequence_offset')!;
+  set sequenceOffset(int value) => setInt('sequence_offset', value);
 
-  final List<int> ids;
+  String? get groupField => getString('group_field');
+  set groupField(String? value) => setString('group_field', value);
 
-  const ResequenceRequest({
-    required this.modelName,
-    required this.ids,
-    this.sequenceField,
-    this.sequenceOffset = 0,
-    this.groupField,
-    this.groupValue,
-  });
+  dynamic get groupValue => getField('group_value');
+  set groupValue(dynamic value) => setField('group_value', value);
 
-  factory ResequenceRequest.fromJson(Map<String, dynamic> json) => ResequenceRequest(
-        modelName: json['model_name'] as String,
-        sequenceField: json['sequence_field'] as String?,
-        sequenceOffset: json['sequence_offset'] as int? ?? 0,
-        groupField: json['group_field'] as String?,
-        groupValue: json['group_value'],
-        ids: (json['ids'] as List<dynamic>).map((e) => e as int).toList(),
-      );
-
-  Map<String, dynamic> toJson() => {
-        'model_name': modelName,
-        'sequence_field': sequenceField,
-        'sequence_offset': sequenceOffset,
-        'group_field': groupField,
-        'group_value': groupValue,
-        'ids': ids,
-      };
+  List<int> get ids => getList('ids')!;
+  set ids(List<int> value) => setList('ids', value);
 }
 
 /// Response schema for resequence operation result
-class Resequence {
-  final String modelName;
+class Resequence<T extends DynamicSchema<T>> extends DynamicSchema<Resequence<T>> {
+  Resequence(super.data);
 
-  final String? sequenceField;
+  String get modelName => getString('model_name')!;
+  set modelName(String value) => setString('model_name', value);
 
-  final int sequenceOffset;
+  String? get sequenceField => getString('sequence_field');
+  set sequenceField(String? value) => setString('sequence_field', value);
 
-  final String? groupField;
+  int get sequenceOffset => getInt('sequence_offset')!;
+  set sequenceOffset(int value) => setInt('sequence_offset', value);
 
-  final dynamic groupValue;
+  String? get groupField => getString('group_field');
+  set groupField(String? value) => setString('group_field', value);
 
-  final List<Map<String, dynamic>> records;
+  dynamic get groupValue => getField('group_value');
+  set groupValue(dynamic value) => setField('group_value', value);
 
-  const Resequence({
-    required this.modelName,
-    required this.records,
-    this.sequenceField,
-    this.sequenceOffset = 0,
-    this.groupField,
-    this.groupValue,
-  });
-
-  factory Resequence.fromJson(Map<String, dynamic> json) => Resequence(
-        modelName: json['model_name'] as String,
-        sequenceField: json['sequence_field'] as String?,
-        sequenceOffset: json['sequence_offset'] as int? ?? 0,
-        groupField: json['group_field'] as String?,
-        groupValue: json['group_value'],
-        records: (json['records'] as List<dynamic>)
-            .map((e) => Map<String, dynamic>.from(e as Map))
-            .toList(),
-      );
-
-  Map<String, dynamic> toJson() => {
-        'model_name': modelName,
-        'sequence_field': sequenceField,
-        'sequence_offset': sequenceOffset,
-        'group_field': groupField,
-        'group_value': groupValue,
-        'records': records,
-      };
+  List<T> get records => getList('records')!;
+  set records(List<T> value) => setList('records', value);
 }
 
 /// Dataset API
-class DatasetApi {
+class DatasetApi<R extends DynamicSchema<R>> {
   final Fetcher _fetcher;
 
   final String? basePath;
@@ -95,7 +77,7 @@ class DatasetApi {
   DatasetApi(this._fetcher, {this.basePath});
 
   Future<Resequence> resequence(ResequenceRequest request) async {
-    final response = await _fetcher.put('${basePath ?? ''}/dataset/resequence', request);
-    return Resequence.fromJson(response.data as Map<String, dynamic>);
+    final response = await _fetcher.put('${basePath ?? ''}/dataset/resequence', request.toJson());
+    return Resequence<R>(response.data);
   }
 }

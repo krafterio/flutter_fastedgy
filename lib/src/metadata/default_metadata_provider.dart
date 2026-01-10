@@ -68,7 +68,7 @@ class DefaultMetadataProvider implements MetadataProvider {
       _logger.finer('Fetching metadata from $url');
 
       final response = await _fetcher.get(url);
-      final data = response.data as Map<String, dynamic>;
+      final data = response.data;
 
       // Parse metadata models
       _metadatas = data.map(
