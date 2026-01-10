@@ -9,7 +9,7 @@ import '../api_model.dart';
 import '../api_query.dart';
 
 /// Attachment model
-class Attachment extends BaseModel {
+class Attachment extends BaseModel<Attachment> {
   Attachment(super.data);
 
   factory Attachment.fromJson(Map<String, dynamic> json) => Attachment(json);

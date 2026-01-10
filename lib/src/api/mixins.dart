@@ -10,7 +10,7 @@
 ///
 /// Example:
 /// ```dart
-/// class MyModel extends BaseModel with WorkspaceableMixin {
+/// class MyModel extends BaseModel<MyModel> with WorkspaceableMixin {
 ///   final String name;
 ///
 ///   MyModel({
@@ -44,7 +44,7 @@ mixin WorkspaceableMixin {
 ///
 /// Example:
 /// ```dart
-/// class MyModel extends BaseModel with BlameableMixin {
+/// class MyModel extends BaseModel<MyModel> with BlameableMixin {
 ///   final String name;
 ///   @override
 ///   final dynamic createdBy;
