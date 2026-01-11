@@ -7,6 +7,7 @@ export 'api_helpers.dart';
 export 'api_model.dart';
 export 'api_query.dart';
 export 'base_model.dart';
+export 'error_formatter.dart';
 export 'mixins.dart';
 export 'pagination_result.dart';
 export 'base/attachment_api.dart';
