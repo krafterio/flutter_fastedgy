@@ -169,6 +169,13 @@ class ImageCache {
     _pendingRequests[url] = future;
   }
 
+  /// Remove pending request
+  ///
+  /// Clears the pending request entry without affecting cached images.
+  void removePendingRequest(String url) {
+    _pendingRequests.remove(url);
+  }
+
   /// Pin a path
   ///
   /// Marks all images starting with this path as pinned.
@@ -315,10 +322,9 @@ class ImageCache {
   int get cacheMisses => _cacheMisses;
 
   /// Get hit rate (0.0 to 1.0)
-  double get hitRate =>
-      (_cacheHits + _cacheMisses) > 0
-          ? _cacheHits / (_cacheHits + _cacheMisses)
-          : 0.0;
+  double get hitRate => (_cacheHits + _cacheMisses) > 0
+      ? _cacheHits / (_cacheHits + _cacheMisses)
+      : 0.0;
 
   /// Get cache statistics
   ImageCacheStats getStats() {
