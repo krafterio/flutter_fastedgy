@@ -143,43 +143,32 @@ class DefaultAuthProvider implements AuthProvider {
 
   @override
   Future<bool> refreshToken() async {
-    try {
-      final refreshToken = await _tokenStorage.getRefreshToken();
-      if (refreshToken == null) {
-        _logger.warning('No refresh token available');
-        return false;
-      }
-
-      _logger.finer('Refreshing token');
-
-      final response = await _getFetcher.post(
-        '/auth/refresh',
-        {
-          'refresh_token': refreshToken,
-        },
-      );
-
-      final data = response.data as Map<String, dynamic>;
-      final newAccessToken = data['access_token'] as String?;
-
-      if (newAccessToken != null) {
-        await _tokenStorage.saveAccessToken(newAccessToken);
-        _logger.finer('Token refreshed successfully');
-        return true;
-      }
-
-      _logger.warning('No access token in refresh response');
-      return false;
-    } on HttpError catch (e) {
-      _logger.severe('Token refresh failed: ${e.message}');
-      // If refresh fails, logout
-      await logout();
-      return false;
-    } catch (e, stackTrace) {
-      _logger.severe('Unexpected error during token refresh', e, stackTrace);
-      await logout();
+    final refreshToken = await _tokenStorage.getRefreshToken();
+    if (refreshToken == null) {
+      _logger.warning('No refresh token available');
       return false;
     }
+
+    _logger.finer('Refreshing token');
+
+    final response = await _getFetcher.post(
+      '/auth/refresh',
+      {
+        'refresh_token': refreshToken,
+      },
+    );
+
+    final data = response.data as Map<String, dynamic>;
+    final newAccessToken = data['access_token'] as String?;
+
+    if (newAccessToken != null) {
+      await _tokenStorage.saveAccessToken(newAccessToken);
+      _logger.finer('Token refreshed successfully');
+      return true;
+    }
+
+    _logger.warning('No access token in refresh response');
+    return false;
   }
 
   @override

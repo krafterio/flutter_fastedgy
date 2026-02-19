@@ -7,6 +7,7 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import '../../auth/auth_provider.dart';
 import '../../logging/logger.dart';
+import '../http_error.dart';
 
 /// Queue item for pending requests waiting for token refresh
 class _QueueItem {
@@ -35,6 +36,15 @@ class RefreshTokenLock {
 
   /// Whether a refresh is currently in progress
   bool get isRefreshing => _isRefreshing;
+
+  /// Handle logout if not already redirecting
+  Future<void> _handleLogout() async {
+    if (!_isRedirecting) {
+      _isRedirecting = true;
+      await _authProvider.logout();
+      _isRedirecting = false;
+    }
+  }
 
   /// Whether a redirect/logout is in progress
   bool get isRedirecting => _isRedirecting;
@@ -96,27 +106,34 @@ class RefreshTokenLock {
         _processQueue();
         return true;
       } else {
+        // false means definitive failure (no refresh token, empty response)
         _logger.warning('Token refresh failed');
         _processQueue(Exception('Token refresh failed'));
-
-        if (!_isRedirecting) {
-          _isRedirecting = true;
-          await _authProvider.logout();
-          _isRedirecting = false;
-        }
-
+        await _handleLogout();
         return false;
       }
-    } catch (e, stackTrace) {
-      _logger.severe('Error during token refresh', e, stackTrace);
+    } on NetworkError catch (e, stackTrace) {
+      // Network error: do NOT logout, the server may come back
+      _logger.warning('Network error during token refresh', e, stackTrace);
       _processQueue(e);
-
-      if (!_isRedirecting) {
-        _isRedirecting = true;
-        await _authProvider.logout();
-        _isRedirecting = false;
+      return false;
+    } on HttpError catch (e, stackTrace) {
+      if (e is UnauthorizedError || e.statusCode == 403) {
+        // Auth rejection: logout
+        _logger.warning('Auth rejected during token refresh', e, stackTrace);
+        _processQueue(e);
+        await _handleLogout();
+        return false;
       }
-
+      // Server error (5xx) or other HTTP error: do NOT logout
+      _logger.warning(
+          'Server error during token refresh (${e.statusCode})', e, stackTrace);
+      _processQueue(e);
+      return false;
+    } catch (e, stackTrace) {
+      // Unknown exception: do NOT logout
+      _logger.severe('Unexpected error during token refresh', e, stackTrace);
+      _processQueue(e);
       return false;
     } finally {
       _isRefreshing = false;
