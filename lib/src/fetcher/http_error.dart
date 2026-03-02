@@ -119,7 +119,10 @@ class HttpError implements Exception {
       );
     }
 
-    if (statusCode == null || e.type == DioExceptionType.connectionError || e.type == DioExceptionType.connectionTimeout) {
+    if (e.type == DioExceptionType.connectionError ||
+        e.type == DioExceptionType.connectionTimeout ||
+        e.type == DioExceptionType.sendTimeout ||
+        e.type == DioExceptionType.receiveTimeout) {
       return NetworkError(
         message: message,
         response: response,

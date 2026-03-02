@@ -25,11 +25,9 @@ class Fetcher {
   final Map<String, CancelToken> _cancelTokens = {};
   final CancelToken _globalCancelToken = CancelToken();
 
-  Fetcher._({
-    Dio? dio,
-    Bus? bus,
-  })  : _dio = dio ?? Dio(),
-        _bus = bus ?? getService<Bus>();
+  Fetcher._({Dio? dio, Bus? bus})
+    : _dio = dio ?? Dio(),
+      _bus = bus ?? getService<Bus>();
 
   /// Create a new Fetcher instance with configurable interceptors
   ///
@@ -71,7 +69,8 @@ class Fetcher {
   }) {
     final baseUrl = dotenv.env['API_BASE_URL'] ?? '';
 
-    final dioInstance = dio ??
+    final dioInstance =
+        dio ??
         Dio(
           BaseOptions(
             baseUrl: baseUrl,
@@ -113,7 +112,9 @@ class Fetcher {
       );
     }
 
-    if (enableRefreshToken && refreshTokenLock != null && hasService<TokenStorage>()) {
+    if (enableRefreshToken &&
+        refreshTokenLock != null &&
+        hasService<TokenStorage>()) {
       allInterceptors.add(
         InterceptorConfig(
           RefreshTokenInterceptor(
@@ -129,22 +130,14 @@ class Fetcher {
     if (enableLogging) {
       allInterceptors.add(
         InterceptorConfig(
-          LoggingInterceptor(
-            logHeaders: logHeaders,
-            logBody: logBody,
-          ),
+          LoggingInterceptor(logHeaders: logHeaders, logBody: logBody),
           priority: 30,
         ),
       );
     }
 
     if (enableErrorTransform) {
-      allInterceptors.add(
-        InterceptorConfig(
-          ErrorInterceptor(),
-          priority: 10,
-        ),
-      );
+      allInterceptors.add(InterceptorConfig(ErrorInterceptor(), priority: 10));
     }
 
     // Add custom interceptors
@@ -352,12 +345,14 @@ class Fetcher {
       );
 
       // Fire success event
-      _bus.fire(FetchSuccessEvent(
-        path,
-        response.statusCode ?? 200,
-        response.data,
-        response.headers.map,
-      ));
+      _bus.fire(
+        FetchSuccessEvent(
+          path,
+          response.statusCode ?? 200,
+          response.data,
+          response.headers.map,
+        ),
+      );
 
       // Clean up cancel token
       if (id != null) {
@@ -430,12 +425,14 @@ class Fetcher {
       );
 
       // Fire success event
-      _bus.fire(FetchSuccessEvent(
-        path,
-        response.statusCode ?? 200,
-        response.data,
-        response.headers.map,
-      ));
+      _bus.fire(
+        FetchSuccessEvent(
+          path,
+          response.statusCode ?? 200,
+          response.data,
+          response.headers.map,
+        ),
+      );
 
       // Clean up cancel token
       if (id != null) {
