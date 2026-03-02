@@ -296,6 +296,20 @@ class Fetcher {
     );
   }
 
+  /// Sanitize header values for HTTP compliance.
+  ///
+  /// HTTP headers must be ASCII-only. Any value containing non-ASCII
+  /// characters (accents, emojis, etc.) is URI-encoded to ensure
+  /// safe transmission through proxies and servers.
+  Map<String, dynamic> _sanitizeHeaders(Map<String, dynamic> headers) {
+    return headers.map((key, value) {
+      if (value is String && value.codeUnits.any((unit) => unit > 127)) {
+        return MapEntry(key, Uri.encodeComponent(value));
+      }
+      return MapEntry(key, value);
+    });
+  }
+
   /// Internal request method
   Future<Response> _request(
     String path, {
@@ -315,7 +329,7 @@ class Fetcher {
     // Build options
     final options = <String, dynamic>{
       'method': method,
-      'headers': headers ?? {},
+      'headers': _sanitizeHeaders(headers ?? {}),
       'queryParameters': queryParameters ?? {},
       'responseType': responseType ?? ResponseType.json,
     };
@@ -395,7 +409,7 @@ class Fetcher {
     // Build options
     final options = <String, dynamic>{
       'method': method,
-      'headers': headers ?? {},
+      'headers': _sanitizeHeaders(headers ?? {}),
       'queryParameters': queryParameters ?? {},
     };
 
