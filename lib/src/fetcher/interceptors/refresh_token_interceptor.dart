@@ -52,7 +52,7 @@ class RefreshTokenInterceptor extends Interceptor {
       );
 
       if (!refreshed) {
-        _logger.warning('Token refresh failed');
+        _logger.fine('Token refresh failed');
         return handler.next(err);
       }
 
@@ -68,7 +68,7 @@ class RefreshTokenInterceptor extends Interceptor {
       final newToken = await _tokenStorage.getAccessToken();
 
       if (newToken == null) {
-        _logger.warning('No access token after refresh');
+        _logger.fine('No access token after refresh');
         return handler.next(err);
       }
 
@@ -81,8 +81,8 @@ class RefreshTokenInterceptor extends Interceptor {
 
       // Return the successful response
       return handler.resolve(response);
-    } catch (e, stackTrace) {
-      _logger.severe('Error during token refresh', e, stackTrace);
+    } catch (e) {
+      _logger.fine('Error during token refresh: $e');
       return handler.next(err);
     }
   }
