@@ -62,7 +62,7 @@ class LoggingInterceptor extends Interceptor {
     final method = err.requestOptions.method;
     final uri = err.requestOptions.uri;
 
-    _logger.warning('✖ $statusCode $method $uri');
+    _logger.fine('✖ $statusCode $method $uri');
 
     if (err.response != null && logBody && err.response!.data != null) {
       _logger.fine('Error body: ${err.response!.data}');

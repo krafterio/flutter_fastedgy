@@ -49,7 +49,7 @@ class AuthInterceptor extends Interceptor {
       );
 
       if (!refreshed) {
-        _logger.warning('Proactive token refresh failed');
+        _logger.fine('Proactive token refresh failed');
         // Continue anyway, the 401 will be handled by RefreshTokenInterceptor
       }
     }
