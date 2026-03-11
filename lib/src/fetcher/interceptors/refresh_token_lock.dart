@@ -107,32 +107,31 @@ class RefreshTokenLock {
         return true;
       } else {
         // false means definitive failure (no refresh token, empty response)
-        _logger.warning('Token refresh failed');
+        _logger.fine('Token refresh failed');
         _processQueue(Exception('Token refresh failed'));
         await _handleLogout();
         return false;
       }
-    } on NetworkError catch (e, stackTrace) {
+    } on NetworkError catch (e) {
       // Network error: do NOT logout, the server may come back
-      _logger.warning('Network error during token refresh', e, stackTrace);
+      _logger.fine('Network error during token refresh: $e');
       _processQueue(e);
       return false;
-    } on HttpError catch (e, stackTrace) {
+    } on HttpError catch (e) {
       if (e is UnauthorizedError || e.statusCode == 403) {
         // Auth rejection: logout
-        _logger.warning('Auth rejected during token refresh', e, stackTrace);
+        _logger.fine('Auth rejected during token refresh: $e');
         _processQueue(e);
         await _handleLogout();
         return false;
       }
       // Server error (5xx) or other HTTP error: do NOT logout
-      _logger.warning(
-          'Server error during token refresh (${e.statusCode})', e, stackTrace);
+      _logger.fine('Server error during token refresh (${e.statusCode}): $e');
       _processQueue(e);
       return false;
-    } catch (e, stackTrace) {
+    } catch (e) {
       // Unknown exception: do NOT logout
-      _logger.severe('Unexpected error during token refresh', e, stackTrace);
+      _logger.fine('Unexpected error during token refresh: $e');
       _processQueue(e);
       return false;
     } finally {
