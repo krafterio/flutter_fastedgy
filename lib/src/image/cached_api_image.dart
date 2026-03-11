@@ -264,8 +264,8 @@ class _CachedApiImageState extends State<CachedApiImage> {
 
         _logger.finer('Image loaded successfully');
       }
-    } catch (error, stackTrace) {
-      _logger.warning('Failed to load image from ${widget.path}', error, stackTrace);
+    } catch (error) {
+      _logger.fine('Failed to load image from ${widget.path}: $error');
       imageCache.removePendingRequest(cacheKey);
       if (mounted) {
         setState(() {
