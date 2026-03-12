@@ -136,10 +136,7 @@ class StorageDownloader {
   }) async {
     _logger.fine('Downloading path $path to $localPath');
 
-    final bytes = await downloadPath(
-      path,
-      forceDownload: forceDownload,
-    );
+    final bytes = await downloadPath(path, forceDownload: forceDownload);
 
     final file = File(localPath);
     await file.writeAsBytes(bytes);

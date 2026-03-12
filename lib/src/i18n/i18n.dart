@@ -12,7 +12,9 @@ import 'package:logging/logging.dart';
 ///
 /// This is called automatically by initializeFastEdgy().
 Future<void> initializeI18n() async {
-  EasyLocalization.logger.enableLevels = _mapLogLevelToEasyLogger(Logger.root.level);
+  EasyLocalization.logger.enableLevels = _mapLogLevelToEasyLogger(
+    Logger.root.level,
+  );
   await EasyLocalization.ensureInitialized();
 }
 
@@ -84,10 +86,7 @@ Widget useI18n({
 /// final text = t('hello');
 /// final textWithParams = t('welcome', {'name': 'John'});
 /// ```
-String t(
-  String key, [
-  Map<String, String>? namedArgs,
-]) {
+String t(String key, [Map<String, String>? namedArgs]) {
   return key.tr(namedArgs: namedArgs);
 }
 
@@ -98,11 +97,7 @@ String t(
 /// final text = plural('item', 5); // "5 items"
 /// final textWithParams = plural('item_with_name', 5, {'name': 'John'});
 /// ```
-String plural(
-  String key,
-  num value, [
-  Map<String, String>? namedArgs,
-]) {
+String plural(String key, num value, [Map<String, String>? namedArgs]) {
   return key.plural(value, namedArgs: namedArgs);
 }
 
@@ -120,7 +115,6 @@ Future<void> setLocale(BuildContext context, Locale locale) async {
 List<Locale> supportedLocales(BuildContext context) {
   return context.supportedLocales;
 }
-
 
 /// Map logging Level to EasyLogger levels
 List<LevelMessages> _mapLogLevelToEasyLogger(Level level) {

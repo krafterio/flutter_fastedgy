@@ -46,7 +46,8 @@ class ResequenceRequest extends DynamicSchema<ResequenceRequest> {
 }
 
 /// Response schema for resequence operation result
-class Resequence<T extends DynamicSchema<T>> extends DynamicSchema<Resequence<T>> {
+class Resequence<T extends DynamicSchema<T>>
+    extends DynamicSchema<Resequence<T>> {
   Resequence(super.data);
 
   String get modelName => getString('model_name')!;
@@ -77,7 +78,10 @@ class DatasetApi<R extends DynamicSchema<R>> {
   DatasetApi(this._fetcher, {this.basePath});
 
   Future<Resequence> resequence(ResequenceRequest request) async {
-    final response = await _fetcher.put('${basePath ?? ''}/dataset/resequence', request.toJson());
+    final response = await _fetcher.put(
+      '${basePath ?? ''}/dataset/resequence',
+      request.toJson(),
+    );
     return Resequence<R>(response.data);
   }
 }

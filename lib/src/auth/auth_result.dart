@@ -44,9 +44,6 @@ class AuthResult {
 
   /// Create a failure result
   factory AuthResult.failure(String message) {
-    return AuthResult(
-      success: false,
-      message: message,
-    );
+    return AuthResult(success: false, message: message);
   }
 }

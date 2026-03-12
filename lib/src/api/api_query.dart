@@ -122,10 +122,7 @@ class ImportTemplateQuery {
   /// Fields to include in template (string or list of strings)
   final dynamic fields;
 
-  const ImportTemplateQuery({
-    this.format,
-    this.fields,
-  });
+  const ImportTemplateQuery({this.format, this.fields});
 
   Map<String, dynamic> toMap() {
     final map = <String, dynamic>{};
@@ -143,10 +140,7 @@ class ApiParams {
   /// Additional headers
   final Map<String, dynamic>? headers;
 
-  const ApiParams({
-    this.prefix,
-    this.headers,
-  });
+  const ApiParams({this.prefix, this.headers});
 
   Map<String, dynamic> toMap() {
     final map = <String, dynamic>{};

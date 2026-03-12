@@ -63,7 +63,7 @@ abstract class ApiModel<T extends BaseModel<T>> {
   /// [basePath] is the base URL path for this resource (e.g., '/users')
   /// [fetcher] is optional; if not provided, uses the global Fetcher from DI
   ApiModel(this.basePath, {Fetcher? fetcher})
-      : _fetcher = fetcher ?? getService<Fetcher>();
+    : _fetcher = fetcher ?? getService<Fetcher>();
 
   /// Convert JSON to model instance
   ///
@@ -103,7 +103,10 @@ abstract class ApiModel<T extends BaseModel<T>> {
     final response = await _fetcher.get(
       basePath,
       params: ApiHelpers.buildQueryParams(queryMap),
-      headers: ApiHelpers.buildHeaders(queryMap, extraHeaders: paramsMap['headers'] as Map<String, dynamic>?),
+      headers: ApiHelpers.buildHeaders(
+        queryMap,
+        extraHeaders: paramsMap['headers'] as Map<String, dynamic>?,
+      ),
     );
 
     return PaginationResult.fromJson(response.data, fromJson);
@@ -122,11 +125,7 @@ abstract class ApiModel<T extends BaseModel<T>> {
   ///   options: FieldsOptions(fields: ['id', 'name']),
   /// );
   /// ```
-  Future<T> get(
-    Object id, {
-    FieldsOptions? options,
-    ApiParams? params,
-  }) async {
+  Future<T> get(Object id, {FieldsOptions? options, ApiParams? params}) async {
     if (disabledActions.contains(ApiAction.get)) {
       throw Exception('Get action is not available for this model');
     }
@@ -134,7 +133,10 @@ abstract class ApiModel<T extends BaseModel<T>> {
     final optionsMap = options?.toMap() ?? {};
     final paramsMap = params?.toMap() ?? {};
 
-    final headers = ApiHelpers.buildHeaders(optionsMap, extraHeaders: paramsMap['headers'] as Map<String, dynamic>?);
+    final headers = ApiHelpers.buildHeaders(
+      optionsMap,
+      extraHeaders: paramsMap['headers'] as Map<String, dynamic>?,
+    );
 
     final response = await _fetcher.get(
       '$basePath/${id.toString()}',
@@ -171,7 +173,10 @@ abstract class ApiModel<T extends BaseModel<T>> {
     final optionsMap = options?.toMap() ?? {};
     final paramsMap = params?.toMap() ?? {};
 
-    final headers = ApiHelpers.buildHeaders(optionsMap, extraHeaders: paramsMap['headers'] as Map<String, dynamic>?);
+    final headers = ApiHelpers.buildHeaders(
+      optionsMap,
+      extraHeaders: paramsMap['headers'] as Map<String, dynamic>?,
+    );
 
     final response = await _fetcher.post(
       basePath,
@@ -212,7 +217,10 @@ abstract class ApiModel<T extends BaseModel<T>> {
     final optionsMap = options?.toMap() ?? {};
     final paramsMap = params?.toMap() ?? {};
 
-    final headers = ApiHelpers.buildHeaders(optionsMap, extraHeaders: paramsMap['headers'] as Map<String, dynamic>?);
+    final headers = ApiHelpers.buildHeaders(
+      optionsMap,
+      extraHeaders: paramsMap['headers'] as Map<String, dynamic>?,
+    );
 
     final response = await _fetcher.patch(
       '$basePath/${id.toString()}',
@@ -232,10 +240,7 @@ abstract class ApiModel<T extends BaseModel<T>> {
   /// ```dart
   /// await api.delete(123); // or '123'
   /// ```
-  Future<void> delete(
-    Object id, {
-    ApiParams? params,
-  }) async {
+  Future<void> delete(Object id, {ApiParams? params}) async {
     if (disabledActions.contains(ApiAction.delete)) {
       throw Exception('Delete action is not available for this model');
     }
@@ -243,10 +248,7 @@ abstract class ApiModel<T extends BaseModel<T>> {
     final paramsMap = params?.toMap() ?? {};
     final headers = paramsMap['headers'] as Map<String, dynamic>?;
 
-    await _fetcher.delete(
-      '$basePath/${id.toString()}',
-      headers: headers,
-    );
+    await _fetcher.delete('$basePath/${id.toString()}', headers: headers);
   }
 
   /// Export resources
@@ -266,10 +268,7 @@ abstract class ApiModel<T extends BaseModel<T>> {
   ///   ),
   /// );
   /// ```
-  Future<Response> export({
-    ExportQuery? query,
-    ApiParams? params,
-  }) async {
+  Future<Response> export({ExportQuery? query, ApiParams? params}) async {
     if (disabledActions.contains(ApiAction.export)) {
       throw Exception('Export action is not available for this model');
     }
@@ -284,7 +283,10 @@ abstract class ApiModel<T extends BaseModel<T>> {
     return _fetcher.get(
       '$basePath/export',
       params: ApiHelpers.buildQueryParams(queryMap),
-      headers: ApiHelpers.buildHeaders(queryMap, extraHeaders: paramsMap['headers'] as Map<String, dynamic>?),
+      headers: ApiHelpers.buildHeaders(
+        queryMap,
+        extraHeaders: paramsMap['headers'] as Map<String, dynamic>?,
+      ),
       responseType: ResponseType.bytes,
     );
   }
@@ -314,20 +316,13 @@ abstract class ApiModel<T extends BaseModel<T>> {
     }
 
     final formData = FormData.fromMap({
-      'file': MultipartFile.fromBytes(
-        file,
-        filename: fileName,
-      ),
+      'file': MultipartFile.fromBytes(file, filename: fileName),
     });
 
     final paramsMap = params?.toMap() ?? {};
     final headers = paramsMap['headers'] as Map<String, dynamic>?;
 
-    return _fetcher.post(
-      '$basePath/import',
-      formData,
-      headers: headers,
-    );
+    return _fetcher.post('$basePath/import', formData, headers: headers);
   }
 
   /// Download import template
@@ -364,7 +359,10 @@ abstract class ApiModel<T extends BaseModel<T>> {
     return _fetcher.get(
       '$basePath/import/template',
       params: ApiHelpers.buildQueryParams(queryMap),
-      headers: ApiHelpers.buildHeaders(queryMap, extraHeaders: paramsMap['headers'] as Map<String, dynamic>?),
+      headers: ApiHelpers.buildHeaders(
+        queryMap,
+        extraHeaders: paramsMap['headers'] as Map<String, dynamic>?,
+      ),
       responseType: ResponseType.bytes,
     );
   }
@@ -379,4 +377,5 @@ class GenericApiModel extends ApiModel<GenericBaseModel> {
   GenericApiModel(super.basePath, {super.fetcher});
 }
 
-GenericApiModel useGenericApiModel(String basePath) => GenericApiModel(basePath);
+GenericApiModel useGenericApiModel(String basePath) =>
+    GenericApiModel(basePath);

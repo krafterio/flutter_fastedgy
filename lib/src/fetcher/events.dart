@@ -34,12 +34,7 @@ class FetchSuccessEvent extends FetchEvent {
   /// Response headers
   final Map<String, List<String>> headers;
 
-  const FetchSuccessEvent(
-    super.url,
-    this.statusCode,
-    this.data,
-    this.headers,
-  );
+  const FetchSuccessEvent(super.url, this.statusCode, this.data, this.headers);
 }
 
 /// Event fired when a request fails

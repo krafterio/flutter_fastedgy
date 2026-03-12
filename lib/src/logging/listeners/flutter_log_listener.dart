@@ -7,7 +7,6 @@ import 'dart:developer' as developer;
 import 'package:logging/logging.dart';
 import '../log_listener.dart';
 
-
 class FlutterLogListener implements LogListener {
   @override
   bool get isEnabled => true;
@@ -15,14 +14,14 @@ class FlutterLogListener implements LogListener {
   @override
   void onData(LogRecord record) {
     developer.log(
-        record.message,
-        time: record.time,
-        sequenceNumber: record.sequenceNumber,
-        level: record.level.value,
-        name: record.loggerName.isNotEmpty ? record.loggerName : 'app',
-        error: record.error,
-        stackTrace: record.stackTrace,
-      );
+      record.message,
+      time: record.time,
+      sequenceNumber: record.sequenceNumber,
+      level: record.level.value,
+      name: record.loggerName.isNotEmpty ? record.loggerName : 'app',
+      error: record.error,
+      stackTrace: record.stackTrace,
+    );
   }
 
   @override

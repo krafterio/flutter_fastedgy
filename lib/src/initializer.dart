@@ -83,9 +83,7 @@ Future<void> initializeFastEdgy({
 
   // Bus
   if (!hasService<Bus>()) {
-    container.registerSingleton<Bus>(
-      busFactory?.call() ?? Bus(),
-    );
+    container.registerSingleton<Bus>(busFactory?.call() ?? Bus());
   }
 
   // TokenStorage

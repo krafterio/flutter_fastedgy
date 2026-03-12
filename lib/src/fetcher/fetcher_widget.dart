@@ -29,10 +29,7 @@ class FetcherWidget extends StatefulWidget {
   /// Builder function that receives the Fetcher instance
   final Widget Function(BuildContext context, Fetcher fetcher) builder;
 
-  const FetcherWidget({
-    required this.builder,
-    super.key,
-  });
+  const FetcherWidget({required this.builder, super.key});
 
   @override
   State<FetcherWidget> createState() => _FetcherWidgetState();

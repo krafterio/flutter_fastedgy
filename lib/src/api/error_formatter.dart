@@ -10,10 +10,7 @@ class FormattedError {
   final String title;
   final List<FieldError> fieldErrors;
 
-  const FormattedError({
-    required this.title,
-    this.fieldErrors = const [],
-  });
+  const FormattedError({required this.title, this.fieldErrors = const []});
 
   /// Check if there are field-specific errors
   bool get hasFieldErrors => fieldErrors.isNotEmpty;
@@ -80,9 +77,7 @@ FormattedError formatApiError(dynamic errorData, {String? defaultTitle}) {
   // If errorData is not a Map, return default
   if (errorData is! Map<String, dynamic>) {
     final errorStr = errorData.toString();
-    return FormattedError(
-      title: errorStr.isNotEmpty ? errorStr : defaultTitle,
-    );
+    return FormattedError(title: errorStr.isNotEmpty ? errorStr : defaultTitle);
   }
 
   final detail = errorData['detail'];
@@ -108,11 +103,13 @@ FormattedError formatApiError(dynamic errorData, {String? defaultTitle}) {
       // Build field path from loc (skip first element which is always "body")
       final fieldPath = _buildFieldPath(loc);
 
-      fieldErrors.add(FieldError(
-        field: fieldPath.isEmpty ? 'unknown' : fieldPath,
-        message: msg,
-        type: type ?? 'unknown',
-      ));
+      fieldErrors.add(
+        FieldError(
+          field: fieldPath.isEmpty ? 'unknown' : fieldPath,
+          message: msg,
+          type: type ?? 'unknown',
+        ),
+      );
     }
 
     if (fieldErrors.isEmpty) {
@@ -127,11 +124,13 @@ FormattedError formatApiError(dynamic errorData, {String? defaultTitle}) {
   }
 
   // Try to get message from other common fields
-  if (errorData['message'] is String && (errorData['message'] as String).isNotEmpty) {
+  if (errorData['message'] is String &&
+      (errorData['message'] as String).isNotEmpty) {
     return FormattedError(title: errorData['message'] as String);
   }
 
-  if (errorData['error'] is String && (errorData['error'] as String).isNotEmpty) {
+  if (errorData['error'] is String &&
+      (errorData['error'] as String).isNotEmpty) {
     return FormattedError(title: errorData['error'] as String);
   }
 

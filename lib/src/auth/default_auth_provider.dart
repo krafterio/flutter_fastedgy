@@ -37,13 +37,10 @@ class DefaultAuthProvider implements AuthProvider {
     try {
       _logger.finer('Attempting login');
 
-      final response = await _getFetcher.post(
-        '/auth/token',
-        {
-          'username': username,
-          'password': password,
-        },
-      );
+      final response = await _getFetcher.post('/auth/token', {
+        'username': username,
+        'password': password,
+      });
 
       final data = response.data as Map<String, dynamic>;
       final accessToken = data['access_token'] as String?;
@@ -151,12 +148,9 @@ class DefaultAuthProvider implements AuthProvider {
 
     _logger.finer('Refreshing token');
 
-    final response = await _getFetcher.post(
-      '/auth/refresh',
-      {
-        'refresh_token': refreshToken,
-      },
-    );
+    final response = await _getFetcher.post('/auth/refresh', {
+      'refresh_token': refreshToken,
+    });
 
     final data = response.data as Map<String, dynamic>;
     final newAccessToken = data['access_token'] as String?;

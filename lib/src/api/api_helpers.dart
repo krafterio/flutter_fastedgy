@@ -121,10 +121,14 @@ class ApiHelpers {
     for (final entry in headers.entries) {
       switch (entry.key) {
         case 'X-Filter':
-          result[entry.key] = entry.value is String ? entry.value : encodeFilter(entry.value);
+          result[entry.key] = entry.value is String
+              ? entry.value
+              : encodeFilter(entry.value);
           break;
         case 'X-Fields':
-          result[entry.key] = entry.value is List ? (entry.value as List).join(',') : entry.value.toString();
+          result[entry.key] = entry.value is List
+              ? (entry.value as List).join(',')
+              : entry.value.toString();
           break;
         default:
           result[entry.key] = entry.value?.toString() ?? '';
@@ -190,9 +194,7 @@ class ApiHelpers {
     Map<String, dynamic> query, {
     Map<String, dynamic>? extraHeaders,
   }) {
-    final result = <String, dynamic>{
-      ...?extraHeaders,
-    };
+    final result = <String, dynamic>{...?extraHeaders};
 
     if (query['fields'] != null) {
       result['X-Fields'] = encodeFields(query['fields']);

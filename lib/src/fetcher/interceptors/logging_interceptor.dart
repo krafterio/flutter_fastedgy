@@ -17,10 +17,7 @@ class LoggingInterceptor extends Interceptor {
   final bool logHeaders;
   final bool logBody;
 
-  LoggingInterceptor({
-    this.logHeaders = false,
-    this.logBody = true,
-  });
+  LoggingInterceptor({this.logHeaders = false, this.logBody = true});
 
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {

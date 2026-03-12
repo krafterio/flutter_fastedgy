@@ -143,11 +143,12 @@ class _CachedApiImageState extends State<CachedApiImage> {
         constraints,
         Axis.horizontal,
       );
-      final inferredHeight = ImageDimensionsHelper.inferDimensionFromConstraints(
-        context,
-        constraints,
-        Axis.vertical,
-      );
+      final inferredHeight =
+          ImageDimensionsHelper.inferDimensionFromConstraints(
+            context,
+            constraints,
+            Axis.vertical,
+          );
       return (inferredWidth, inferredHeight);
     }
 
@@ -162,7 +163,8 @@ class _CachedApiImageState extends State<CachedApiImage> {
         oldWidget.height != widget.height ||
         oldWidget.mode != widget.mode ||
         oldWidget.format != widget.format ||
-        oldWidget.autoCalculatePhysicalDimensions != widget.autoCalculatePhysicalDimensions) {
+        oldWidget.autoCalculatePhysicalDimensions !=
+            widget.autoCalculatePhysicalDimensions) {
       setState(() {
         _isLoading = false;
         _error = null;
@@ -173,13 +175,14 @@ class _CachedApiImageState extends State<CachedApiImage> {
   }
 
   String _getCacheKey({BoxConstraints? constraints}) {
-    final (physicalWidth, physicalHeight) = _getPhysicalDimensions(constraints: constraints);
+    final (physicalWidth, physicalHeight) = _getPhysicalDimensions(
+      constraints: constraints,
+    );
     final widthStr = physicalWidth?.toString() ?? 'auto';
     final heightStr = physicalHeight?.toString() ?? 'auto';
     final format = widget.format ?? 'webp';
     return '${widget.path}|${widthStr}x$heightStr|${widget.mode.value}|$format';
   }
-
 
   Future<void> _loadImage({BoxConstraints? constraints}) async {
     if (!mounted || _isDisposed) return;
@@ -238,9 +241,13 @@ class _CachedApiImageState extends State<CachedApiImage> {
       if (!mounted || _isDisposed) return;
 
       final downloader = getService<StorageDownloader>();
-      final (physicalWidth, physicalHeight) = _getPhysicalDimensions(constraints: constraints);
+      final (physicalWidth, physicalHeight) = _getPhysicalDimensions(
+        constraints: constraints,
+      );
 
-      _logger.finer('Loading image from path: ${widget.path} with dimensions: ${physicalWidth}x$physicalHeight');
+      _logger.finer(
+        'Loading image from path: ${widget.path} with dimensions: ${physicalWidth}x$physicalHeight',
+      );
 
       final future = downloader.downloadPath(
         widget.path,
@@ -289,7 +296,9 @@ class _CachedApiImageState extends State<CachedApiImage> {
               _loadImage(constraints: constraints);
             }
           });
-        } else if (_lastConstraints != constraints && widget.width == null && widget.height == null) {
+        } else if (_lastConstraints != constraints &&
+            widget.width == null &&
+            widget.height == null) {
           // Reload if constraints changed significantly and no explicit dimensions
           final oldDims = _getPhysicalDimensions(constraints: _lastConstraints);
           final newDims = _getPhysicalDimensions(constraints: constraints);
@@ -344,7 +353,9 @@ class _CachedApiImageState extends State<CachedApiImage> {
         }
 
         // Map ImageMode to BoxFit automatically
-        final boxFit = widget.mode == ImageMode.cover ? BoxFit.cover : BoxFit.contain;
+        final boxFit = widget.mode == ImageMode.cover
+            ? BoxFit.cover
+            : BoxFit.contain;
 
         final image = Image.memory(
           _imageBytes!,
@@ -359,10 +370,7 @@ class _CachedApiImageState extends State<CachedApiImage> {
         );
 
         // Fade-in animation
-        return AnimatedSwitcher(
-          duration: widget.fadeInDuration,
-          child: image,
-        );
+        return AnimatedSwitcher(duration: widget.fadeInDuration, child: image);
       },
     );
   }

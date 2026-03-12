@@ -63,8 +63,7 @@ String getFileTypeIcon(String mimeType) {
       mimeType.contains('csv')) {
     return 'table_chart';
   }
-  if (mimeType.contains('presentation') ||
-      mimeType.contains('powerpoint')) {
+  if (mimeType.contains('presentation') || mimeType.contains('powerpoint')) {
     return 'slideshow';
   }
   if (mimeType.contains('zip') ||

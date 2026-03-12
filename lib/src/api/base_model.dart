@@ -77,8 +77,7 @@ class DynamicSchema<T extends DynamicSchema<T>> {
   String? getString(String name) => getField<String>(name);
 
   /// Set a String field
-  T setString(String name, String? value) =>
-      setField<String>(name, value);
+  T setString(String name, String? value) => setField<String>(name, value);
 
   /// Get an int field
   int? getInt(String name) => getField<int>(name);
@@ -90,8 +89,7 @@ class DynamicSchema<T extends DynamicSchema<T>> {
   double? getDouble(String name) => getField<double>(name);
 
   /// Set a double field
-  T setDouble(String name, double? value) =>
-      setField<double>(name, value);
+  T setDouble(String name, double? value) => setField<double>(name, value);
 
   /// Get a bool field
   bool? getBool(String name) => getField<bool>(name);
@@ -124,8 +122,7 @@ class DynamicSchema<T extends DynamicSchema<T>> {
   List<V>? getList<V>(String name) => getField<List<V>>(name);
 
   /// Set a List field
-  T setList<V>(String name, List<V>? value) =>
-      setField<List<V>>(name, value);
+  T setList<V>(String name, List<V>? value) => setField<List<V>>(name, value);
 
   /// Get a Map field
   Map<String, dynamic>? getMap(String name) =>

@@ -54,7 +54,8 @@ class RefreshTokenLock {
   void _processQueue([Object? error]) {
     final activeQueue = _failedQueue
         .where(
-            (item) => item.cancelToken == null || !item.cancelToken!.isCancelled)
+          (item) => item.cancelToken == null || !item.cancelToken!.isCancelled,
+        )
         .toList();
 
     for (final item in activeQueue) {
@@ -72,7 +73,8 @@ class RefreshTokenLock {
   void _cleanupAbortedRequests() {
     if (_failedQueue.isNotEmpty) {
       _failedQueue.removeWhere(
-          (item) => item.cancelToken != null && item.cancelToken!.isCancelled);
+        (item) => item.cancelToken != null && item.cancelToken!.isCancelled,
+      );
     }
   }
 

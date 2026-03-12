@@ -93,12 +93,17 @@ void main() {
       await interceptor.onRequest(options, handler);
 
       expect(handler.options!.headers['X-Timezone'], isNotEmpty);
-      expect(handler.options!.headers['X-Timezone'], equals(provider.getTimezone()));
+      expect(
+        handler.options!.headers['X-Timezone'],
+        equals(provider.getTimezone()),
+      );
     });
 
     test('uses UTC when provider not initialized', () async {
       final uninitializedProvider = TimezoneProvider();
-      final uninitializedInterceptor = TimezoneInterceptor(uninitializedProvider);
+      final uninitializedInterceptor = TimezoneInterceptor(
+        uninitializedProvider,
+      );
 
       final options = RequestOptions(path: '/test');
       final handler = _MockRequestInterceptorHandler();
@@ -120,7 +125,10 @@ void main() {
 
       await interceptor.onRequest(options, handler);
 
-      expect(handler.options!.headers['Authorization'], equals('Bearer token123'));
+      expect(
+        handler.options!.headers['Authorization'],
+        equals('Bearer token123'),
+      );
       expect(handler.options!.headers['Custom-Header'], equals('custom-value'));
       expect(handler.options!.headers['X-Timezone'], isNotEmpty);
     });
@@ -144,13 +152,15 @@ void main() {
       container.registerSingleton<TimezoneProvider>(provider);
 
       // Create Dio instance directly to avoid dotenv dependency in tests
-      dio = Dio(BaseOptions(
-        baseUrl: 'http://localhost:8000',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-        },
-      ));
+      dio = Dio(
+        BaseOptions(
+          baseUrl: 'http://localhost:8000',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          },
+        ),
+      );
     });
 
     tearDown(() {
@@ -171,13 +181,15 @@ void main() {
 
     test('Fetcher.create respects enableTimezone flag', () {
       // Create new Dio for this test
-      final testDio = Dio(BaseOptions(
-        baseUrl: 'http://localhost:8000',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-        },
-      ));
+      final testDio = Dio(
+        BaseOptions(
+          baseUrl: 'http://localhost:8000',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          },
+        ),
+      );
 
       final fetcher = Fetcher.create(
         enableTimezone: false,
@@ -196,13 +208,15 @@ void main() {
 
     test('custom interceptor with timezone works', () {
       // Create new Dio for this test
-      final testDio = Dio(BaseOptions(
-        baseUrl: 'http://localhost:8000',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-        },
-      ));
+      final testDio = Dio(
+        BaseOptions(
+          baseUrl: 'http://localhost:8000',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          },
+        ),
+      );
 
       final customInterceptor = TimezoneInterceptor(provider);
 

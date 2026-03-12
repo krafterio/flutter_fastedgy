@@ -78,9 +78,7 @@ class StorageUploader {
     );
 
     // Create form data
-    final formData = FormData.fromMap({
-      'file': multipartFile,
-    });
+    final formData = FormData.fromMap({'file': multipartFile});
 
     // Upload with optional progress tracking
     final url = '${prefix ?? ''}/storage/upload/$model/$modelId/$field';
@@ -89,9 +87,7 @@ class StorageUploader {
     final response = await _fetcher.post(
       url,
       formData,
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
+      headers: {'Content-Type': 'multipart/form-data'},
       onSendProgress: onProgress,
     );
 
@@ -100,7 +96,6 @@ class StorageUploader {
 
     return result;
   }
-
 
   /// Delete a file from a model field
   Future<void> deleteModelField({
@@ -171,30 +166,42 @@ class StorageUploader {
           height: image.height > maxHeight ? maxHeight : null,
           maintainAspect: true,
         );
-        _logger.finer('Resized to: ${processedImage.width}x${processedImage.height}');
+        _logger.finer(
+          'Resized to: ${processedImage.width}x${processedImage.height}',
+        );
       }
     }
 
     // Encode with specified format and quality
-    List<int> compressed = options.format.encode(processedImage, quality: options.quality);
+    List<int> compressed = options.format.encode(
+      processedImage,
+      quality: options.quality,
+    );
 
     // If maxSizeBytes is specified and compressed size is still too large,
     // reduce quality iteratively
-    if (options.maxSizeBytes != null && compressed.length > options.maxSizeBytes!) {
-      _logger.finer('Compressed size ${compressed.length} exceeds max ${options.maxSizeBytes}, reducing quality');
+    if (options.maxSizeBytes != null &&
+        compressed.length > options.maxSizeBytes!) {
+      _logger.finer(
+        'Compressed size ${compressed.length} exceeds max ${options.maxSizeBytes}, reducing quality',
+      );
 
       int quality = options.quality;
       while (compressed.length > options.maxSizeBytes! && quality > 10) {
         quality -= 10;
         compressed = options.format.encode(processedImage, quality: quality);
-        _logger.finer('Reduced quality to $quality, size: ${compressed.length}');
+        _logger.finer(
+          'Reduced quality to $quality, size: ${compressed.length}',
+        );
       }
     }
 
     final originalName = path.basenameWithoutExtension(file.path);
     final newFileName = '$originalName.${options.format.value}';
 
-    _logger.fine('Compressed image: ${compressed.length} bytes, quality: ${options.quality}');
+    _logger.fine(
+      'Compressed image: ${compressed.length} bytes, quality: ${options.quality}',
+    );
 
     return _CompressedFile(
       bytes: Uint8List.fromList(compressed),
@@ -249,9 +256,7 @@ class StorageUploader {
     final response = await _fetcher.post(
       url,
       formData,
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
+      headers: {'Content-Type': 'multipart/form-data'},
       onSendProgress: onProgress,
     );
 
@@ -313,9 +318,7 @@ class StorageUploader {
     final response = await _fetcher.post(
       url,
       formData,
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
+      headers: {'Content-Type': 'multipart/form-data'},
       onSendProgress: onProgress,
     );
 

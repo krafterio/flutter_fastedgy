@@ -35,7 +35,10 @@ class ImageDimensionsHelper {
   /// final physical = ImageDimensionsHelper.calculatePhysicalDimension(context, 100.0);
   /// print(physical); // 300
   /// ```
-  static int? calculatePhysicalDimension(BuildContext context, double? logicalSize) {
+  static int? calculatePhysicalDimension(
+    BuildContext context,
+    double? logicalSize,
+  ) {
     if (logicalSize == null || !logicalSize.isFinite) return null;
     final devicePixelRatio = MediaQuery.of(context).devicePixelRatio;
     return (logicalSize * devicePixelRatio).round();

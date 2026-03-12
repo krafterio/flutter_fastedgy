@@ -86,10 +86,8 @@ class MetadataModel {
   factory MetadataModel.fromJson(Map<String, dynamic> json) {
     final fieldsJson = json['fields'] as Map<String, dynamic>;
     final fields = fieldsJson.map(
-      (key, value) => MapEntry(
-        key,
-        MetadataField.fromJson(value as Map<String, dynamic>),
-      ),
+      (key, value) =>
+          MapEntry(key, MetadataField.fromJson(value as Map<String, dynamic>)),
     );
 
     return MetadataModel(

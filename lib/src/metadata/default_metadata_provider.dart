@@ -78,7 +78,9 @@ class DefaultMetadataProvider implements MetadataProvider {
         ),
       );
 
-      _logger.finer('Metadata fetched successfully: ${_metadatas!.length} models');
+      _logger.finer(
+        'Metadata fetched successfully: ${_metadatas!.length} models',
+      );
     } on HttpError catch (e) {
       _logger.severe('Failed to fetch metadata: ${e.message}');
       _error = e;

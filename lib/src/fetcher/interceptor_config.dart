@@ -6,7 +6,8 @@
 import 'package:dio/dio.dart' as dio;
 
 // Export Dio's interceptor-related classes for external use
-export 'package:dio/dio.dart' show Interceptor, RequestOptions, RequestInterceptorHandler;
+export 'package:dio/dio.dart'
+    show Interceptor, RequestOptions, RequestInterceptorHandler;
 
 /// Alias for Dio's Interceptor
 typedef ApiInterceptor = dio.Interceptor;
@@ -29,10 +30,7 @@ class InterceptorConfig {
   /// Execution priority (higher = first)
   final int priority;
 
-  const InterceptorConfig(
-    this.interceptor, {
-    this.priority = 100,
-  });
+  const InterceptorConfig(this.interceptor, {this.priority = 100});
 
   /// Create from an Interceptor with default priority
   factory InterceptorConfig.fromInterceptor(ApiInterceptor interceptor) {

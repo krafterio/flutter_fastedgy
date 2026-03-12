@@ -63,10 +63,16 @@ class CachedApiImageProvider extends ImageProvider<CachedApiImageProvider> {
     // Otherwise, try to infer from ImageConfiguration.size
     if (configurationSize != null) {
       final inferredWidth = configurationSize.width.isFinite
-          ? ImageDimensionsHelper.calculatePhysicalDimension(context, configurationSize.width)
+          ? ImageDimensionsHelper.calculatePhysicalDimension(
+              context,
+              configurationSize.width,
+            )
           : null;
       final inferredHeight = configurationSize.height.isFinite
-          ? ImageDimensionsHelper.calculatePhysicalDimension(context, configurationSize.height)
+          ? ImageDimensionsHelper.calculatePhysicalDimension(
+              context,
+              configurationSize.height,
+            )
           : null;
       return (inferredWidth, inferredHeight);
     }
@@ -75,13 +81,14 @@ class CachedApiImageProvider extends ImageProvider<CachedApiImageProvider> {
   }
 
   String _getCacheKey({Size? configurationSize}) {
-    final (physicalWidth, physicalHeight) = _getPhysicalDimensions(configurationSize: configurationSize);
+    final (physicalWidth, physicalHeight) = _getPhysicalDimensions(
+      configurationSize: configurationSize,
+    );
     final widthStr = physicalWidth?.toString() ?? 'auto';
     final heightStr = physicalHeight?.toString() ?? 'auto';
     final fmt = format ?? 'webp';
     return '$path|${widthStr}x$heightStr|$mode|$fmt';
   }
-
 
   @override
   Future<CachedApiImageProvider> obtainKey(ImageConfiguration configuration) {
@@ -89,7 +96,10 @@ class CachedApiImageProvider extends ImageProvider<CachedApiImageProvider> {
   }
 
   @override
-  ImageStreamCompleter loadImage(CachedApiImageProvider key, ImageDecoderCallback decode) {
+  ImageStreamCompleter loadImage(
+    CachedApiImageProvider key,
+    ImageDecoderCallback decode,
+  ) {
     return MultiFrameImageStreamCompleter(
       codec: _loadAsync(key, decode),
       scale: 1.0,
@@ -131,10 +141,14 @@ class CachedApiImageProvider extends ImageProvider<CachedApiImageProvider> {
 
     // Start new request
     final downloader = getService<StorageDownloader>();
-    final (physicalWidth, physicalHeight) = _getPhysicalDimensions(configurationSize: configurationSize);
+    final (physicalWidth, physicalHeight) = _getPhysicalDimensions(
+      configurationSize: configurationSize,
+    );
 
     final logger = getLogger('CachedApiImageProvider');
-    logger.finer('Loading image from path: $path with dimensions: ${physicalWidth}x$physicalHeight');
+    logger.finer(
+      'Loading image from path: $path with dimensions: ${physicalWidth}x$physicalHeight',
+    );
 
     final future = downloader.downloadPath(
       path,
@@ -162,9 +176,17 @@ class CachedApiImageProvider extends ImageProvider<CachedApiImageProvider> {
         other.height == height &&
         other.mode == mode &&
         other.format == format &&
-        other.autoCalculatePhysicalDimensions == autoCalculatePhysicalDimensions;
+        other.autoCalculatePhysicalDimensions ==
+            autoCalculatePhysicalDimensions;
   }
 
   @override
-  int get hashCode => Object.hash(path, width, height, mode, format, autoCalculatePhysicalDimensions);
+  int get hashCode => Object.hash(
+    path,
+    width,
+    height,
+    mode,
+    format,
+    autoCalculatePhysicalDimensions,
+  );
 }

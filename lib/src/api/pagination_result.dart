@@ -46,7 +46,8 @@ class PaginationResult<T> {
     Map<String, dynamic> json,
     T Function(Map<String, dynamic>) fromJsonItem,
   ) {
-    final items = (json['items'] as List<dynamic>?)
+    final items =
+        (json['items'] as List<dynamic>?)
             ?.map((item) => fromJsonItem(item as Map<String, dynamic>))
             .toList() ??
         [];

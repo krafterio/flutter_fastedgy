@@ -28,10 +28,7 @@ class LoginRequest extends DynamicSchema<LoginRequest> {
 }
 
 class Token extends DynamicSchema<Token> {
-  Token(Map<String, dynamic> data) : super({
-    'token_type': 'bearer',
-    ...data,
-  });
+  Token(Map<String, dynamic> data) : super({'token_type': 'bearer', ...data});
 
   String get accessToken => getString('access_token')!;
 
@@ -56,17 +53,26 @@ class AuthApi {
   AuthApi(this._fetcher, {this.basePath});
 
   Future<SimpleMessage> register(UserRegisterRequest request) async {
-    final response = await _fetcher.post('${basePath ?? ''}/auth/register', request.toJson());
+    final response = await _fetcher.post(
+      '${basePath ?? ''}/auth/register',
+      request.toJson(),
+    );
     return SimpleMessage(response.data);
   }
 
   Future<Token> login(LoginRequest request) async {
-    final response = await _fetcher.post('${basePath ?? ''}/auth/token', request.toJson());
+    final response = await _fetcher.post(
+      '${basePath ?? ''}/auth/token',
+      request.toJson(),
+    );
     return Token(response.data);
   }
 
   Future<TokenRefresh> refresh(TokenRefresh request) async {
-    final response = await _fetcher.post('${basePath ?? ''}/auth/refresh', request.toJson());
+    final response = await _fetcher.post(
+      '${basePath ?? ''}/auth/refresh',
+      request.toJson(),
+    );
     return TokenRefresh(response.data);
   }
 }

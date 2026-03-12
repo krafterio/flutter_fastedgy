@@ -22,10 +22,7 @@ class LogConfig {
   /// The list of log listeners
   final List<String> listeners;
 
-  const LogConfig({
-    required this.level,
-    required this.listeners,
-  });
+  const LogConfig({required this.level, required this.listeners});
 }
 
 /// Initialize logging system with optional log level
@@ -45,10 +42,7 @@ class LogConfig {
 /// // or
 /// initializeLogger(listeners: [FlutterLogListener()]); // Explicit listeners
 /// ```
-void initializeLogger({
-  Level? logLevel,
-  List<LogListener>? listeners,
-}) {
+void initializeLogger({Level? logLevel, List<LogListener>? listeners}) {
   final config = parseLogConfigFromEnv();
   final level = logLevel ?? config.level;
   Logger.root.level = level;
@@ -71,25 +65,30 @@ void initializeLogger({
   }
 
   // Setup logging
-  Logger.root.onRecord.listen((record) {
-    for (final listener in _listeners) {
-      if (listener.isEnabled) {
-        listener.onData(record);
+  Logger.root.onRecord.listen(
+    (record) {
+      for (final listener in _listeners) {
+        if (listener.isEnabled) {
+          listener.onData(record);
+        }
       }
-    }
-  }, onError: (error, stackTrace) {
-    for (final listener in _listeners) {
-      if (listener.isEnabled) {
-        listener.onError(error, stackTrace);
+    },
+    onError: (error, stackTrace) {
+      for (final listener in _listeners) {
+        if (listener.isEnabled) {
+          listener.onError(error, stackTrace);
+        }
       }
-    }
-  }, onDone: () {
-    for (final listener in _listeners) {
-      if (listener.isEnabled) {
-        listener.onDone();
+    },
+    onDone: () {
+      for (final listener in _listeners) {
+        if (listener.isEnabled) {
+          listener.onDone();
+        }
       }
-    }
-  }, cancelOnError: false);
+    },
+    cancelOnError: false,
+  );
 }
 
 /// Add a custom log listener
@@ -110,10 +109,7 @@ Logger getLogger(String name) {
 /// Parse log config from environment variable
 LogConfig parseLogConfigFromEnv() {
   if (!dotenv.isInitialized) {
-    return const LogConfig(
-      level: defaultLogLevel,
-      listeners: [],
-    );
+    return const LogConfig(level: defaultLogLevel, listeners: []);
   }
 
   final levelStr = dotenv.env['LOG_LEVEL']?.toUpperCase();
@@ -127,8 +123,5 @@ LogConfig parseLogConfigFromEnv() {
   final outputStr = dotenv.env['LOG_OUTPUT']?.toLowerCase();
   final listeners = outputStr?.split(',') ?? [];
 
-  return LogConfig(
-    level: level,
-    listeners: listeners,
-  );
+  return LogConfig(level: level, listeners: listeners);
 }

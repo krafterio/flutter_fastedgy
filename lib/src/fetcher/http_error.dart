@@ -17,11 +17,7 @@ class ValidationError {
   /// Error type (e.g., 'value_error.email')
   final String type;
 
-  ValidationError({
-    required this.loc,
-    required this.msg,
-    required this.type,
-  });
+  ValidationError({required this.loc, required this.msg, required this.type});
 
   factory ValidationError.fromJson(Map<String, dynamic> json) {
     return ValidationError(
@@ -102,7 +98,9 @@ class HttpError implements Exception {
       } else if (data is Map && data.containsKey('detail')) {
         // Generic detail message
         final detail = data['detail'];
-        message = detail is String ? detail : t('HTTP {status}', {'status': statusCode.toString()});
+        message = detail is String
+            ? detail
+            : t('HTTP {status}', {'status': statusCode.toString()});
       } else if (data is Map && data.containsKey('message')) {
         message = data['message'] as String;
       }
@@ -123,11 +121,7 @@ class HttpError implements Exception {
         e.type == DioExceptionType.connectionTimeout ||
         e.type == DioExceptionType.sendTimeout ||
         e.type == DioExceptionType.receiveTimeout) {
-      return NetworkError(
-        message: message,
-        response: response,
-        data: data,
-      );
+      return NetworkError(message: message, response: response, data: data);
     }
 
     return HttpError(
@@ -155,18 +149,12 @@ class HttpError implements Exception {
 
 /// Error thrown when the server returns a 401 Unauthorized response
 class UnauthorizedError extends HttpError {
-  UnauthorizedError({
-    required super.message,
-    super.response,
-    super.data,
-  }) : super(statusCode: 401);
+  UnauthorizedError({required super.message, super.response, super.data})
+    : super(statusCode: 401);
 }
 
 /// Error thrown when there is a network connectivity issue
 class NetworkError extends HttpError {
-  NetworkError({
-    required super.message,
-    super.response,
-    super.data,
-  }) : super(statusCode: null);
+  NetworkError({required super.message, super.response, super.data})
+    : super(statusCode: null);
 }
