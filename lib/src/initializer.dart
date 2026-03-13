@@ -118,6 +118,7 @@ Future<void> initializeFastEdgy({
       appName: packageInfo.appName,
       version: packageInfo.version,
       buildNumber: packageInfo.buildNumber,
+      installerStore: packageInfo.installerStore,
     );
   }
 

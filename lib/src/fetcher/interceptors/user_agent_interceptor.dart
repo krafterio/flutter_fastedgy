@@ -9,7 +9,7 @@ import 'package:dio/dio.dart';
 
 /// Interceptor that adds the User-Agent header to all requests
 ///
-/// Format: `AppName/1.0.0+1 (ios 18.3)` or `AppName/1.0.0+1 (android 14)`
+/// Format: `AppName/1.0.0+1 (ios 18.3; appstore)`
 class UserAgentInterceptor extends Interceptor {
   final String _userAgent;
 
@@ -20,6 +20,7 @@ class UserAgentInterceptor extends Interceptor {
     required String appName,
     required String version,
     required String buildNumber,
+    String? installerStore,
   }) {
     final os = Platform.operatingSystem;
     final osVersion = Platform.operatingSystemVersion;
@@ -27,8 +28,12 @@ class UserAgentInterceptor extends Interceptor {
     // Extract clean OS version (remove kernel details on Android/Linux)
     final cleanOsVersion = _cleanOsVersion(osVersion);
 
+    final storeSuffix = (installerStore != null && installerStore.isNotEmpty)
+        ? '; $installerStore'
+        : '';
+
     return UserAgentInterceptor(
-      '$appName/$version+$buildNumber ($os $cleanOsVersion)',
+      '$appName/$version+$buildNumber ($os $cleanOsVersion$storeSuffix)',
     );
   }
 
