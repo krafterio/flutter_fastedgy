@@ -9,3 +9,4 @@ export 'refresh_token_lock.dart';
 export 'logging_interceptor.dart';
 export 'error_interceptor.dart';
 export 'timezone_interceptor.dart';
+export 'user_agent_interceptor.dart';

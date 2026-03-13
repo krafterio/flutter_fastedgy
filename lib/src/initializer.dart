@@ -5,6 +5,7 @@
 
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:logging/logging.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'container/container.dart';
 import 'i18n/i18n.dart';
 import 'logging/logger.dart';
@@ -12,6 +13,7 @@ import 'auth/auth_provider.dart';
 import 'auth/default_auth_provider.dart';
 import 'auth/token_storage.dart';
 import 'fetcher/client.dart';
+import 'fetcher/interceptors/user_agent_interceptor.dart';
 import 'bus/bus.dart';
 import 'metadata/metadata_provider.dart';
 import 'metadata/default_metadata_provider.dart';
@@ -62,6 +64,8 @@ Future<void> initializeFastEdgy({
   int? imageCacheMaxEntries,
   int? imageCacheMaxSizeBytes,
 
+  bool enableUserAgent = true,
+
   String? storagePrefix,
 
   // Core services factories (overridable)
@@ -106,11 +110,25 @@ Future<void> initializeFastEdgy({
     );
   }
 
+  // Build User-Agent interceptor from package info
+  UserAgentInterceptor? userAgentInterceptor;
+  if (enableUserAgent) {
+    final packageInfo = await PackageInfo.fromPlatform();
+    userAgentInterceptor = UserAgentInterceptor.build(
+      appName: packageInfo.appName,
+      version: packageInfo.version,
+      buildNumber: packageInfo.buildNumber,
+    );
+  }
+
   // Fetcher (can now use AuthProvider for refresh token interceptor)
   if (!hasService<Fetcher>()) {
     container.registerSingleton<Fetcher>(
       fetcherFactory?.call() ??
-          Fetcher.create(customInterceptors: apiInterceptors),
+          Fetcher.create(
+            customInterceptors: apiInterceptors,
+            userAgentInterceptor: userAgentInterceptor,
+          ),
     );
   }
 

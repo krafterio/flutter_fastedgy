@@ -59,6 +59,7 @@ class Fetcher {
     Dio? dio,
     Bus? bus,
     List<dynamic>? customInterceptors,
+    UserAgentInterceptor? userAgentInterceptor,
     bool enableAuth = true,
     bool enableTimezone = true,
     bool enableRefreshToken = true,
@@ -94,6 +95,12 @@ class Fetcher {
     }
 
     // Add default interceptors
+    if (userAgentInterceptor != null) {
+      allInterceptors.add(
+        InterceptorConfig(userAgentInterceptor, priority: 55),
+      );
+    }
+
     if (enableAuth && hasService<TokenStorage>()) {
       allInterceptors.add(
         InterceptorConfig(
