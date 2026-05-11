@@ -43,6 +43,7 @@ class Fetcher {
   /// - Auth: 50
   /// - Timezone: 45
   /// - RefreshToken: 40
+  /// - ConnectionRetry: 35
   /// - Logging: 30
   /// - Error: 10
   ///
@@ -63,6 +64,7 @@ class Fetcher {
     bool enableAuth = true,
     bool enableTimezone = true,
     bool enableRefreshToken = true,
+    bool enableConnectionRetry = true,
     bool enableLogging = true,
     bool enableErrorTransform = true,
     bool logHeaders = false,
@@ -130,6 +132,15 @@ class Fetcher {
             getService<TokenStorage>(),
           ),
           priority: 40,
+        ),
+      );
+    }
+
+    if (enableConnectionRetry) {
+      allInterceptors.add(
+        InterceptorConfig(
+          ConnectionRetryInterceptor(dioInstance),
+          priority: 35,
         ),
       );
     }
