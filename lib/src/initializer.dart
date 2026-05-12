@@ -110,9 +110,11 @@ Future<void> initializeFastEdgy({
     );
   }
 
-  // Build User-Agent interceptor from package info
+  // Build User-Agent interceptor from package info and register it in the
+  // container so custom fetcherFactory callers (and any other consumer)
+  // pick it up automatically via Fetcher.create.
   UserAgentInterceptor? userAgentInterceptor;
-  if (enableUserAgent) {
+  if (enableUserAgent && !hasService<UserAgentInterceptor>()) {
     final packageInfo = await PackageInfo.fromPlatform();
     userAgentInterceptor = UserAgentInterceptor.build(
       appName: packageInfo.appName,
@@ -120,6 +122,9 @@ Future<void> initializeFastEdgy({
       buildNumber: packageInfo.buildNumber,
       installerStore: packageInfo.installerStore,
     );
+    container.registerSingleton<UserAgentInterceptor>(userAgentInterceptor);
+  } else if (hasService<UserAgentInterceptor>()) {
+    userAgentInterceptor = getService<UserAgentInterceptor>();
   }
 
   // Fetcher (can now use AuthProvider for refresh token interceptor)

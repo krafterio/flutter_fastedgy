@@ -97,9 +97,16 @@ class Fetcher {
     }
 
     // Add default interceptors
-    if (userAgentInterceptor != null) {
+    // Fall back to the container-registered UserAgentInterceptor so custom
+    // fetcherFactory callers get the User-Agent without wiring it themselves.
+    final effectiveUserAgentInterceptor =
+        userAgentInterceptor ??
+        (hasService<UserAgentInterceptor>()
+            ? getService<UserAgentInterceptor>()
+            : null);
+    if (effectiveUserAgentInterceptor != null) {
       allInterceptors.add(
-        InterceptorConfig(userAgentInterceptor, priority: 55),
+        InterceptorConfig(effectiveUserAgentInterceptor, priority: 55),
       );
     }
 
