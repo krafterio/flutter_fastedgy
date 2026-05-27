@@ -19,6 +19,9 @@ library;
 // Core
 export 'src/initializer.dart';
 
+// App Info
+export 'src/app_info/app_info.dart';
+
 // Container (DI)
 export 'src/container/container.dart'
     show container, initializeContainer, getService, hasService;

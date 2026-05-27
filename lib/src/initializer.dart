@@ -5,7 +5,7 @@
 
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:logging/logging.dart';
-import 'package:package_info_plus/package_info_plus.dart';
+import 'app_info/models.dart';
 import 'container/container.dart';
 import 'i18n/i18n.dart';
 import 'logging/logger.dart';
@@ -110,17 +110,23 @@ Future<void> initializeFastEdgy({
     );
   }
 
-  // Build User-Agent interceptor from package info and register it in the
+  // AppInfo (loaded once from the platform and exposed via the container so
+  // any consumer can access version/build info synchronously after init).
+  if (!hasService<AppInfo>()) {
+    container.registerSingleton<AppInfo>(await AppInfo.fromPlatform());
+  }
+  final appInfo = getService<AppInfo>();
+
+  // Build User-Agent interceptor from AppInfo and register it in the
   // container so custom fetcherFactory callers (and any other consumer)
   // pick it up automatically via Fetcher.create.
   UserAgentInterceptor? userAgentInterceptor;
   if (enableUserAgent && !hasService<UserAgentInterceptor>()) {
-    final packageInfo = await PackageInfo.fromPlatform();
     userAgentInterceptor = UserAgentInterceptor.build(
-      appName: packageInfo.appName,
-      version: packageInfo.version,
-      buildNumber: packageInfo.buildNumber,
-      installerStore: packageInfo.installerStore,
+      appName: appInfo.appName,
+      version: appInfo.version,
+      buildNumber: appInfo.buildNumber,
+      installerStore: appInfo.installerStore,
     );
     container.registerSingleton<UserAgentInterceptor>(userAgentInterceptor);
   } else if (hasService<UserAgentInterceptor>()) {
