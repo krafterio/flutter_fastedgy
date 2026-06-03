@@ -133,6 +133,19 @@ class DefaultAuthProvider implements AuthProvider {
     return _tokenStorage.getAccessToken();
   }
 
+  // Single-flight refresh shared across callers, so concurrent reconnects can't
+  // trigger two refreshes at once (which would rotate the refresh token and race).
+  Future<bool>? _validationRefresh;
+
+  @override
+  Future<String?> getValidatedAccessToken() async {
+    if (await _tokenStorage.isTokenExpired() && await _tokenStorage.canRefreshToken()) {
+      _validationRefresh ??= refreshToken().whenComplete(() => _validationRefresh = null);
+      await _validationRefresh;
+    }
+    return getAccessToken();
+  }
+
   @override
   Future<String?> getRefreshToken() async {
     return _tokenStorage.getRefreshToken();

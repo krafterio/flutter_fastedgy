@@ -42,6 +42,16 @@ abstract class AuthProvider {
   /// Get the current access token
   Future<String?> getAccessToken();
 
+  /// Get a non-expired access token, refreshing it when the stored one has
+  /// expired.
+  ///
+  /// Use this anywhere the token is read directly — notably WebSocket
+  /// handshakes, which bypass the HTTP refresh interceptor that guards REST
+  /// calls. Without it, once the access token crosses its TTL the handshake
+  /// hands the server a stale token: the server rejects it and closes the
+  /// socket before it is ready.
+  Future<String?> getValidatedAccessToken();
+
   /// Get the current refresh token
   Future<String?> getRefreshToken();
 
