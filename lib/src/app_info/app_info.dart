@@ -4,3 +4,4 @@
  */
 
 export 'models.dart';
+export 'user_agent.dart';

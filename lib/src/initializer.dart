@@ -6,6 +6,7 @@
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:logging/logging.dart';
 import 'app_info/models.dart';
+import 'app_info/user_agent.dart';
 import 'container/container.dart';
 import 'i18n/i18n.dart';
 import 'logging/logger.dart';
@@ -117,17 +118,20 @@ Future<void> initializeFastEdgy({
   }
   final appInfo = getService<AppInfo>();
 
-  // Build User-Agent interceptor from AppInfo and register it in the
-  // container so custom fetcherFactory callers (and any other consumer)
-  // pick it up automatically via Fetcher.create.
+  // UserAgent: standalone service built once from AppInfo + platform, registered
+  // even when the interceptor is disabled so non-Dio transports (e.g. a WebSocket
+  // handshake) can read the same header via getService<UserAgent>().
+  if (!hasService<UserAgent>()) {
+    container.registerSingleton<UserAgent>(UserAgent.fromAppInfo(appInfo));
+  }
+  final userAgent = getService<UserAgent>();
+
+  // User-Agent interceptor (consumes the UserAgent service): registered in the
+  // container so custom fetcherFactory callers (and any other consumer) pick it
+  // up automatically via Fetcher.create.
   UserAgentInterceptor? userAgentInterceptor;
   if (enableUserAgent && !hasService<UserAgentInterceptor>()) {
-    userAgentInterceptor = UserAgentInterceptor.build(
-      appName: appInfo.appName,
-      version: appInfo.version,
-      buildNumber: appInfo.buildNumber,
-      installerStore: appInfo.installerStore,
-    );
+    userAgentInterceptor = UserAgentInterceptor(userAgent);
     container.registerSingleton<UserAgentInterceptor>(userAgentInterceptor);
   } else if (hasService<UserAgentInterceptor>()) {
     userAgentInterceptor = getService<UserAgentInterceptor>();

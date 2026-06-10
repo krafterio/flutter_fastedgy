@@ -3,56 +3,22 @@
  * MIT License (see LICENSE file).
  */
 
-import 'dart:io';
-
 import 'package:dio/dio.dart';
 
-/// Interceptor that adds the User-Agent header to all requests
+import '../../app_info/user_agent.dart';
+
+/// Interceptor that adds the [UserAgent] header to all Dio requests.
 ///
-/// Format: `AppName/1.0.0+1 (ios 18.3; appstore)`
+/// The User-Agent itself is the standalone [UserAgent] service — share it for
+/// non-Dio transports (e.g. a WebSocket handshake) by reading `userAgent.value`.
 class UserAgentInterceptor extends Interceptor {
-  final String _userAgent;
+  final UserAgent userAgent;
 
-  UserAgentInterceptor(this._userAgent);
-
-  /// Build a User-Agent string from app and platform info
-  factory UserAgentInterceptor.build({
-    required String appName,
-    required String version,
-    required String buildNumber,
-    String? installerStore,
-  }) {
-    final os = Platform.operatingSystem;
-    final osVersion = Platform.operatingSystemVersion;
-
-    // Extract clean OS version (remove kernel details on Android/Linux)
-    final cleanOsVersion = _cleanOsVersion(osVersion);
-
-    final storeSuffix = (installerStore != null && installerStore.isNotEmpty)
-        ? '; $installerStore'
-        : '';
-
-    return UserAgentInterceptor(
-      '$appName/$version+$buildNumber ($os $cleanOsVersion$storeSuffix)',
-    );
-  }
+  UserAgentInterceptor(this.userAgent);
 
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
-    options.headers['User-Agent'] = _userAgent;
+    options.headers['User-Agent'] = userAgent.value;
     handler.next(options);
-  }
-
-  /// Clean up OS version string to keep only the relevant version number
-  static String _cleanOsVersion(String osVersion) {
-    // On iOS/macOS: "Version 18.3 (Build 22D5055b)" → "18.3"
-    final versionMatch = RegExp(r'Version (\S+)').firstMatch(osVersion);
-    if (versionMatch != null) {
-      return versionMatch.group(1)!;
-    }
-
-    // On Android: "Linux 5.10.0 ..." or similar → try to extract SDK version
-    // Just return the raw version if no pattern matches
-    return osVersion.split(' ').first;
   }
 }
