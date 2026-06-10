@@ -17,11 +17,11 @@ class ResequenceRequest extends DynamicSchema<ResequenceRequest> {
     final data = <String, dynamic>{
       'model_name': modelName,
       'sequence_offset': sequenceOffset,
-      if (sequenceField != null) 'sequence_field': sequenceField,
-      if (groupField != null) 'group_field': groupField,
-      if (groupValue != null) 'group_value': groupValue,
+      'sequence_field': ?sequenceField,
+      'group_field': ?groupField,
+      'group_value': ?groupValue,
       'ids': ids,
-      if (extra != null) ...extra,
+      ...?extra,
     };
     return ResequenceRequest._(data);
   }
