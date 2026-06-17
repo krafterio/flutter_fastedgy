@@ -4,12 +4,18 @@
  */
 
 import 'package:dio/dio.dart';
+import '../bus/bus.dart';
 import '../fetcher/client.dart';
 import '../container/container.dart';
 import 'base_model.dart';
 import 'api_helpers.dart';
 import 'pagination_result.dart';
 import 'api_query.dart';
+
+class ResourceChangedEvent {
+  final String basePath;
+  const ResourceChangedEvent(this.basePath);
+}
 
 enum ApiAction {
   list,
@@ -184,6 +190,7 @@ abstract class ApiModel<T extends BaseModel<T>> {
       headers: headers,
     );
 
+    notifyChanged();
     return fromJson(response.data);
   }
 
@@ -228,6 +235,7 @@ abstract class ApiModel<T extends BaseModel<T>> {
       headers: headers,
     );
 
+    notifyChanged();
     return fromJson(response.data);
   }
 
@@ -249,7 +257,10 @@ abstract class ApiModel<T extends BaseModel<T>> {
     final headers = paramsMap['headers'] as Map<String, dynamic>?;
 
     await _fetcher.delete('$basePath/${id.toString()}', headers: headers);
+    notifyChanged();
   }
+
+  void notifyChanged() => getService<Bus>().fire(ResourceChangedEvent(basePath));
 
   /// Export resources
   ///

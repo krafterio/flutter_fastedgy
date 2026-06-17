@@ -1,18 +1,34 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 
+import '../bus/bus.dart';
+import '../container/container.dart';
 import 'api_model.dart';
 import 'api_query.dart';
 import 'base_model.dart';
 
 class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier {
-  ApiCollection(this.api);
+  ApiCollection(this.api, {dynamic fields, dynamic orderBy, int? limit})
+    : _configFields = fields,
+      _configOrderBy = orderBy,
+      _limit = limit {
+    _sub = getService<Bus>().on<ResourceChangedEvent>().listen((event) {
+      if (_loaded && event.basePath == api.basePath) reload();
+    });
+  }
 
   final ApiModel<T> api;
+  final dynamic _configFields;
+  final dynamic _configOrderBy;
+
+  late final StreamSubscription<ResourceChangedEvent> _sub;
 
   List<T> _items = [];
   bool _isLoading = false;
   bool _isLoadingMore = false;
+  bool _loaded = false;
   Object? _error;
   bool _disposed = false;
 
@@ -45,12 +61,13 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier {
 
   Future<bool> load({ListQuery? query}) {
     _query = query;
+    _loaded = true;
     final size = query?.size ?? query?.limit;
     if (size != null) _limit = size;
     return _fetch(1, append: false);
   }
 
-  Future<bool> reload() => _fetch(_page, append: false);
+  Future<bool> reload() => _fetch(1, append: false);
 
   Future<bool> setPage(int page) => _fetch(page, append: false);
 
@@ -112,17 +129,12 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier {
   ListQuery _pageQuery(int page) {
     final base = _query;
     return ListQuery(
-      fields: base?.fields,
+      fields: base?.fields ?? _configFields,
+      orderBy: base?.orderBy ?? _configOrderBy,
       filter: _effectiveFilter(),
-      orderBy: base?.orderBy,
       limit: _limit,
       offset: _limit != null ? (page - 1) * _limit! : null,
     );
-  }
-
-  FieldsOptions? _defaultFields() {
-    final fields = _query?.fields;
-    return fields == null ? null : FieldsOptions(fields: fields);
   }
 
   dynamic _effectiveFilter() {
@@ -134,50 +146,6 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier {
       '&',
       [base, searchExpr],
     ];
-  }
-
-  Future<T?> create(T draft, {FieldsOptions? options}) async {
-    try {
-      final created = await api.create(draft, options: options ?? _defaultFields());
-      _items = [..._items, created];
-      _total += 1;
-      _error = null;
-      _safeNotify();
-      return created;
-    } catch (e) {
-      _error = e;
-      _safeNotify();
-      return null;
-    }
-  }
-
-  Future<T?> update(Object id, T patch, {FieldsOptions? options}) async {
-    try {
-      final updated = await api.update(id, patch, options: options ?? _defaultFields());
-      _items = [for (final e in _items) e.id == updated.id ? updated : e];
-      _error = null;
-      _safeNotify();
-      return updated;
-    } catch (e) {
-      _error = e;
-      _safeNotify();
-      return null;
-    }
-  }
-
-  Future<bool> delete(Object id) async {
-    try {
-      await api.delete(id);
-      _items = _items.where((e) => e.id != id).toList();
-      if (_total > 0) _total -= 1;
-      _error = null;
-      _safeNotify();
-      return true;
-    } catch (e) {
-      _error = e;
-      _safeNotify();
-      return false;
-    }
   }
 
   void _safeNotify() {
@@ -194,6 +162,7 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _sub.cancel();
     super.dispose();
   }
 }
