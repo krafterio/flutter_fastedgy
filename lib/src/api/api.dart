@@ -3,6 +3,7 @@
  * MIT License (see LICENSE file).
  */
 
+export 'api_collection.dart';
 export 'api_helpers.dart';
 export 'api_model.dart';
 export 'api_query.dart';
