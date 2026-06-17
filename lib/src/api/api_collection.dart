@@ -14,9 +14,7 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier {
     : _configFields = fields,
       _configOrderBy = orderBy,
       _limit = limit {
-    _sub = getService<Bus>().on<ResourceChangedEvent>().listen((event) {
-      if (_loaded && event.basePath == api.basePath) reload();
-    });
+    _sub = getService<Bus>().on<ResourceChangedEvent>().listen(_onResourceChanged);
   }
 
   final ApiModel<T> api;
@@ -68,6 +66,42 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier {
   }
 
   Future<bool> reload() => _fetch(1, append: false);
+
+  Future<void> _onResourceChanged(ResourceChangedEvent event) async {
+    if (!_loaded || _disposed || event.basePath != api.basePath) return;
+    if (event.type == ResourceChangeType.deleted) {
+      final before = _items.length;
+      _items = _items.where((e) => e.id != event.id).toList();
+      if (_items.length != before) {
+        if (_total > 0) _total -= 1;
+        if (_limit != null && _limit! > 0) _totalPages = (_total / _limit!).ceil();
+        _safeNotify();
+      }
+      return;
+    }
+    await _refreshLoadedRange();
+  }
+
+  Future<void> _refreshLoadedRange() async {
+    if (_disposed) return;
+    final pageSize = _limit;
+    try {
+      final result = await api.list(
+        query: ListQuery(
+          fields: _query?.fields ?? _configFields,
+          orderBy: _query?.orderBy ?? _configOrderBy,
+          filter: _effectiveFilter(),
+          limit: pageSize != null ? pageSize * _page : null,
+          offset: 0,
+        ),
+      );
+      if (_disposed) return;
+      _items = result.items;
+      _total = result.total;
+      _totalPages = pageSize != null && pageSize > 0 ? (result.total / pageSize).ceil() : result.totalPages;
+      _safeNotify();
+    } catch (_) {}
+  }
 
   Future<bool> setPage(int page) => _fetch(page, append: false);
 

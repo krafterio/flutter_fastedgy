@@ -12,9 +12,13 @@ import 'api_helpers.dart';
 import 'pagination_result.dart';
 import 'api_query.dart';
 
+enum ResourceChangeType { created, updated, deleted }
+
 class ResourceChangedEvent {
   final String basePath;
-  const ResourceChangedEvent(this.basePath);
+  final ResourceChangeType? type;
+  final Object? id;
+  const ResourceChangedEvent(this.basePath, {this.type, this.id});
 }
 
 enum ApiAction {
@@ -190,8 +194,9 @@ abstract class ApiModel<T extends BaseModel<T>> {
       headers: headers,
     );
 
-    notifyChanged();
-    return fromJson(response.data);
+    final entity = fromJson(response.data);
+    notifyChanged(ResourceChangeType.created, entity.id);
+    return entity;
   }
 
   /// Update an existing resource (PATCH)
@@ -235,7 +240,7 @@ abstract class ApiModel<T extends BaseModel<T>> {
       headers: headers,
     );
 
-    notifyChanged();
+    notifyChanged(ResourceChangeType.updated, id);
     return fromJson(response.data);
   }
 
@@ -257,10 +262,11 @@ abstract class ApiModel<T extends BaseModel<T>> {
     final headers = paramsMap['headers'] as Map<String, dynamic>?;
 
     await _fetcher.delete('$basePath/${id.toString()}', headers: headers);
-    notifyChanged();
+    notifyChanged(ResourceChangeType.deleted, id);
   }
 
-  void notifyChanged() => getService<Bus>().fire(ResourceChangedEvent(basePath));
+  void notifyChanged([ResourceChangeType? type, Object? id]) =>
+      getService<Bus>().fire(ResourceChangedEvent(basePath, type: type, id: id));
 
   /// Export resources
   ///
