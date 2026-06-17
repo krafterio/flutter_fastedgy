@@ -86,7 +86,12 @@ class DynamicSchema<T extends DynamicSchema<T>> {
   T setInt(String name, int? value) => setField<int>(name, value);
 
   /// Get a double field
-  double? getDouble(String name) => getField<double>(name);
+  double? getDouble(String name) {
+    final value = getField<dynamic>(name);
+    if (value is double) return value;
+    if (value is num) return value.toDouble();
+    return null;
+  }
 
   /// Set a double field
   T setDouble(String name, double? value) => setField<double>(name, value);
@@ -106,16 +111,23 @@ class DynamicSchema<T extends DynamicSchema<T>> {
 
   /// Get a Date-only field (DateTime with time set to midnight)
   DateTime? getDate(String name) {
-    final dateTime = getDateTime(name);
-    if (dateTime == null) return null;
-    return DateTime(dateTime.year, dateTime.month, dateTime.day);
+    final value = getField<dynamic>(name);
+    if (value == null) return null;
+    if (value is DateTime) return DateTime(value.year, value.month, value.day);
+    if (value is String) {
+      final parsed = DateTime.tryParse(value);
+      if (parsed == null) return null;
+      return DateTime(parsed.year, parsed.month, parsed.day);
+    }
+    return null;
   }
 
-  /// Set a Date-only field (strips time component)
+  /// Set a Date-only field (stored as a YYYY-MM-DD string)
   T setDate(String name, DateTime? value) {
-    if (value == null) return setField<DateTime>(name, null);
-    final dateOnly = DateTime(value.year, value.month, value.day);
-    return setField<DateTime>(name, dateOnly);
+    if (value == null) return setField<String>(name, null);
+    final dateOnly =
+        '${value.year.toString().padLeft(4, '0')}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
+    return setField<String>(name, dateOnly);
   }
 
   /// Get a List field
@@ -131,6 +143,21 @@ class DynamicSchema<T extends DynamicSchema<T>> {
   /// Set a Map field
   T setMap(String name, Map<String, dynamic>? value) =>
       setField<Map<String, dynamic>>(name, value);
+
+  R? getRelation<R extends DynamicSchema<R>>(String name, R Function(Map<String, dynamic>) factory) {
+    final value = getField<Map<String, dynamic>>(name);
+    return value == null ? null : factory(value);
+  }
+
+  T setRelation(String name, Object? id) => setField(name, id);
+
+  List<R> getRelations<R extends DynamicSchema<R>>(String name, R Function(Map<String, dynamic>) factory) {
+    final value = getField<List<dynamic>>(name);
+    if (value == null) return <R>[];
+    return value.whereType<Map<String, dynamic>>().map(factory).toList();
+  }
+
+  T setRelations(String name, List<Object?> ids) => setField(name, ids);
 
   /// Parse a single value recursively (deserialization)
   ///
