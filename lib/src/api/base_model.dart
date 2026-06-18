@@ -137,6 +137,28 @@ class DynamicSchema<T extends DynamicSchema<T>> {
   /// Set a List field
   T setList<V>(String name, List<V>? value) => setField<List<V>>(name, value);
 
+  /// Get a List of doubles field (e.g. a geographic point [lat, lon])
+  ///
+  /// Coerces each element from num/String, since a JSON array decodes as
+  /// `List<dynamic>` (mixing int and double) and cannot be cast to
+  /// `List<double>` directly.
+  List<double>? getDoubleList(String name) {
+    final value = getField<dynamic>(name);
+    if (value is! List) return null;
+    return value
+        .map((e) {
+          if (e is double) return e;
+          if (e is num) return e.toDouble();
+          if (e is String) return double.tryParse(e);
+          return null;
+        })
+        .whereType<double>()
+        .toList();
+  }
+
+  /// Set a List of doubles field
+  T setDoubleList(String name, List<double>? value) => setField<List<double>>(name, value);
+
   /// Get a Map field
   Map<String, dynamic>? getMap(String name) =>
       getField<Map<String, dynamic>>(name);
