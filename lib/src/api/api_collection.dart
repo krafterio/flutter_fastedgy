@@ -42,7 +42,6 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier {
   double scrollOffset = 0;
 
   ListQuery? _query;
-  String? _search;
   int? _limit;
   int _page = 1;
   int _total = 0;
@@ -56,7 +55,6 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier {
   int get total => _total;
   int get totalPages => _totalPages;
   int? get limit => _limit;
-  String? get searchTerm => _search;
   bool get hasNextPage => _page < _totalPages;
   bool get hasPreviousPage => _page > 1;
   bool get hasMore => hasNextPage;
@@ -97,7 +95,7 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier {
         query: ListQuery(
           fields: query?.fields ?? _configFields,
           orderBy: query?.orderBy ?? _configOrderBy,
-          filter: _effectiveFilter(),
+          filter: _query?.filter,
           limit: pageSize * page,
           offset: 0,
         ),
@@ -142,7 +140,7 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier {
         query: ListQuery(
           fields: _query?.fields ?? _configFields,
           orderBy: _query?.orderBy ?? _configOrderBy,
-          filter: _effectiveFilter(),
+          filter: _query?.filter,
           limit: pageSize != null ? pageSize * _page : null,
           offset: 0,
         ),
@@ -168,13 +166,6 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier {
 
   Future<bool> setLimit(int? limit) {
     _limit = limit;
-    return _fetch(1, append: false);
-  }
-
-  Future<bool> search(String? term) {
-    final value = (term != null && term.trim().isNotEmpty) ? term.trim() : null;
-    if (value == _search) return Future.value(true);
-    _search = value;
     return _fetch(1, append: false);
   }
 
@@ -217,21 +208,10 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier {
     return ListQuery(
       fields: base?.fields ?? _configFields,
       orderBy: base?.orderBy ?? _configOrderBy,
-      filter: _effectiveFilter(),
+      filter: base?.filter,
       limit: _limit,
       offset: _limit != null ? (page - 1) * _limit! : null,
     );
-  }
-
-  dynamic _effectiveFilter() {
-    final base = _query?.filter;
-    if (_search == null) return base;
-    final searchExpr = ['search_value', 'search_fuzzy', _search];
-    if (base == null) return searchExpr;
-    return [
-      '&',
-      [base, searchExpr],
-    ];
   }
 
   void _safeNotify() {
