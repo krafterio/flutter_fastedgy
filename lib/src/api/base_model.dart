@@ -103,8 +103,14 @@ class DynamicSchema<T extends DynamicSchema<T>> {
   /// Set a bool field
   T setBool(String name, bool? value) => setField<bool>(name, value);
 
-  /// Get a DateTime field (already parsed by _parseData)
-  DateTime? getDateTime(String name) => getField<DateTime>(name);
+  /// Get a DateTime field
+  DateTime? getDateTime(String name) {
+    final value = getField<dynamic>(name);
+    if (value == null) return null;
+    if (value is DateTime) return value;
+    if (value is String) return DateTime.tryParse(value)?.toLocal();
+    return null;
+  }
 
   /// Set a DateTime field
   T setDateTime(String name, DateTime? value) =>
@@ -188,47 +194,46 @@ class DynamicSchema<T extends DynamicSchema<T>> {
     return value.whereType<Map<String, dynamic>>().map(factory).toList();
   }
 
-  /// Parse a single value recursively (deserialization)
+  /// Parse a single value recursively (deserialization).
   ///
-  /// Converts:
-  /// - ISO date strings → DateTime objects
-  /// - Lists → recursively parsed lists
-  /// - Maps → recursively parsed maps
+  /// Field values and list elements that look like ISO datetimes are converted
+  /// to [DateTime]. Map values are normalized (String keys) but their leaves are
+  /// kept raw, so free-form blobs (e.g. preferences) round trip unchanged and
+  /// related objects stay typed through getRelation / getObjectList.
   static dynamic _parseValue(dynamic value) {
-    if (value == null) {
-      return null;
-    }
+    if (value == null) return null;
 
-    // Parse ISO date strings to DateTime
     if (value is String) {
-      // Check if it's an ISO 8601 datetime string
       final isoDatePattern = RegExp(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}');
       if (isoDatePattern.hasMatch(value)) {
-        try {
-          return DateTime.parse(value).toLocal();
-        } catch (_) {
-          // If parsing fails, return as-is
-          return value;
-        }
+        return DateTime.tryParse(value)?.toLocal() ?? value;
       }
       return value;
     }
 
-    // Parse lists recursively
     if (value is List) {
       return value.map((item) => _parseValue(item)).toList();
     }
 
-    // Parse maps recursively
     if (value is Map) {
-      final parsed = <String, dynamic>{};
-      for (final entry in value.entries) {
-        parsed[entry.key.toString()] = _parseValue(entry.value);
-      }
-      return parsed;
+      return _normalizeKeys(value);
     }
 
-    // Return primitives and other types as-is
+    return value;
+  }
+
+  /// Deep-normalize container keys to String without converting leaf values.
+  static dynamic _normalizeKeys(dynamic value) {
+    if (value is Map) {
+      final result = <String, dynamic>{};
+      for (final entry in value.entries) {
+        result[entry.key.toString()] = _normalizeKeys(entry.value);
+      }
+      return result;
+    }
+    if (value is List) {
+      return value.map((item) => _normalizeKeys(item)).toList();
+    }
     return value;
   }
 
