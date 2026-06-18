@@ -30,6 +30,17 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier {
   Object? _error;
   bool _disposed = false;
 
+  /// Whether the collection already holds loaded data. A screen can read this
+  /// before [load] to decide whether to play its entry animation (skip it when
+  /// the collection — kept alive by a durable holder — is already populated).
+  bool get isLoaded => _loaded;
+
+  /// Last known scroll offset of the list bound to this collection. The screen
+  /// wires its [ScrollController] to it (initialScrollOffset + a listener that
+  /// writes back). It survives navigation with the collection instance, so the
+  /// scroll position is restored without any global cache.
+  double scrollOffset = 0;
+
   ListQuery? _query;
   String? _search;
   int? _limit;
@@ -63,6 +74,47 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier {
     final size = query?.size ?? query?.limit;
     if (size != null) _limit = size;
     return _fetch(1, append: false);
+  }
+
+  /// Loads pages 1..[page] in a single request (offset 0, limit = pageSize ×
+  /// page) so a screen can restore its previous pagination depth — and thus its
+  /// scroll position — at once. Falls back to a normal first-page load when the
+  /// page size is unknown or [page] <= 1.
+  Future<bool> loadThroughPage(int page, {ListQuery? query}) async {
+    _query = query;
+    _loaded = true;
+    final size = query?.size ?? query?.limit;
+    if (size != null) _limit = size;
+    final pageSize = _limit;
+    if (pageSize == null || pageSize <= 0 || page <= 1) {
+      return _fetch(1, append: false);
+    }
+    _isLoading = true;
+    _error = null;
+    _safeNotify();
+    try {
+      final result = await api.list(
+        query: ListQuery(
+          fields: query?.fields ?? _configFields,
+          orderBy: query?.orderBy ?? _configOrderBy,
+          filter: _effectiveFilter(),
+          limit: pageSize * page,
+          offset: 0,
+        ),
+      );
+      if (_disposed) return false;
+      _page = page;
+      _total = result.total;
+      _totalPages = (result.total / pageSize).ceil();
+      _items = result.items;
+      return true;
+    } catch (e) {
+      _error = e;
+      return false;
+    } finally {
+      _isLoading = false;
+      _safeNotify();
+    }
   }
 
   Future<bool> reload() => _fetch(1, append: false);
