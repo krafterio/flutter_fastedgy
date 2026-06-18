@@ -182,6 +182,12 @@ class DynamicSchema<T extends DynamicSchema<T>> {
 
   T setRelations(String name, List<Object?> ids) => setField(name, ids);
 
+  List<R> getObjectList<R>(String name, R Function(Map<String, dynamic>) factory) {
+    final value = getField<List<dynamic>>(name);
+    if (value == null) return <R>[];
+    return value.whereType<Map<String, dynamic>>().map(factory).toList();
+  }
+
   /// Parse a single value recursively (deserialization)
   ///
   /// Converts:
