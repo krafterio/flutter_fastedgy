@@ -29,12 +29,12 @@ import 'auth_result.dart';
 ///   authProvider: AppAuthProvider(),
 /// );
 /// ```
-abstract class AuthProvider {
+abstract class AuthProvider<TUser> {
   /// Login with username and password
-  Future<AuthResult> login(String username, String password);
+  Future<AuthResult<TUser>> login(String username, String password);
 
   /// Register a new user
-  Future<AuthResult> register(Map<String, dynamic> userData);
+  Future<AuthResult<TUser>> register(Map<String, dynamic> userData);
 
   /// Logout the current user
   Future<void> logout();
@@ -62,5 +62,5 @@ abstract class AuthProvider {
   Future<bool> isAuthenticated();
 
   /// Get the current user data
-  Future<Map<String, dynamic>?> getCurrentUser();
+  Future<TUser?> getCurrentUser();
 }

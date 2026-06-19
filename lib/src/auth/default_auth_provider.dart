@@ -16,15 +16,27 @@ import 'auth_events.dart';
 /// Default implementation of AuthProvider
 ///
 /// Provides standard FastEdgy authentication with JWT tokens.
-class DefaultAuthProvider implements AuthProvider {
+///
+/// [TUser] is the current-user payload type. Used raw (`DefaultAuthProvider`)
+/// it resolves to `DefaultAuthProvider<dynamic>` and [getCurrentUser] returns
+/// the raw `Map` from the API (backward compatible). Apps can specialize it
+/// (e.g. `DefaultAuthProvider<User>`) and pass [userFromJson] to deserialize
+/// `data['user']` / `/me` into a typed model.
+class DefaultAuthProvider<TUser> implements AuthProvider<TUser> {
   final Fetcher? _fetcher;
   final TokenStorage _tokenStorage;
   final Bus _bus;
+  final TUser Function(Map<String, dynamic> json)? _userFromJson;
   final _logger = getLogger('AuthProvider');
 
-  Map<String, dynamic>? _currentUser;
+  TUser? _currentUser;
 
-  DefaultAuthProvider(this._fetcher, this._tokenStorage, this._bus);
+  DefaultAuthProvider(
+    this._fetcher,
+    this._tokenStorage,
+    this._bus, {
+    TUser Function(Map<String, dynamic> json)? userFromJson,
+  }) : _userFromJson = userFromJson;
 
   /// Get the Fetcher instance
   ///
@@ -32,8 +44,20 @@ class DefaultAuthProvider implements AuthProvider {
   /// This allows breaking the circular dependency during initialization.
   Fetcher get _getFetcher => _fetcher ?? getService<Fetcher>();
 
+  /// Deserialize a raw user payload into [TUser].
+  ///
+  /// Uses [userFromJson] when provided. Without it, returns the raw value only
+  /// when it already matches [TUser] (the `dynamic`/`Map` default case),
+  /// otherwise null — never an unchecked cast.
+  TUser? _parseUser(Object? raw) {
+    if (raw is! Map<String, dynamic>) return null;
+    final parser = _userFromJson;
+    if (parser != null) return parser(raw);
+    return raw is TUser ? raw as TUser : null;
+  }
+
   @override
-  Future<AuthResult> login(String username, String password) async {
+  Future<AuthResult<TUser>> login(String username, String password) async {
     try {
       _logger.finer('Attempting login');
 
@@ -54,7 +78,7 @@ class DefaultAuthProvider implements AuthProvider {
       }
 
       // Store user data if present
-      _currentUser = data['user'] as Map<String, dynamic>?;
+      _currentUser = _parseUser(data['user']);
 
       // Fire auth:logged event
       _bus.fire(const AuthLoggedEvent());
@@ -76,7 +100,7 @@ class DefaultAuthProvider implements AuthProvider {
   }
 
   @override
-  Future<AuthResult> register(Map<String, dynamic> userData) async {
+  Future<AuthResult<TUser>> register(Map<String, dynamic> userData) async {
     try {
       _logger.finer('Attempting registration');
 
@@ -94,7 +118,7 @@ class DefaultAuthProvider implements AuthProvider {
       }
 
       // Store user data if present
-      _currentUser = data['user'] as Map<String, dynamic>?;
+      _currentUser = _parseUser(data['user']);
 
       // Fire auth:logged event
       _bus.fire(const AuthLoggedEvent());
@@ -185,7 +209,7 @@ class DefaultAuthProvider implements AuthProvider {
   }
 
   @override
-  Future<Map<String, dynamic>?> getCurrentUser() async {
+  Future<TUser?> getCurrentUser() async {
     if (_currentUser != null) {
       return _currentUser;
     }
@@ -194,7 +218,7 @@ class DefaultAuthProvider implements AuthProvider {
     if (await isAuthenticated()) {
       try {
         final response = await _getFetcher.get('/me');
-        _currentUser = response.data as Map<String, dynamic>?;
+        _currentUser = _parseUser(response.data);
         return _currentUser;
       } catch (e) {
         _logger.warning('Failed to fetch current user: $e');

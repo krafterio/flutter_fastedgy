@@ -3,8 +3,12 @@
  * MIT License (see LICENSE file).
  */
 
-/// Result of an authentication operation
-class AuthResult {
+/// Result of an authentication operation.
+///
+/// [TUser] is the user payload type. Used raw (`AuthResult`) it resolves to
+/// `AuthResult<dynamic>`, so existing callers keep getting a `Map`-shaped
+/// `user`; apps can specialize it (e.g. `AuthResult<User>`).
+class AuthResult<TUser> {
   /// Whether the operation was successful
   final bool success;
 
@@ -12,7 +16,7 @@ class AuthResult {
   final String? message;
 
   /// User data if login/register was successful
-  final Map<String, dynamic>? user;
+  final TUser? user;
 
   /// Access token if login/register was successful
   final String? accessToken;
@@ -30,7 +34,7 @@ class AuthResult {
 
   /// Create a successful result
   factory AuthResult.success({
-    Map<String, dynamic>? user,
+    TUser? user,
     String? accessToken,
     String? refreshToken,
   }) {
