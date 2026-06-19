@@ -165,6 +165,19 @@ class DynamicSchema<T extends DynamicSchema<T>> {
   /// Set a List of doubles field
   T setDoubleList(String name, List<double>? value) => setField<List<double>>(name, value);
 
+  /// Get a List of strings field
+  ///
+  /// Coerces from `List<dynamic>` (how a JSON array decodes) by keeping only
+  /// the string elements, since it cannot be cast to `List<String>` directly.
+  List<String>? getStringList(String name) {
+    final value = getField<dynamic>(name);
+    if (value is! List) return null;
+    return value.whereType<String>().toList();
+  }
+
+  /// Set a List of strings field
+  T setStringList(String name, List<String>? value) => setField<List<String>>(name, value);
+
   /// Get a Map field
   Map<String, dynamic>? getMap(String name) =>
       getField<Map<String, dynamic>>(name);
