@@ -174,8 +174,11 @@ class DynamicSchema<T extends DynamicSchema<T>> {
       setField<Map<String, dynamic>>(name, value);
 
   R? getRelation<R extends DynamicSchema<R>>(String name, R Function(Map<String, dynamic>) factory) {
-    final value = getField<Map<String, dynamic>>(name);
-    return value == null ? null : factory(value);
+    final value = getField<dynamic>(name);
+    if (value == null) return null;
+    if (value is Map<String, dynamic>) return factory(value);
+    if (value is Map) return factory(Map<String, dynamic>.from(value));
+    return factory({'id': value});
   }
 
   T setRelation(String name, Object? id) => setField(name, id);
