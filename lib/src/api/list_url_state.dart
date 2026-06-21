@@ -25,7 +25,8 @@ mixin ListUrlState<W extends StatefulWidget> on State<W> {
   bool _urlInitDone = false;
 
   /// Current router query parameters for this screen.
-  Map<String, String> get urlParams => GoRouterState.of(context).uri.queryParameters;
+  Map<String, String> get urlParams =>
+      GoRouterState.of(context).uri.queryParameters;
 
   /// True when the screen is (re)entered with query state already present
   /// (router back/forward, deep link, restore) → skip entry animations.
@@ -52,7 +53,10 @@ mixin ListUrlState<W extends StatefulWidget> on State<W> {
   /// Merges [params] into the current URL query (null/empty values remove the
   /// key) and replaces the location, debounced. The write is not echoed back to
   /// [applyUrlState].
-  void writeUrl(Map<String, String?> params, {Duration debounce = const Duration(milliseconds: 350)}) {
+  void writeUrl(
+    Map<String, String?> params, {
+    Duration debounce = const Duration(milliseconds: 350),
+  }) {
     _urlDebounce?.cancel();
     _urlDebounce = Timer(debounce, () {
       if (!mounted) return;
@@ -66,7 +70,12 @@ mixin ListUrlState<W extends StatefulWidget> on State<W> {
         }
       });
       _lastParams = query;
-      context.replace(Uri(path: state.uri.path, queryParameters: query.isEmpty ? null : query).toString());
+      context.replace(
+        Uri(
+          path: state.uri.path,
+          queryParameters: query.isEmpty ? null : query,
+        ).toString(),
+      );
     });
   }
 

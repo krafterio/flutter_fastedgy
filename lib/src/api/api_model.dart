@@ -266,7 +266,9 @@ abstract class ApiModel<T extends BaseModel<T>> {
   }
 
   void notifyChanged([ResourceChangeType? type, Object? id]) =>
-      getService<Bus>().fire(ResourceChangedEvent(basePath, type: type, id: id));
+      getService<Bus>().fire(
+        ResourceChangedEvent(basePath, type: type, id: id),
+      );
 
   /// Export resources
   ///

@@ -14,7 +14,9 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier {
     : _configFields = fields,
       _configOrderBy = orderBy,
       _limit = limit {
-    _sub = getService<Bus>().on<ResourceChangedEvent>().listen(_onResourceChanged);
+    _sub = getService<Bus>().on<ResourceChangedEvent>().listen(
+      _onResourceChanged,
+    );
   }
 
   final ApiModel<T> api;
@@ -124,7 +126,9 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier {
       _items = _items.where((e) => e.id != event.id).toList();
       if (_items.length != before) {
         if (_total > 0) _total -= 1;
-        if (_limit != null && _limit! > 0) _totalPages = (_total / _limit!).ceil();
+        if (_limit != null && _limit! > 0) {
+          _totalPages = (_total / _limit!).ceil();
+        }
         _safeNotify();
       }
       return;
@@ -148,19 +152,25 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier {
       if (_disposed) return;
       _items = result.items;
       _total = result.total;
-      _totalPages = pageSize != null && pageSize > 0 ? (result.total / pageSize).ceil() : result.totalPages;
+      _totalPages = pageSize != null && pageSize > 0
+          ? (result.total / pageSize).ceil()
+          : result.totalPages;
       _safeNotify();
     } catch (_) {}
   }
 
   Future<bool> setPage(int page) => _fetch(page, append: false);
 
-  Future<bool> nextPage() => hasNextPage ? _fetch(_page + 1, append: false) : Future.value(false);
+  Future<bool> nextPage() =>
+      hasNextPage ? _fetch(_page + 1, append: false) : Future.value(false);
 
-  Future<bool> previousPage() => hasPreviousPage ? _fetch(_page - 1, append: false) : Future.value(false);
+  Future<bool> previousPage() =>
+      hasPreviousPage ? _fetch(_page - 1, append: false) : Future.value(false);
 
   Future<bool> loadMore() {
-    if (_isLoadingMore || _isLoading || !hasNextPage) return Future.value(false);
+    if (_isLoadingMore || _isLoading || !hasNextPage) {
+      return Future.value(false);
+    }
     return _fetch(_page + 1, append: true);
   }
 
@@ -185,7 +195,10 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier {
       if (result.limit > 0) _limit = result.limit;
       if (append) {
         final existingIds = {for (final e in _items) e.id};
-        _items = [..._items, ...result.items.where((e) => !existingIds.contains(e.id))];
+        _items = [
+          ..._items,
+          ...result.items.where((e) => !existingIds.contains(e.id)),
+        ];
       } else {
         _items = result.items;
       }
@@ -216,7 +229,8 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier {
 
   void _safeNotify() {
     if (_disposed) return;
-    if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
       SchedulerBinding.instance.addPostFrameCallback((_) {
         if (!_disposed) notifyListeners();
       });

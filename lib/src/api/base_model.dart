@@ -163,7 +163,8 @@ class DynamicSchema<T extends DynamicSchema<T>> {
   }
 
   /// Set a List of doubles field
-  T setDoubleList(String name, List<double>? value) => setField<List<double>>(name, value);
+  T setDoubleList(String name, List<double>? value) =>
+      setField<List<double>>(name, value);
 
   /// Get a List of strings field
   ///
@@ -176,7 +177,8 @@ class DynamicSchema<T extends DynamicSchema<T>> {
   }
 
   /// Set a List of strings field
-  T setStringList(String name, List<String>? value) => setField<List<String>>(name, value);
+  T setStringList(String name, List<String>? value) =>
+      setField<List<String>>(name, value);
 
   /// Get a Map field
   Map<String, dynamic>? getMap(String name) =>
@@ -186,7 +188,10 @@ class DynamicSchema<T extends DynamicSchema<T>> {
   T setMap(String name, Map<String, dynamic>? value) =>
       setField<Map<String, dynamic>>(name, value);
 
-  R? getRelation<R extends DynamicSchema<R>>(String name, R Function(Map<String, dynamic>) factory) {
+  R? getRelation<R extends DynamicSchema<R>>(
+    String name,
+    R Function(Map<String, dynamic>) factory,
+  ) {
     final value = getField<dynamic>(name);
     if (value == null) return null;
     if (value is Map<String, dynamic>) return factory(value);
@@ -196,7 +201,10 @@ class DynamicSchema<T extends DynamicSchema<T>> {
 
   T setRelation(String name, Object? id) => setField(name, id);
 
-  List<R> getRelations<R extends DynamicSchema<R>>(String name, R Function(Map<String, dynamic>) factory) {
+  List<R> getRelations<R extends DynamicSchema<R>>(
+    String name,
+    R Function(Map<String, dynamic>) factory,
+  ) {
     final value = getField<List<dynamic>>(name);
     if (value == null) return <R>[];
     return value.whereType<Map<String, dynamic>>().map(factory).toList();
@@ -204,7 +212,10 @@ class DynamicSchema<T extends DynamicSchema<T>> {
 
   T setRelations(String name, List<Object?> ids) => setField(name, ids);
 
-  List<R> getObjectList<R>(String name, R Function(Map<String, dynamic>) factory) {
+  List<R> getObjectList<R>(
+    String name,
+    R Function(Map<String, dynamic>) factory,
+  ) {
     final value = getField<List<dynamic>>(name);
     if (value == null) return <R>[];
     return value.whereType<Map<String, dynamic>>().map(factory).toList();

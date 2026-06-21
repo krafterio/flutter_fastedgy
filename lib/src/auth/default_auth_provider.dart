@@ -163,8 +163,11 @@ class DefaultAuthProvider<TUser> implements AuthProvider<TUser> {
 
   @override
   Future<String?> getValidatedAccessToken() async {
-    if (await _tokenStorage.isTokenExpired() && await _tokenStorage.canRefreshToken()) {
-      _validationRefresh ??= refreshToken().whenComplete(() => _validationRefresh = null);
+    if (await _tokenStorage.isTokenExpired() &&
+        await _tokenStorage.canRefreshToken()) {
+      _validationRefresh ??= refreshToken().whenComplete(
+        () => _validationRefresh = null,
+      );
       await _validationRefresh;
     }
     return getAccessToken();

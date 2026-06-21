@@ -29,7 +29,8 @@ class UserAgent {
   factory UserAgent.fromAppInfo(AppInfo appInfo) {
     final os = Platform.operatingSystem;
     final osVersion = _cleanOsVersion(Platform.operatingSystemVersion);
-    final storeSuffix = (appInfo.installerStore != null && appInfo.installerStore!.isNotEmpty)
+    final storeSuffix =
+        (appInfo.installerStore != null && appInfo.installerStore!.isNotEmpty)
         ? '; ${appInfo.installerStore}'
         : '';
     return UserAgent(
