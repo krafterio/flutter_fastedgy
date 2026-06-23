@@ -4,6 +4,7 @@
  */
 
 import 'package:dio/dio.dart';
+import 'package:dio/io.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../bus/bus.dart';
 import '../container/container.dart';
@@ -520,6 +521,24 @@ class Fetcher {
       if (!_globalCancelToken.isCancelled) {
         _globalCancelToken.cancel('All requests cancelled');
       }
+    }
+  }
+
+  /// Recycle the underlying HTTP connection pool.
+  ///
+  /// After the app is suspended, the OS/proxy silently kills cached Keep-Alive
+  /// sockets; the first request on resume can still pick a dead one and fail
+  /// with a connection error. Swapping in a fresh adapter forces the next
+  /// request to open a new connection. The previous adapter is closed without
+  /// force so in-flight requests can still finish.
+  void recycleConnections() {
+    final adapter = _dio.httpClientAdapter;
+    if (adapter is IOHttpClientAdapter) {
+      _dio.httpClientAdapter = IOHttpClientAdapter(
+        createHttpClient: adapter.createHttpClient,
+        validateCertificate: adapter.validateCertificate,
+      );
+      adapter.close();
     }
   }
 
