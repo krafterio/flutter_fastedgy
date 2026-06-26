@@ -28,28 +28,15 @@ class UserAgent {
   /// Build from [AppInfo] and the current platform (OS + cleaned OS version).
   factory UserAgent.fromAppInfo(AppInfo appInfo) {
     final os = Platform.operatingSystem;
-    final osVersion = _cleanOsVersion(Platform.operatingSystemVersion);
     final storeSuffix =
         (appInfo.installerStore != null && appInfo.installerStore!.isNotEmpty)
         ? '; ${appInfo.installerStore}'
         : '';
     return UserAgent(
-      '${appInfo.appName}/${appInfo.version}+${appInfo.buildNumber} ($os $osVersion$storeSuffix)',
+      '${appInfo.appName}/${appInfo.version}+${appInfo.buildNumber} ($os ${appInfo.osVersion}$storeSuffix)',
     );
   }
 
   @override
   String toString() => value;
-
-  /// Clean up the OS version string to keep only the relevant version number.
-  static String _cleanOsVersion(String osVersion) {
-    // On iOS/macOS: "Version 18.3 (Build 22D5055b)" → "18.3"
-    final versionMatch = RegExp(r'Version (\S+)').firstMatch(osVersion);
-    if (versionMatch != null) {
-      return versionMatch.group(1)!;
-    }
-
-    // On Android/Linux: "Linux 5.10.0 ..." → keep the first token; otherwise raw.
-    return osVersion.split(' ').first;
-  }
 }

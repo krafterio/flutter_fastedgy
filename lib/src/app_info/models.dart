@@ -3,6 +3,9 @@
  * MIT License (see LICENSE file).
  */
 
+import 'dart:io';
+
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 /// Immutable application information loaded once at startup.
@@ -22,12 +25,14 @@ class AppInfo {
   final String version;
   final String buildNumber;
   final String? installerStore;
+  final String osVersion;
 
   const AppInfo({
     required this.appName,
     required this.packageName,
     required this.version,
     required this.buildNumber,
+    required this.osVersion,
     this.installerStore,
   });
 
@@ -40,7 +45,22 @@ class AppInfo {
       version: info.version,
       buildNumber: info.buildNumber,
       installerStore: info.installerStore,
+      osVersion: await _osVersion(),
     );
+  }
+
+  static Future<String> _osVersion() async {
+    final deviceInfo = DeviceInfoPlugin();
+    if (Platform.isIOS) {
+      return (await deviceInfo.iosInfo).systemVersion;
+    }
+    if (Platform.isAndroid) {
+      return (await deviceInfo.androidInfo).version.release;
+    }
+    final match = RegExp(
+      r'Version (\S+)',
+    ).firstMatch(Platform.operatingSystemVersion);
+    return match?.group(1) ?? Platform.operatingSystemVersion.split(' ').first;
   }
 
   /// Combined version in the form `"1.2.3+45"`.
