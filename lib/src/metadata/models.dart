@@ -14,6 +14,7 @@ class MetadataField {
   final bool extra;
   final List<String> filterOperators;
   final String? target;
+  final Map<String, String>? choices;
 
   const MetadataField({
     required this.name,
@@ -25,7 +26,15 @@ class MetadataField {
     required this.extra,
     required this.filterOperators,
     this.target,
+    this.choices,
   });
+
+  /// Resolve the human-readable label of a choice value (returns the raw value
+  /// when the field has no choices or the value is unknown).
+  String choiceLabel(Object? value) {
+    if (value == null) return '';
+    return choices?[value.toString()] ?? value.toString();
+  }
 
   /// Create a MetadataField from JSON
   factory MetadataField.fromJson(Map<String, dynamic> json) {
@@ -41,6 +50,9 @@ class MetadataField {
           .map((e) => e as String)
           .toList(),
       target: json['target'] as String?,
+      choices: (json['choices'] as Map<String, dynamic>?)?.map(
+        (key, value) => MapEntry(key, value as String),
+      ),
     );
   }
 
@@ -56,6 +68,7 @@ class MetadataField {
       'extra': extra,
       'filter_operators': filterOperators,
       'target': target,
+      'choices': choices,
     };
   }
 }
