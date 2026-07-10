@@ -221,6 +221,44 @@ class DynamicSchema<T extends DynamicSchema<T>> {
     return value.whereType<Map<String, dynamic>>().map(factory).toList();
   }
 
+  // ========== Generic reference (polymorphic m2o) helpers ==========
+
+  /// Get the value of a generic reference field (FastEdgy GenericForeignKey):
+  /// the serialized target record selected through X-Fields (discriminated by
+  /// its `$model` key) or the staged `{model, id}` write form.
+  Map<String, dynamic>? getReference(String name) => getMap(name);
+
+  /// Get the target model name of a generic reference field (`$model` on a
+  /// serialized record, `model` on a staged write form).
+  String? getReferenceModel(String name) {
+    final value = getMap(name);
+    return (value?[r'$model'] ?? value?['model']) as String?;
+  }
+
+  /// Get the target record id of a generic reference field.
+  int? getReferenceId(String name) => getMap(name)?['id'] as int?;
+
+  /// Get the serialized target of a generic reference field as a typed model,
+  /// or null when the reference is empty or points to another model.
+  R? getReferenceAs<R extends DynamicSchema<R>>(
+    String name,
+    String model,
+    R Function(Map<String, dynamic>) factory,
+  ) {
+    final value = getMap(name);
+    if (value == null || getReferenceModel(name) != model) return null;
+    return factory(value);
+  }
+
+  /// Stage a generic reference as its `{model, id}` write form
+  /// (null model or id clears the reference).
+  T setReference(String name, String? model, int? id) {
+    if (model == null || id == null) {
+      return setField<Map<String, dynamic>>(name, null);
+    }
+    return setMap(name, {'model': model, 'id': id});
+  }
+
   /// Parse a single value recursively (deserialization).
   ///
   /// Field values and list elements that look like ISO datetimes are converted

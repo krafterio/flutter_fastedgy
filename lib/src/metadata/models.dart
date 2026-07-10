@@ -14,6 +14,7 @@ class MetadataField {
   final bool extra;
   final List<String> filterOperators;
   final String? target;
+  final List<String>? targets;
   final Map<String, String>? choices;
 
   const MetadataField({
@@ -26,6 +27,7 @@ class MetadataField {
     required this.extra,
     required this.filterOperators,
     this.target,
+    this.targets,
     this.choices,
   });
 
@@ -50,6 +52,9 @@ class MetadataField {
           .map((e) => e as String)
           .toList(),
       target: json['target'] as String?,
+      targets: (json['targets'] as List<dynamic>?)
+          ?.map((e) => e as String)
+          .toList(),
       choices: (json['choices'] as Map<String, dynamic>?)?.map(
         (key, value) => MapEntry(key, value as String),
       ),
@@ -68,6 +73,7 @@ class MetadataField {
       'extra': extra,
       'filter_operators': filterOperators,
       'target': target,
+      'targets': targets,
       'choices': choices,
     };
   }
