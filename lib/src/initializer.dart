@@ -20,10 +20,11 @@ import 'bus/bus.dart';
 import 'metadata/metadata_provider.dart';
 import 'metadata/default_metadata_provider.dart';
 import 'image/image_cache.dart';
+import 'offline/drift_local_image_store.dart';
+import 'offline/drift_local_store.dart';
 import 'offline/local_image_store.dart';
 import 'offline/local_store.dart';
-import 'offline/sembast_local_image_store.dart';
-import 'offline/sembast_local_store.dart';
+import 'offline/offline_database.dart';
 import 'storage/storage_downloader.dart';
 import 'storage/storage_uploader.dart';
 
@@ -209,9 +210,10 @@ Future<void> initializeFastEdgy({
   // LocalStore (opt-in): opened eagerly so offline reads work from the first
   // frame; cached records are purged on logout.
   if ((offline || localStoreFactory != null) && !hasService<LocalStore>()) {
+    OfflineDatabase.allowMultipleInstances();
     final localStore =
         localStoreFactory?.call() ??
-        SembastLocalStore(dbName: offlineDbName ?? 'fastedgy_offline.db');
+        DriftLocalStore(dbName: offlineDbName ?? 'fastedgy_offline.db');
     await localStore.open();
     container.registerSingleton<LocalStore>(localStore);
     getService<Bus>().on<AuthLogoutEvent>().listen(
@@ -225,7 +227,7 @@ Future<void> initializeFastEdgy({
       !hasService<LocalImageStore>()) {
     final localImageStore =
         localImageStoreFactory?.call() ??
-        SembastLocalImageStore(
+        DriftLocalImageStore(
           dbName: offlineImagesDbName ?? 'fastedgy_offline_images.db',
         );
     await localImageStore.open();

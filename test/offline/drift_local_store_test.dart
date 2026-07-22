@@ -4,24 +4,22 @@
  */
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sembast/sembast_memory.dart';
+import 'package:drift/native.dart';
 import 'package:flutter_fastedgy/flutter_fastedgy.dart';
 
 void main() {
-  late SembastLocalStore store;
-  var dbIndex = 0;
+  late DriftLocalStore store;
 
   setUp(() async {
-    store = SembastLocalStore(
-      databaseOpener: () =>
-          newDatabaseFactoryMemory().openDatabase('test_${dbIndex++}.db'),
+    store = DriftLocalStore(
+      databaseOpener: () => OfflineDatabase(NativeDatabase.memory()),
     );
     await store.open();
   });
 
   tearDown(() => store.close());
 
-  group('SembastLocalStore', () {
+  group('DriftLocalStore', () {
     test('round-trips a record', () async {
       await store.put('/users', 1, {'id': 1, 'name': 'Ada'});
 

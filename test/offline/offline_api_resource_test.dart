@@ -9,7 +9,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:sembast/sembast_memory.dart';
+import 'package:drift/native.dart';
 import 'package:flutter_fastedgy/flutter_fastedgy.dart';
 
 class _Profile extends BaseModel<_Profile> {
@@ -82,9 +82,8 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   late _ScriptedAdapter adapter;
-  late SembastLocalStore store;
+  late DriftLocalStore store;
   late _ProfileApi api;
-  var dbIndex = 0;
 
   setUpAll(() {
     dotenv.loadFromString(envString: 'API_BASE_URL=http://localhost');
@@ -109,9 +108,8 @@ void main() {
       enableLogging: false,
       enableErrorTransform: false,
     );
-    store = SembastLocalStore(
-      databaseOpener: () =>
-          newDatabaseFactoryMemory().openDatabase('resource_${dbIndex++}.db'),
+    store = DriftLocalStore(
+      databaseOpener: () => OfflineDatabase(NativeDatabase.memory()),
     );
     await store.open();
     api = _ProfileApi(fetcher: fetcher, localStore: store);
