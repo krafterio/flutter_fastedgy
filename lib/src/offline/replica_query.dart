@@ -25,10 +25,13 @@ class CompiledReplicaQuery {
 /// Compiles the FastEdgy filter AST (X-Filter) to SQL over the [ReplicaStore]
 /// tables, mirroring the server semantics (`fastedgy/orm/filter/builder.py`):
 ///
-/// - relation paths compile to `EXISTS` chains (m2o forward, o2m through the
-///   resolved reverse FK); in an AND, rules sharing the same relation path are
-///   grouped into a single `EXISTS` (same related row — the server's joined
-///   lookups), while OR branches get independent `EXISTS` each;
+/// - pure-m2o paths compile to correlated scalar subqueries — the LEFT JOIN
+///   semantics of the server lookups (a broken FK chain yields NULL, so
+///   `is empty` also matches records without the relation);
+/// - paths through a to-many relation compile to `EXISTS` chains (o2m through
+///   the resolved reverse FK); in an AND, rules sharing the same relation
+///   path are grouped into a single `EXISTS` (same related row — the
+///   server's joined lookups), while OR branches get independent `EXISTS`;
 /// - `like`-family case sensitivity matches the server: sensitive variants
 ///   compile to `GLOB`, insensitive ones to SQLite `LIKE` (ASCII folding);
 /// - nested `order_by` follows m2o paths through `LEFT JOIN`s with the
@@ -112,8 +115,8 @@ class ReplicaQueryCompiler {
           case FilterRule():
             final path = _resolvePath(ctx, model, node.field);
 
-            if (path.hops.isEmpty) {
-              parts.add(_predicate(alias, path.leaf, node, args));
+            if (_isSingleValued(path.hops)) {
+              parts.add(_scalarPredicate(ctx, alias, path, node, args));
             } else {
               // Group by first hop: rules sharing a path prefix share the
               // same EXISTS chain (the server's joined-lookup semantics).
@@ -136,8 +139,8 @@ class ReplicaQueryCompiler {
           case FilterRule():
             final path = _resolvePath(ctx, model, node.field);
 
-            if (path.hops.isEmpty) {
-              parts.add(_predicate(alias, path.leaf, node, args));
+            if (_isSingleValued(path.hops)) {
+              parts.add(_scalarPredicate(ctx, alias, path, node, args));
             } else {
               parts.add(_existsTree(ctx, alias, [(path, node)], 0, args));
             }
@@ -176,8 +179,17 @@ class ReplicaQueryCompiler {
     final deeper = <String, List<(_Path, FilterRule)>>{};
 
     for (final entry in rules) {
-      if (entry.$1.hops.length == depth + 1) {
-        parts.add(_predicate(alias, entry.$1.leaf, entry.$2, args));
+      final rest = entry.$1.hops.sublist(depth + 1);
+
+      if (_allMany2one(rest)) {
+        parts.add(
+          _predicate(
+            _scalarChain(ctx, alias, rest, entry.$1.leaf, args),
+            entry.$1.leaf,
+            entry.$2,
+            args,
+          ),
+        );
       } else {
         deeper
             .putIfAbsent(entry.$1.hops[depth + 1].field.name, () => [])
@@ -193,13 +205,59 @@ class ReplicaQueryCompiler {
         'WHERE $link AND $alias.ws_scope = ? AND ${parts.join(' AND ')})';
   }
 
-  String _predicate(
+  /// Whether the path only traverses single-valued (m2o) hops — compiled as
+  /// a correlated scalar subquery chain (LEFT JOIN semantics: a broken chain
+  /// yields NULL instead of dropping the row).
+  bool _isSingleValued(List<_Hop> hops) => hops.isEmpty || _allMany2one(hops);
+
+  bool _allMany2one(List<_Hop> hops) =>
+      hops.every((hop) => hop.reverseField == null);
+
+  String _scalarPredicate(
+    _Context ctx,
     String alias,
+    _Path path,
+    FilterRule rule,
+    List<Object?> args,
+  ) {
+    return _predicate(
+      _scalarChain(ctx, alias, path.hops, path.leaf, args),
+      path.leaf,
+      rule,
+      args,
+    );
+  }
+
+  // Nested correlated scalar subqueries following a m2o chain; the innermost
+  // expression is the leaf column, a missing related row yields NULL.
+  String _scalarChain(
+    _Context ctx,
+    String parentAlias,
+    List<_Hop> hops,
+    LocalFieldSchema leaf,
+    List<Object?> args,
+  ) {
+    if (hops.isEmpty) {
+      return '$parentAlias."${leaf.name}"';
+    }
+
+    final hop = hops.first;
+    final alias = ctx.nextAlias('s');
+    final inner = _scalarChain(ctx, alias, hops.sublist(1), leaf, args);
+
+    args.add(ctx.scopeOf(hop.target.name));
+
+    return '(SELECT $inner FROM "${_table(hop.target)}" $alias '
+        'WHERE $parentAlias."${hop.field.name}" = $alias.id '
+        'AND $alias.ws_scope = ?)';
+  }
+
+  String _predicate(
+    String column,
     LocalFieldSchema leaf,
     FilterRule rule,
     List<Object?> args,
   ) {
-    final column = '$alias."${leaf.name}"';
     final value = _coerce(leaf, rule.value);
 
     switch (rule.operator) {
@@ -357,8 +415,12 @@ class ReplicaQueryCompiler {
         }
       }
 
+      // Approximate the server's locale-aware text ordering (PostgreSQL
+      // collation) — SQLite's BINARY default would sort all uppercase first.
+      final collate = _isTextualSort(path.leaf) ? ' COLLATE NOCASE' : '';
+
       terms.add(
-        '$alias."${path.leaf.name}" '
+        '$alias."${path.leaf.name}"$collate '
         '${descending ? 'DESC NULLS FIRST' : 'ASC NULLS LAST'}',
       );
     }
@@ -368,6 +430,12 @@ class ReplicaQueryCompiler {
       orderBy: terms.isEmpty ? '' : ' ORDER BY ${terms.join(', ')}',
     );
   }
+
+  bool _isTextualSort(LocalFieldSchema leaf) => switch (leaf.type) {
+    'datetime' || 'date' || 'json' => false,
+    _ =>
+      leaf.relationKind == LocalRelationKind.none && leaf.sqlAffinity == 'TEXT',
+  };
 
   _Path _resolvePath(_Context ctx, LocalModelSchema root, String fieldPath) {
     final segments = fieldPath.split('.');

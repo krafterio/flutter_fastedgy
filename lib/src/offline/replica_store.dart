@@ -343,19 +343,7 @@ class ReplicaStore {
   Map<String, String> _expectedColumns(LocalModelSchema model) => {
     'ws_scope': 'TEXT',
     'data': 'TEXT',
-    for (final field in model.columns) field.name: _affinity(field),
-  };
-
-  String _affinity(LocalFieldSchema field) => switch (field.type) {
-    'integer' ||
-    'big_integer' ||
-    'small_integer' ||
-    'boolean' ||
-    'many2one' ||
-    'many2one_ref' ||
-    'one2one' => 'INTEGER',
-    'float' || 'decimal' => 'REAL',
-    _ => 'TEXT',
+    for (final field in model.columns) field.name: field.sqlAffinity,
   };
 
   Future<Map<String, String>?> _tableInfo(String table) async {

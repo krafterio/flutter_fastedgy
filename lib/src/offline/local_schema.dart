@@ -35,6 +35,19 @@ class LocalFieldSchema {
   bool get isColumn =>
       relationKind == LocalRelationKind.none ||
       relationKind == LocalRelationKind.many2one;
+
+  /// SQLite column affinity of this field.
+  String get sqlAffinity => switch (type) {
+    'integer' ||
+    'big_integer' ||
+    'small_integer' ||
+    'boolean' ||
+    'many2one' ||
+    'many2one_ref' ||
+    'one2one' => 'INTEGER',
+    'float' || 'decimal' => 'REAL',
+    _ => 'TEXT',
+  };
 }
 
 /// Local mirror of a server model schema, derived from the Metadata
@@ -74,22 +87,16 @@ class LocalSchema {
 
   const LocalSchema(this.models);
 
-  /// Build the schema of [modelNames] (metadata names, e.g. `workspace_user`)
-  /// from the metadata service. Unknown models are skipped (server not
-  /// exposing them yet); returns null when metadata are unavailable.
-  static Future<LocalSchema?> fromMetadata(
-    MetadataProvider provider, {
-    required Iterable<String> modelNames,
-  }) async {
-    final metadatas = await provider.getMetadatas();
-
-    if (metadatas == null) {
-      return null;
-    }
-
+  /// Build the schema from already-parsed [MetadataModel]s, keeping only
+  /// [modelNames] when provided.
+  factory LocalSchema.fromModels(
+    Map<String, MetadataModel> metadatas, {
+    Iterable<String>? modelNames,
+  }) {
+    final names = modelNames ?? metadatas.keys;
     final models = <String, LocalModelSchema>{};
 
-    for (final name in modelNames) {
+    for (final name in names) {
       final metadata = metadatas[name];
 
       if (metadata == null) {
@@ -113,6 +120,22 @@ class LocalSchema {
     }
 
     return LocalSchema(models);
+  }
+
+  /// Build the schema of [modelNames] (metadata names, e.g. `workspace_user`)
+  /// from the metadata service. Unknown models are skipped (server not
+  /// exposing them yet); returns null when metadata are unavailable.
+  static Future<LocalSchema?> fromMetadata(
+    MetadataProvider provider, {
+    required Iterable<String> modelNames,
+  }) async {
+    final metadatas = await provider.getMetadatas();
+
+    if (metadatas == null) {
+      return null;
+    }
+
+    return LocalSchema.fromModels(metadatas, modelNames: modelNames);
   }
 
   /// Resolve the reverse m2o field backing the [o2mField] inverse relation of
