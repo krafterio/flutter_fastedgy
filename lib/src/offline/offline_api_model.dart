@@ -3,6 +3,7 @@
  * MIT License (see LICENSE file).
  */
 
+import '../api/api_helpers.dart';
 import '../api/api_model.dart';
 import '../api/api_query.dart';
 import '../api/base_model.dart';
@@ -14,12 +15,20 @@ import 'offline_error.dart';
 /// [ApiModel] variant that mirrors server records into a [LocalStore] to keep
 /// reads working offline.
 ///
-/// Behavior:
-/// - [list] / [get] are network-first: successful responses are upserted into
-///   the local store; on connectivity failure the cached records are served
-///   instead (server errors are always rethrown).
-/// - [listCacheThenNetwork] / [getCacheThenNetwork] emit the cached data
-///   immediately (when present), then the fresh network result.
+/// The cache contract is decoupled from the UI pagination and filters:
+///
+/// - [sync] is the only writer allowed to prune: it walks the WHOLE collection
+///   (auto-paginated, with [syncFields] preloading) and transactionally
+///   replaces the namespace — the cache always means "the full collection as
+///   of the last sync".
+/// - [list] / [get] are network-first and deep-merge fetched records by id
+///   into the cache (freshness without pruning: a partial page or a narrow
+///   X-Fields selection can never poison the namespace); on connectivity
+///   failure the query is evaluated locally against the cached records
+///   (order_by, offset/limit — filters are not evaluated locally yet and are
+///   ignored offline). Server errors are always rethrown.
+/// - [listCacheThenNetwork] / [getCacheThenNetwork] emit the locally evaluated
+///   data immediately (when present), then the fresh network result.
 /// - [create] / [update] / [delete] update the cache on success. Offline
 ///   writes are rethrown for now (buffered outbox planned in a next phase).
 ///
@@ -29,12 +38,17 @@ import 'offline_error.dart';
 ///
 /// Example:
 /// ```dart
-/// class WorkspaceUserApi extends OfflineApiModel<WorkspaceUser> {
-///   WorkspaceUserApi() : super('/workspace_users');
+/// class WorkspaceApi extends OfflineApiModel<Workspace> {
+///   WorkspaceApi() : super('/workspaces');
 ///
 ///   @override
-///   WorkspaceUser fromJson(Map<String, dynamic> json) => WorkspaceUser(json);
+///   dynamic get syncFields => 'id,name,slug,image_url';
+///
+///   @override
+///   Workspace fromJson(Map<String, dynamic> json) => Workspace(json);
 /// }
+///
+/// await useWorkspaceApi().sync();
 /// ```
 abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
   final LocalStore? _localStore;
@@ -54,7 +68,56 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
   /// Cache namespace of this resource (defaults to [basePath]).
   String get cacheModel => basePath;
 
-  /// Get all cached records of this resource.
+  /// X-Fields used by [sync] to mirror the collection (relations to preload).
+  /// Null selects the default server fields.
+  dynamic get syncFields => null;
+
+  /// Page size used by [sync] while walking the collection (transport detail,
+  /// unrelated to the cache contract).
+  int get syncPageSize => 200;
+
+  /// Mirror the whole collection into the local store.
+  ///
+  /// Fetches every record (auto-paginated by [syncPageSize], preloading
+  /// [syncFields]) then transactionally replaces the namespace, pruning
+  /// records deleted on the server. No-op when offline is disabled.
+  Future<void> sync({ApiParams? params}) async {
+    final store = localStore;
+
+    if (store == null) {
+      return;
+    }
+
+    final records = <String, Map<String, dynamic>>{};
+    var offset = 0;
+
+    while (true) {
+      final page = await super.list(
+        query: ListQuery(
+          fields: syncFields,
+          limit: syncPageSize,
+          offset: offset,
+        ),
+        params: params,
+      );
+
+      for (final item in page.items) {
+        if (item.id != null) {
+          records['${item.id}'] = item.toJson();
+        }
+      }
+
+      offset += page.items.length;
+
+      if (page.items.isEmpty || offset >= page.total) {
+        break;
+      }
+    }
+
+    await store.replaceAll(cacheModel, records);
+  }
+
+  /// Get all cached records of this resource (raw namespace read).
   Future<List<T>> cachedList() async {
     final store = localStore;
 
@@ -65,6 +128,32 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
     final records = await store.getAll(cacheModel);
 
     return records.map(fromJson).toList();
+  }
+
+  /// Evaluate [query] against the cached records.
+  ///
+  /// Applies order_by then offset/limit locally and returns an honest
+  /// [PaginationResult] (total = cached collection size). Filters are not
+  /// evaluated locally yet: a filtered query serves the unfiltered
+  /// collection.
+  Future<PaginationResult<T>> cachedQuery([ListQuery? query]) async {
+    final all = _applyOrderBy(await cachedList(), query?.orderBy);
+    final offset = _queryOffset(query);
+    final limit = query?.limit ?? query?.size;
+    final end = limit == null ? all.length : offset + limit;
+    final items = offset >= all.length
+        ? <T>[]
+        : all.sublist(offset, end > all.length ? all.length : end);
+
+    return PaginationResult<T>(
+      items: items,
+      total: all.length,
+      limit: limit ?? all.length,
+      offset: offset,
+      totalPages: limit == null || limit == 0
+          ? (all.isEmpty ? 0 : 1)
+          : (all.length / limit).ceil(),
+    );
   }
 
   /// Get a cached record by id, or null when absent.
@@ -97,19 +186,13 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
         rethrow;
       }
 
-      final cached = await cachedList();
+      final cached = await cachedQuery(query);
 
-      if (cached.isEmpty) {
+      if (cached.total == 0) {
         rethrow;
       }
 
-      return PaginationResult<T>(
-        items: cached,
-        total: cached.length,
-        limit: cached.length,
-        offset: 0,
-        totalPages: 1,
-      );
+      return cached;
     }
   }
 
@@ -146,7 +229,7 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
     );
 
     if (entity.id != null) {
-      await localStore?.put(cacheModel, entity.id!, entity.toJson());
+      await _mergeRecord(entity.id!, entity.toJson());
     }
 
     return entity;
@@ -167,7 +250,7 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
       params: params,
     );
 
-    await localStore?.put(cacheModel, entity.id ?? id, entity.toJson());
+    await _mergeRecord(entity.id ?? id, entity.toJson());
 
     return entity;
   }
@@ -179,8 +262,8 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
     await localStore?.delete(cacheModel, id);
   }
 
-  /// Emit the cached records immediately (when present), then the fresh
-  /// network result.
+  /// Emit the locally evaluated [query] immediately (when the cache holds
+  /// records), then the fresh network result.
   ///
   /// On connectivity failure after a cached emission the stream completes
   /// silently; without any cached data the error is surfaced.
@@ -188,22 +271,16 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
     ListQuery? query,
     ApiParams? params,
   }) async* {
-    final cached = await cachedList();
+    final cached = await cachedQuery(query);
 
-    if (cached.isNotEmpty) {
-      yield PaginationResult<T>(
-        items: cached,
-        total: cached.length,
-        limit: cached.length,
-        offset: 0,
-        totalPages: 1,
-      );
+    if (cached.total > 0) {
+      yield cached;
     }
 
     try {
       yield await _listRemote(query: query, params: params);
     } catch (error) {
-      if (cached.isEmpty || !isOfflineError(error)) {
+      if (cached.total == 0 || !isOfflineError(error)) {
         rethrow;
       }
     }
@@ -234,7 +311,8 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
     }
   }
 
-  // Network list + cache upsert, without the offline cache fallback.
+  // Network list + per-record deep merge into the cache (never prunes — only
+  // sync() is allowed to), without the offline cache fallback.
   Future<PaginationResult<T>> _listRemote({
     ListQuery? query,
     ApiParams? params,
@@ -242,23 +320,25 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
     final store = localStore;
     final result = await super.list(query: query, params: params);
 
-    if (store != null) {
+    if (store != null && result.items.isNotEmpty) {
+      final existing = {
+        for (final record in await store.getAll(cacheModel))
+          '${record['id']}': record,
+      };
       final records = {
         for (final item in result.items)
-          if (item.id != null) '${item.id}': item.toJson(),
+          if (item.id != null)
+            '${item.id}': {...?existing['${item.id}'], ...item.toJson()},
       };
 
-      if (_isCompleteResult(query, result)) {
-        await store.replaceAll(cacheModel, records);
-      } else {
-        await store.putAll(cacheModel, records);
-      }
+      await store.putAll(cacheModel, records);
     }
 
     return result;
   }
 
-  // Network get + cache upsert, without the offline cache fallback.
+  // Network get + per-record deep merge into the cache, without the offline
+  // cache fallback.
   Future<T> _getRemote(
     Object id, {
     FieldsOptions? options,
@@ -267,26 +347,105 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
     final entity = await super.get(id, options: options, params: params);
 
     if (entity.id != null) {
-      await localStore?.put(cacheModel, entity.id!, entity.toJson());
+      await _mergeRecord(entity.id!, entity.toJson());
     }
 
     return entity;
   }
 
-  /// Whether [result] holds the full unfiltered collection, allowing the
-  /// cache namespace to be replaced (pruning server-side deletions) instead
-  /// of merged.
-  bool _isCompleteResult(ListQuery? query, PaginationResult<T> result) {
-    if (query?.filter != null) {
-      return false;
+  // Merge a fetched record over its cached version (fresh fields win, fields
+  // absent from the fetch — e.g. a narrow X-Fields selection — are retained).
+  Future<void> _mergeRecord(Object id, Map<String, dynamic> json) async {
+    final store = localStore;
+
+    if (store == null) {
+      return;
     }
 
-    final offset =
-        query?.offset ??
-        (query?.page != null && query?.size != null
-            ? (query!.page! - 1) * query.size!
-            : 0);
+    final existing = await store.get(cacheModel, id);
+    await store.put(cacheModel, id, {...?existing, ...json});
+  }
 
-    return offset == 0 && result.items.length >= result.total;
+  int _queryOffset(ListQuery? query) {
+    if (query?.offset != null) {
+      return query!.offset!;
+    }
+
+    if (query?.page != null && query?.size != null) {
+      return (query!.page! - 1) * query.size!;
+    }
+
+    return 0;
+  }
+
+  List<T> _applyOrderBy(List<T> items, dynamic orderBy) {
+    final encoded = ApiHelpers.encodeOrderBy(orderBy);
+
+    if (encoded.isEmpty) {
+      return items;
+    }
+
+    final terms = encoded
+        .split(',')
+        .map((term) {
+          final parts = term.split(':');
+
+          return (
+            parts.first.trim(),
+            parts.length > 1 ? parts[1].trim() : 'asc',
+          );
+        })
+        .where((term) => term.$1.isNotEmpty)
+        .toList();
+
+    if (terms.isEmpty) {
+      return items;
+    }
+
+    final sorted = [...items];
+    sorted.sort((a, b) {
+      for (final (field, direction) in terms) {
+        final comparison = _compareValues(
+          a.getField<dynamic>(field),
+          b.getField<dynamic>(field),
+        );
+
+        if (comparison != 0) {
+          return direction == 'desc' ? -comparison : comparison;
+        }
+      }
+
+      return 0;
+    });
+
+    return sorted;
+  }
+
+  int _compareValues(dynamic a, dynamic b) {
+    if (a == null && b == null) {
+      return 0;
+    }
+
+    if (a == null) {
+      return 1;
+    }
+
+    if (b == null) {
+      return -1;
+    }
+
+    if (a is num && b is num) {
+      return a.compareTo(b);
+    }
+
+    if (a is DateTime && b is DateTime) {
+      return a.compareTo(b);
+    }
+
+    if (a is bool && b is bool) {
+      return (a ? 1 : 0).compareTo(b ? 1 : 0);
+    }
+
+    return '$a'.toLowerCase().compareTo('$b'.toLowerCase());
   }
 }

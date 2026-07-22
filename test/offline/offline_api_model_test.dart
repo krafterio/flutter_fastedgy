@@ -23,12 +23,19 @@ class _ItemApi extends OfflineApiModel<_Item> {
     : super('/items', fetcher: fetcher, localStore: localStore);
 
   @override
+  dynamic get syncFields => 'id,name,tag';
+
+  @override
+  int get syncPageSize => 2;
+
+  @override
   _Item fromJson(Map<String, dynamic> json) => _Item(json);
 }
 
 class _ScriptedAdapter implements HttpClientAdapter {
   bool offline = false;
-  final Map<String, Map<String, dynamic> Function()> routes = {};
+  final Map<String, Map<String, dynamic> Function(RequestOptions options)>
+  routes = {};
   int callCount = 0;
 
   @override
@@ -60,7 +67,7 @@ class _ScriptedAdapter implements HttpClientAdapter {
     }
 
     return ResponseBody.fromString(
-      jsonEncode(handler()),
+      jsonEncode(handler(options)),
       200,
       headers: {
         Headers.contentTypeHeader: [Headers.jsonContentType],
@@ -72,13 +79,34 @@ class _ScriptedAdapter implements HttpClientAdapter {
   void close({bool force = false}) {}
 }
 
-Map<String, dynamic> _page(List<Map<String, dynamic>> items) => {
+Map<String, dynamic> _page(
+  List<Map<String, dynamic>> items, {
+  int? total,
+  int offset = 0,
+}) => {
   'items': items,
-  'total': items.length,
-  'limit': 50,
-  'offset': 0,
+  'total': total ?? items.length,
+  'limit': items.length,
+  'offset': offset,
   'total_pages': 1,
 };
+
+/// Serve [all] as a paginated collection honoring limit/offset params.
+Map<String, dynamic> Function(RequestOptions) _paginated(
+  List<Map<String, dynamic>> all,
+) {
+  return (options) {
+    final offset = int.tryParse('${options.queryParameters['offset']}') ?? 0;
+    final limit =
+        int.tryParse('${options.queryParameters['limit']}') ?? all.length;
+    final end = offset + limit > all.length ? all.length : offset + limit;
+    final items = offset >= all.length
+        ? <Map<String, dynamic>>[]
+        : all.sublist(offset, end);
+
+    return _page(items, total: all.length, offset: offset);
+  };
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -121,48 +149,111 @@ void main() {
 
   tearDown(() => store.close());
 
-  group('OfflineApiModel.list', () {
-    test('caches fetched records', () async {
-      adapter.routes['GET /items'] = () => _page([
+  group('OfflineApiModel.sync', () {
+    test('mirrors the whole collection by auto-paginating', () async {
+      adapter.routes['GET /items'] = _paginated([
         {'id': 1, 'name': 'One'},
         {'id': 2, 'name': 'Two'},
+        {'id': 3, 'name': 'Three'},
+        {'id': 4, 'name': 'Four'},
+        {'id': 5, 'name': 'Five'},
       ]);
 
-      await api.list();
+      await api.sync();
 
-      expect(await store.getAll('/items'), hasLength(2));
+      expect(await api.cachedList(), hasLength(5));
+      expect(adapter.callCount, 3); // 5 records walked by pages of 2
     });
 
-    test('prunes server-side deletions on a complete refetch', () async {
-      adapter.routes['GET /items'] = () => _page([
+    test('prunes records deleted on the server', () async {
+      adapter.routes['GET /items'] = _paginated([
         {'id': 1, 'name': 'One'},
         {'id': 2, 'name': 'Two'},
       ]);
-      await api.list();
+      await api.sync();
 
-      adapter.routes['GET /items'] = () => _page([
+      adapter.routes['GET /items'] = _paginated([
         {'id': 2, 'name': 'Two'},
       ]);
-      await api.list();
+      await api.sync();
 
       final cached = await api.cachedList();
 
       expect(cached, hasLength(1));
       expect(cached.single.id, 2);
     });
+  });
 
-    test('serves the cache when offline', () async {
-      adapter.routes['GET /items'] = () => _page([
+  group('OfflineApiModel.list', () {
+    test('merges fetched records into the cache without pruning', () async {
+      adapter.routes['GET /items'] = _paginated([
         {'id': 1, 'name': 'One'},
+        {'id': 2, 'name': 'Two'},
+        {'id': 3, 'name': 'Three'},
       ]);
-      await api.list();
+      await api.sync();
+
+      // A partial page (limit 1) must not prune the other cached records.
+      await api.list(query: const ListQuery(limit: 1));
+
+      expect(await api.cachedList(), hasLength(3));
+    });
+
+    test(
+      'deep-merges records so a narrow selection keeps cached fields',
+      () async {
+        adapter.routes['GET /items'] = _paginated([
+          {'id': 1, 'name': 'One', 'tag': 'keep'},
+        ]);
+        await api.sync();
+
+        adapter.routes['GET /items'] = (options) => _page([
+          {'id': 1, 'name': 'Renamed'},
+        ]);
+        await api.list();
+
+        final cached = await api.cachedGet(1);
+
+        expect(cached?.name, 'Renamed');
+        expect(cached?.getString('tag'), 'keep');
+      },
+    );
+
+    test('evaluates the query locally when offline', () async {
+      adapter.routes['GET /items'] = _paginated([
+        {'id': 1, 'name': 'Bravo'},
+        {'id': 2, 'name': 'Alpha'},
+        {'id': 3, 'name': 'Charlie'},
+      ]);
+      await api.sync();
 
       adapter.offline = true;
-      final result = await api.list();
+      final result = await api.list(
+        query: const ListQuery(orderBy: 'name', limit: 2, offset: 1),
+      );
 
-      expect(result.items, hasLength(1));
-      expect(result.items.single.name, 'One');
+      expect(result.items.map((item) => item.name), ['Bravo', 'Charlie']);
+      expect(result.total, 3);
+      expect(result.offset, 1);
     });
+
+    test(
+      'serves the unfiltered collection for a filtered query offline',
+      () async {
+        adapter.routes['GET /items'] = _paginated([
+          {'id': 1, 'name': 'One'},
+          {'id': 2, 'name': 'Two'},
+        ]);
+        await api.sync();
+
+        adapter.offline = true;
+        final result = await api.list(
+          query: const ListQuery(filter: ['name', '=', 'One']),
+        );
+
+        expect(result.items, hasLength(2));
+      },
+    );
 
     test('rethrows offline errors when the cache is empty', () async {
       adapter.offline = true;
@@ -171,10 +262,10 @@ void main() {
     });
 
     test('rethrows server errors without falling back to the cache', () async {
-      adapter.routes['GET /items'] = () => _page([
+      adapter.routes['GET /items'] = _paginated([
         {'id': 1, 'name': 'One'},
       ]);
-      await api.list();
+      await api.sync();
 
       adapter.routes.clear();
 
@@ -187,9 +278,28 @@ void main() {
     });
   });
 
+  group('OfflineApiModel.cachedQuery', () {
+    test('applies order_by desc and pagination locally', () async {
+      adapter.routes['GET /items'] = _paginated([
+        {'id': 1, 'name': 'Bravo'},
+        {'id': 2, 'name': 'Alpha'},
+        {'id': 3, 'name': 'Charlie'},
+      ]);
+      await api.sync();
+
+      final result = await api.cachedQuery(
+        const ListQuery(orderBy: 'name:desc', page: 1, size: 2),
+      );
+
+      expect(result.items.map((item) => item.name), ['Charlie', 'Bravo']);
+      expect(result.total, 3);
+      expect(result.totalPages, 2);
+    });
+  });
+
   group('OfflineApiModel.get', () {
     test('serves the cached record when offline', () async {
-      adapter.routes['GET /items/1'] = () => {'id': 1, 'name': 'One'};
+      adapter.routes['GET /items/1'] = (options) => {'id': 1, 'name': 'One'};
       await api.get(1);
 
       adapter.offline = true;
@@ -207,28 +317,36 @@ void main() {
 
   group('OfflineApiModel writes', () {
     test('create adds the record to the cache', () async {
-      adapter.routes['POST /items'] = () => {'id': 3, 'name': 'Three'};
+      adapter.routes['POST /items'] = (options) => {'id': 3, 'name': 'Three'};
 
       await api.create(_Item({'name': 'Three'}));
 
       expect(await store.get('/items', 3), isNotNull);
     });
 
-    test('update refreshes the cached record', () async {
-      adapter.routes['GET /items/1'] = () => {'id': 1, 'name': 'One'};
-      await api.get(1);
+    test('update deep-merges the cached record', () async {
+      adapter.routes['GET /items'] = _paginated([
+        {'id': 1, 'name': 'One', 'tag': 'keep'},
+      ]);
+      await api.sync();
 
-      adapter.routes['PATCH /items/1'] = () => {'id': 1, 'name': 'Renamed'};
+      adapter.routes['PATCH /items/1'] = (options) => {
+        'id': 1,
+        'name': 'Renamed',
+      };
       await api.update(1, _Item({'name': 'Renamed'}));
 
-      expect((await api.cachedGet(1))?.name, 'Renamed');
+      final cached = await api.cachedGet(1);
+
+      expect(cached?.name, 'Renamed');
+      expect(cached?.getString('tag'), 'keep');
     });
 
     test('delete removes the cached record', () async {
-      adapter.routes['GET /items/1'] = () => {'id': 1, 'name': 'One'};
+      adapter.routes['GET /items/1'] = (options) => {'id': 1, 'name': 'One'};
       await api.get(1);
 
-      adapter.routes['DELETE /items/1'] = () => {};
+      adapter.routes['DELETE /items/1'] = (options) => {};
       await api.delete(1);
 
       expect(await api.cachedGet(1), isNull);
@@ -236,13 +354,13 @@ void main() {
   });
 
   group('OfflineApiModel.listCacheThenNetwork', () {
-    test('emits the cache first, then the fresh result', () async {
-      adapter.routes['GET /items'] = () => _page([
+    test('emits the local evaluation first, then the fresh result', () async {
+      adapter.routes['GET /items'] = _paginated([
         {'id': 1, 'name': 'One'},
       ]);
-      await api.list();
+      await api.sync();
 
-      adapter.routes['GET /items'] = () => _page([
+      adapter.routes['GET /items'] = _paginated([
         {'id': 1, 'name': 'One'},
         {'id': 2, 'name': 'Two'},
       ]);
@@ -255,10 +373,10 @@ void main() {
     });
 
     test('stays silent offline once the cache has been emitted', () async {
-      adapter.routes['GET /items'] = () => _page([
+      adapter.routes['GET /items'] = _paginated([
         {'id': 1, 'name': 'One'},
       ]);
-      await api.list();
+      await api.sync();
 
       adapter.offline = true;
       final emissions = await api.listCacheThenNetwork().toList();
