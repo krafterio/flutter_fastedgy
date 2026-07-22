@@ -391,4 +391,221 @@ void main() {
       );
     });
   });
+
+  group('OfflineApiModel replicated mode', replicatedModeTests);
+}
+
+class _ReplicatedItemApi extends OfflineApiModel<_Item> {
+  final String scope;
+
+  _ReplicatedItemApi({
+    required Fetcher fetcher,
+    required Replica replica,
+    required LocalStore localStore,
+    this.scope = 'acme',
+  }) : super(
+         '/items',
+         fetcher: fetcher,
+         localStore: localStore,
+         replica: replica,
+       );
+
+  @override
+  String? get replicaModel => 'item';
+
+  @override
+  String get replicaScope => scope;
+
+  @override
+  dynamic get syncFields => 'id,name,tag,qty';
+
+  @override
+  int get syncPageSize => 2;
+
+  @override
+  _Item fromJson(Map<String, dynamic> json) => _Item(json);
+}
+
+const _itemSchema = LocalSchema({
+  'item': LocalModelSchema(
+    name: 'item',
+    apiName: 'items',
+    fields: {
+      'id': LocalFieldSchema(name: 'id', type: 'integer'),
+      'name': LocalFieldSchema(name: 'name', type: 'char'),
+      'tag': LocalFieldSchema(name: 'tag', type: 'char'),
+      'qty': LocalFieldSchema(name: 'qty', type: 'integer'),
+    },
+  ),
+});
+
+void replicatedModeTests() {
+  late _ScriptedAdapter adapter;
+  late DriftLocalStore store;
+  late ReplicaStore replicaStore;
+  late Replica replica;
+  late _ReplicatedItemApi api;
+
+  Fetcher fetcher() => Fetcher.create(
+    dio: Dio(BaseOptions(baseUrl: 'http://localhost'))
+      ..httpClientAdapter = adapter,
+    bus: getService<Bus>(),
+    enableAuth: false,
+    enableTimezone: false,
+    enableRefreshToken: false,
+    enableConnectionRetry: false,
+    enableLogging: false,
+    enableErrorTransform: false,
+  );
+
+  setUp(() async {
+    OfflineDatabase.allowMultipleInstances();
+    adapter = _ScriptedAdapter();
+    store = DriftLocalStore(
+      databaseOpener: () => OfflineDatabase(NativeDatabase.memory()),
+    );
+    replicaStore = ReplicaStore(
+      databaseOpener: () => OfflineDatabase(NativeDatabase.memory()),
+    );
+    await store.open();
+    await replicaStore.open();
+    replica = Replica.withSchema(replicaStore, _itemSchema);
+    api = _ReplicatedItemApi(
+      fetcher: fetcher(),
+      replica: replica,
+      localStore: store,
+    );
+  });
+
+  tearDown(() async {
+    await store.close();
+    await replicaStore.close();
+  });
+
+  test('sync mirrors the collection into the scoped replica table', () async {
+    adapter.routes['GET /items'] = _paginated([
+      {'id': 1, 'name': 'One', 'qty': 3},
+      {'id': 2, 'name': 'Two', 'qty': 8},
+      {'id': 3, 'name': 'Three', 'qty': 12},
+    ]);
+
+    await api.sync();
+
+    expect(await replicaStore.getAll('item', 'acme'), hasLength(3));
+    expect(await replicaStore.getAll('item', 'globex'), isEmpty);
+  });
+
+  test('scopes are isolated per workspace', () async {
+    adapter.routes['GET /items'] = _paginated([
+      {'id': 1, 'name': 'Acme item', 'qty': 1},
+    ]);
+    await api.sync();
+
+    final globexApi = _ReplicatedItemApi(
+      fetcher: fetcher(),
+      replica: replica,
+      localStore: store,
+      scope: 'globex',
+    );
+    adapter.routes['GET /items'] = _paginated([
+      {'id': 9, 'name': 'Globex item', 'qty': 2},
+    ]);
+    await globexApi.sync();
+
+    expect((await api.cachedList()).single.name, 'Acme item');
+    expect((await globexApi.cachedList()).single.name, 'Globex item');
+  });
+
+  test('offline queries evaluate filters with server parity', () async {
+    adapter.routes['GET /items'] = _paginated([
+      {'id': 1, 'name': 'Bravo', 'qty': 3},
+      {'id': 2, 'name': 'Alpha', 'qty': 8},
+      {'id': 3, 'name': 'Charlie', 'qty': 12},
+    ]);
+    await api.sync();
+
+    adapter.offline = true;
+    final result = await api.list(
+      query: const ListQuery(
+        filter: ['qty', '>', 5],
+        orderBy: 'name:desc',
+        limit: 1,
+      ),
+    );
+
+    expect(result.items.single.name, 'Charlie');
+    expect(result.total, 2);
+  });
+
+  test(
+    'a filtered empty result does not rethrow once the scope is synced',
+    () async {
+      adapter.routes['GET /items'] = _paginated([
+        {'id': 1, 'name': 'One', 'qty': 3},
+      ]);
+      await api.sync();
+
+      adapter.offline = true;
+      final result = await api.list(
+        query: const ListQuery(filter: ['qty', '>', 99]),
+      );
+
+      expect(result.items, isEmpty);
+      expect(result.total, 0);
+    },
+  );
+
+  test('an unsynced scope rethrows offline errors', () async {
+    adapter.routes['GET /items'] = _paginated([
+      {'id': 1, 'name': 'One', 'qty': 3},
+    ]);
+    await api.sync();
+
+    final globexApi = _ReplicatedItemApi(
+      fetcher: fetcher(),
+      replica: replica,
+      localStore: store,
+      scope: 'globex',
+    );
+
+    adapter.offline = true;
+
+    await expectLater(globexApi.list(), throwsA(isA<NetworkError>()));
+  });
+
+  test('list deep-merges records without pruning the scope', () async {
+    adapter.routes['GET /items'] = _paginated([
+      {'id': 1, 'name': 'One', 'tag': 'keep', 'qty': 3},
+      {'id': 2, 'name': 'Two', 'qty': 8},
+    ]);
+    await api.sync();
+
+    adapter.routes['GET /items'] = (options) => _page([
+      {'id': 1, 'name': 'Renamed'},
+    ]);
+    await api.list(query: const ListQuery(limit: 1));
+
+    expect(await api.cachedList(), hasLength(2));
+    final merged = await api.cachedGet(1);
+    expect(merged?.name, 'Renamed');
+    expect(merged?.getString('tag'), 'keep');
+  });
+
+  test('update and delete are routed to the replica scope', () async {
+    adapter.routes['GET /items'] = _paginated([
+      {'id': 1, 'name': 'One', 'qty': 3},
+    ]);
+    await api.sync();
+
+    adapter.routes['PATCH /items/1'] = (options) => {
+      'id': 1,
+      'name': 'Patched',
+    };
+    await api.update(1, _Item({'name': 'Patched'}));
+    expect((await api.cachedGet(1))?.name, 'Patched');
+
+    adapter.routes['DELETE /items/1'] = (options) => {};
+    await api.delete(1);
+    expect(await api.cachedGet(1), isNull);
+  });
 }

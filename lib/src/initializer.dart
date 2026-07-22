@@ -25,6 +25,8 @@ import 'offline/drift_local_store.dart';
 import 'offline/local_image_store.dart';
 import 'offline/local_store.dart';
 import 'offline/offline_database.dart';
+import 'offline/replica.dart';
+import 'offline/replica_store.dart';
 import 'storage/storage_downloader.dart';
 import 'storage/storage_uploader.dart';
 
@@ -81,8 +83,10 @@ Future<void> initializeFastEdgy({
   bool offline = false,
   String? offlineDbName,
   String? offlineImagesDbName,
+  String? replicaDbName,
   LocalStore Function()? localStoreFactory,
   LocalImageStore Function()? localImageStoreFactory,
+  ReplicaStore Function()? replicaStoreFactory,
 
   // Core services factories (overridable)
   Bus Function()? busFactory,
@@ -234,6 +238,22 @@ Future<void> initializeFastEdgy({
     container.registerSingleton<LocalImageStore>(localImageStore);
     getService<Bus>().on<AuthLogoutEvent>().listen(
       (_) => localImageStore.clear(),
+    );
+  }
+
+  // ReplicaStore + Replica (opt-in, alongside LocalStore): normalized model
+  // replication with server-parity offline queries; purged on logout.
+  if ((offline || replicaStoreFactory != null) && !hasService<ReplicaStore>()) {
+    final replicaStore =
+        replicaStoreFactory?.call() ??
+        ReplicaStore(dbName: replicaDbName ?? 'fastedgy_replica.db');
+    await replicaStore.open();
+    container.registerSingleton<ReplicaStore>(replicaStore);
+    container.registerSingleton<Replica>(
+      Replica(replicaStore, getService<MetadataProvider>()),
+    );
+    getService<Bus>().on<AuthLogoutEvent>().listen(
+      (_) => replicaStore.clearAll(),
     );
   }
 }

@@ -29,10 +29,9 @@ class ImageMirror {
 
   ImageMirror(this._records, this._images, this._downloader);
 
-  /// Re-index [namespace] from its cached records, purge blobs of paths no
-  /// longer referenced anywhere, and prefetch the declared variants of
-  /// [prefetchPaths] (pass all current paths after a sync, only the changed
-  /// ones after a record merge).
+  /// Re-index [namespace] from its cached records (read from the record
+  /// store), purge blobs of paths no longer referenced anywhere, and
+  /// prefetch the declared variants of [prefetchPaths].
   Future<void> refreshNamespace(
     String namespace,
     List<SyncImageField> fields, {
@@ -42,9 +41,30 @@ class ImageMirror {
       return;
     }
 
+    await refresh(
+      namespace,
+      await _records.getAll(namespace),
+      fields,
+      prefetchPaths: prefetchPaths,
+    );
+  }
+
+  /// Same as [refreshNamespace] with the current records provided by the
+  /// caller (e.g. a replica table instead of the JSON record store) —
+  /// [namespace] only keys the path index.
+  Future<void> refresh(
+    String namespace,
+    Iterable<Map<String, dynamic>> currentRecords,
+    List<SyncImageField> fields, {
+    Iterable<String> prefetchPaths = const [],
+  }) async {
+    if (fields.isEmpty) {
+      return;
+    }
+
     final current = <String>{};
 
-    for (final record in await _records.getAll(namespace)) {
+    for (final record in currentRecords) {
       for (final field in fields) {
         final path = record[field.field];
 

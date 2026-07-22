@@ -198,6 +198,27 @@ class ReplicaStore {
     );
   }
 
+  /// Number of records of [model] under [scope].
+  Future<int> countScope(String model, String scope) async {
+    final rows = await _database
+        .customSelect(
+          'SELECT COUNT(*) AS total FROM "${_tableName(model)}" '
+          'WHERE ws_scope = ?',
+          variables: [Variable<String>(scope)],
+        )
+        .get();
+
+    return rows.single.read<int>('total');
+  }
+
+  /// Delete every record of [model] under [scope].
+  Future<void> clearScope(String model, String scope) {
+    return _database.customStatement(
+      'DELETE FROM "${_tableName(model)}" WHERE ws_scope = ?',
+      [scope],
+    );
+  }
+
   /// Evaluate a FastEdgy query (X-Filter array, order_by, pagination) against
   /// the replica of [model] under [scope], with server-parity semantics (see
   /// [ReplicaQueryCompiler]).

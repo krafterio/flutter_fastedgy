@@ -14,5 +14,7 @@ export 'offline_api_model.dart';
 export 'offline_api_resource.dart';
 export 'offline_database.dart';
 export 'offline_error.dart';
+export 'replica.dart';
+export 'replica_query.dart';
 export 'replica_store.dart';
 export 'sync_image_field.dart';

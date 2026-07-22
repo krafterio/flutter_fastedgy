@@ -12,63 +12,57 @@ import '../container/container.dart';
 import '../storage/storage_downloader.dart';
 import 'image_mirror.dart';
 import 'local_image_store.dart';
+import 'local_schema.dart';
 import 'local_store.dart';
 import 'offline_error.dart';
+import 'replica.dart';
 import 'sync_image_field.dart';
 
-/// [ApiModel] variant that mirrors server records into a [LocalStore] to keep
-/// reads working offline.
+/// [ApiModel] variant that mirrors server records locally to keep reads
+/// working offline.
 ///
-/// The cache contract is decoupled from the UI pagination and filters:
+/// Two storage strategies share the same contract (the cache is decoupled
+/// from the UI pagination and filters; [sync] is the only writer allowed to
+/// prune; `list`/`get` deep-merge fetched records without pruning; server
+/// errors are always rethrown):
 ///
-/// - [sync] is the only writer allowed to prune: it walks the WHOLE collection
-///   (auto-paginated, with [syncFields] preloading) and transactionally
-///   replaces the namespace — the cache always means "the full collection as
-///   of the last sync".
-/// - [list] / [get] are network-first and deep-merge fetched records by id
-///   into the cache (freshness without pruning: a partial page or a narrow
-///   X-Fields selection can never poison the namespace); on connectivity
-///   failure the query is evaluated locally against the cached records
-///   (order_by, offset/limit — filters are not evaluated locally yet and are
-///   ignored offline). Server errors are always rethrown.
-/// - [listCacheThenNetwork] / [getCacheThenNetwork] emit the locally evaluated
-///   data immediately (when present), then the fresh network result.
-/// - [create] / [update] / [delete] update the cache on success. Offline
-///   writes are rethrown for now (buffered outbox planned in a next phase).
-///
-/// The store is resolved from the container ([LocalStore] must be registered,
-/// see `initializeFastEdgy(offline: true)`); when absent the model behaves
-/// exactly like a plain [ApiModel].
+/// - **Replicated** (opt-in via [replicaModel]): records live in typed
+///   [ReplicaStore] tables scoped by [replicaScope]; offline queries are
+///   compiled to SQL with full server parity (filters, nested order_by).
+/// - **JSON namespace** (default): records live in the [LocalStore] as JSON;
+///   offline queries evaluate order_by/limit/offset in memory and ignore
+///   filters.
 ///
 /// Example:
 /// ```dart
-/// class WorkspaceApi extends OfflineApiModel<Workspace> {
-///   WorkspaceApi() : super('/workspaces');
+/// class UserApi extends OfflineApiModel<User> {
+///   UserApi() : super('/{workspace}/users');
 ///
 ///   @override
-///   dynamic get syncFields => 'id,name,slug,image_url';
+///   String? get replicaModel => 'user';
 ///
 ///   @override
-///   Workspace fromJson(Map<String, dynamic> json) => Workspace(json);
+///   String get replicaScope => currentWorkspaceSlug;
 /// }
-///
-/// await useWorkspaceApi().sync();
 /// ```
 abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
   final LocalStore? _localStore;
   final ImageMirror? _imageMirror;
+  final Replica? _replica;
 
   /// Create an offline-capable API model for a resource.
   ///
-  /// [localStore] and [imageMirror] override the container-registered
-  /// services (mainly for tests).
+  /// [localStore], [imageMirror] and [replica] override the
+  /// container-registered services (mainly for tests).
   OfflineApiModel(
     super.basePath, {
     super.fetcher,
     LocalStore? localStore,
     ImageMirror? imageMirror,
+    Replica? replica,
   }) : _localStore = localStore,
-       _imageMirror = imageMirror;
+       _imageMirror = imageMirror,
+       _replica = replica;
 
   /// The local store backing this model, or null when offline is disabled.
   LocalStore? get localStore =>
@@ -101,34 +95,58 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
     );
   }
 
+  /// The replication service, or null when replication is unavailable or not
+  /// requested ([replicaModel] null).
+  Replica? get replica =>
+      _replica ??
+      (replicaModel != null && hasService<Replica>()
+          ? getService<Replica>()
+          : null);
+
   /// Cache namespace of this resource (defaults to [basePath]).
   String get cacheModel => basePath;
+
+  /// Metadata name of the replicated model (e.g. 'user'); null keeps the
+  /// JSON namespace cache.
+  String? get replicaModel => null;
+
+  /// Replica scope of this resource's rows (e.g. the current workspace
+  /// slug); '' for globally-scoped models.
+  String get replicaScope => '';
+
+  /// Replica scope of a related [model] traversed by a filter or order_by
+  /// path (defaults to [replicaScope] for every model).
+  String replicaScopeFor(String model) => replicaScope;
 
   /// X-Fields used by [sync] to mirror the collection (relations to preload).
   /// Null selects the default server fields.
   dynamic get syncFields => null;
 
-  /// Image fields of the synced records to mirror into the local image store
-  /// (must be part of [syncFields]), with the renditions to prefetch.
-  List<SyncImageField> get syncImageFields => const [];
-
   /// Page size used by [sync] while walking the collection (transport detail,
   /// unrelated to the cache contract).
   int get syncPageSize => 200;
 
+  /// Image fields of the synced records to mirror into the local image store
+  /// (must be part of [syncFields]), with the renditions to prefetch.
+  List<SyncImageField> get syncImageFields => const [];
+
   /// Mirror the whole collection into the local store.
   ///
   /// Fetches every record (auto-paginated by [syncPageSize], preloading
-  /// [syncFields]) then transactionally replaces the namespace, pruning
-  /// records deleted on the server. No-op when offline is disabled.
+  /// [syncFields]) then transactionally replaces the namespace/scope,
+  /// pruning records deleted on the server. No-op when offline is disabled.
   Future<void> sync({ApiParams? params}) async {
-    final store = localStore;
+    final ctx = await _replicaContext();
 
-    if (store == null) {
+    if (ctx == null && localStore == null) {
       return;
     }
 
-    final records = <String, Map<String, dynamic>>{};
+    if (ctx != null) {
+      await ctx.replica.ensure(ctx.model.name);
+    }
+
+    final records = <Map<String, dynamic>>[];
     var offset = 0;
 
     while (true) {
@@ -143,7 +161,7 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
 
       for (final item in page.items) {
         if (item.id != null) {
-          records['${item.id}'] = item.toJson();
+          records.add(item.toJson());
         }
       }
 
@@ -154,50 +172,77 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
       }
     }
 
-    await store.replaceAll(cacheModel, records);
-
-    final mirror = imageMirror;
-
-    if (mirror != null) {
-      final paths = <String>{
-        for (final record in records.values)
-          for (final field in syncImageFields)
-            if (record[field.field] is String &&
-                (record[field.field] as String).isNotEmpty)
-              record[field.field] as String,
-      };
-
-      await mirror.refreshNamespace(
+    if (ctx != null) {
+      await ctx.replica.store.replaceScope(ctx.model, ctx.scope, records);
+      await imageMirror?.refresh(
+        ctx.imageNamespace,
+        records,
+        syncImageFields,
+        prefetchPaths: _imagePaths(records),
+      );
+    } else {
+      final byId = {for (final record in records) '${record['id']}': record};
+      await localStore!.replaceAll(cacheModel, byId);
+      await imageMirror?.refreshNamespace(
         cacheModel,
         syncImageFields,
-        prefetchPaths: paths,
+        prefetchPaths: _imagePaths(records),
       );
     }
   }
 
-  /// Get all cached records of this resource (raw namespace read).
+  /// Get all cached records of this resource (raw namespace/scope read).
   Future<List<T>> cachedList() async {
+    final ctx = await _replicaContext();
+
+    if (ctx != null) {
+      final records = await ctx.replica.store.getAll(ctx.model.name, ctx.scope);
+
+      return records.map(fromJson).toList();
+    }
+
     final store = localStore;
 
     if (store == null) {
       return <T>[];
     }
 
-    final records = await store.getAll(cacheModel);
-
-    return records.map(fromJson).toList();
+    return (await store.getAll(cacheModel)).map(fromJson).toList();
   }
 
   /// Evaluate [query] against the cached records.
   ///
-  /// Applies order_by then offset/limit locally and returns an honest
-  /// [PaginationResult] (total = cached collection size). Filters are not
-  /// evaluated locally yet: a filtered query serves the unfiltered
-  /// collection.
+  /// Replicated models compile the query (filters included) to SQL with
+  /// server parity; the JSON namespace mode applies order_by then
+  /// offset/limit in memory and serves the unfiltered collection for a
+  /// filtered query.
   Future<PaginationResult<T>> cachedQuery([ListQuery? query]) async {
-    final all = _applyOrderBy(await cachedList(), query?.orderBy);
+    final ctx = await _replicaContext();
     final offset = _queryOffset(query);
     final limit = query?.limit ?? query?.size;
+
+    if (ctx != null) {
+      final result = await ctx.replica.store.query(
+        ctx.schema,
+        ctx.model.name,
+        scope: ctx.scope,
+        scopeOf: replicaScopeFor,
+        filter: query?.filter,
+        orderBy: query?.orderBy,
+        limit: limit,
+        offset: offset > 0 ? offset : null,
+      );
+
+      return PaginationResult<T>(
+        items: result.records.map(fromJson).toList(),
+        total: result.total,
+        limit: limit ?? result.total,
+        offset: offset,
+        totalPages: _totalPages(result.total, limit),
+      );
+    }
+
+    final all = _applyOrderBy(await cachedList(), query?.orderBy);
     final end = limit == null ? all.length : offset + limit;
     final items = offset >= all.length
         ? <T>[]
@@ -208,27 +253,39 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
       total: all.length,
       limit: limit ?? all.length,
       offset: offset,
-      totalPages: limit == null || limit == 0
-          ? (all.isEmpty ? 0 : 1)
-          : (all.length / limit).ceil(),
+      totalPages: _totalPages(all.length, limit),
     );
   }
 
   /// Get a cached record by id, or null when absent.
   Future<T?> cachedGet(Object id) async {
-    final store = localStore;
+    final ctx = await _replicaContext();
 
-    if (store == null) {
-      return null;
+    if (ctx != null) {
+      final record = await ctx.replica.store.getById(
+        ctx.model.name,
+        ctx.scope,
+        id,
+      );
+
+      return record == null ? null : fromJson(record);
     }
 
-    final record = await store.get(cacheModel, id);
+    final record = await localStore?.get(cacheModel, id);
 
     return record == null ? null : fromJson(record);
   }
 
-  /// Remove all cached records of this resource.
+  /// Remove all cached records of this resource (current scope).
   Future<void> clearCache() async {
+    final ctx = await _replicaContext();
+
+    if (ctx != null) {
+      await ctx.replica.store.clearScope(ctx.model.name, ctx.scope);
+      await imageMirror?.refresh(ctx.imageNamespace, const [], syncImageFields);
+      return;
+    }
+
     await localStore?.clear(cacheModel);
     await imageMirror?.refreshNamespace(cacheModel, syncImageFields);
   }
@@ -241,17 +298,17 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
     try {
       return await _listRemote(query: query, params: params);
     } catch (error) {
-      if (localStore == null || !isOfflineError(error)) {
+      if (!_canFallback(error)) {
         rethrow;
       }
 
-      final cached = await cachedQuery(query);
+      final fallback = await _offlineListFallback(query);
 
-      if (cached.total == 0) {
+      if (fallback == null) {
         rethrow;
       }
 
-      return cached;
+      return fallback;
     }
   }
 
@@ -260,7 +317,7 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
     try {
       return await _getRemote(id, options: options, params: params);
     } catch (error) {
-      if (localStore == null || !isOfflineError(error)) {
+      if (!_canFallback(error)) {
         rethrow;
       }
 
@@ -318,6 +375,19 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
   Future<void> delete(Object id, {ApiParams? params}) async {
     // TODO(offline): buffer offline deletes in an outbox and replay on reconnect.
     await super.delete(id, params: params);
+
+    final ctx = await _replicaContext();
+
+    if (ctx != null) {
+      await ctx.replica.store.deleteById(ctx.model.name, ctx.scope, id);
+      await imageMirror?.refresh(
+        ctx.imageNamespace,
+        await ctx.replica.store.getAll(ctx.model.name, ctx.scope),
+        syncImageFields,
+      );
+      return;
+    }
+
     await localStore?.delete(cacheModel, id);
     await imageMirror?.refreshNamespace(cacheModel, syncImageFields);
   }
@@ -340,7 +410,7 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
     try {
       yield await _listRemote(query: query, params: params);
     } catch (error) {
-      if (cached.total == 0 || !isOfflineError(error)) {
+      if (cached.total == 0 || !_canFallback(error)) {
         rethrow;
       }
     }
@@ -365,10 +435,31 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
     try {
       yield await _getRemote(id, options: options, params: params);
     } catch (error) {
-      if (cached == null || !isOfflineError(error)) {
+      if (cached == null || !_canFallback(error)) {
         rethrow;
       }
     }
+  }
+
+  bool _canFallback(Object error) =>
+      (localStore != null || replica != null) && isOfflineError(error);
+
+  Future<PaginationResult<T>?> _offlineListFallback(ListQuery? query) async {
+    final ctx = await _replicaContext();
+
+    if (ctx != null) {
+      // A filtered query may legitimately match nothing: only rethrow when
+      // the scope was never mirrored at all.
+      if (await ctx.replica.store.countScope(ctx.model.name, ctx.scope) == 0) {
+        return null;
+      }
+
+      return cachedQuery(query);
+    }
+
+    final cached = await cachedQuery(query);
+
+    return cached.total == 0 ? null : cached;
   }
 
   // Network list + per-record deep merge into the cache (never prunes — only
@@ -377,39 +468,78 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
     ListQuery? query,
     ApiParams? params,
   }) async {
-    final store = localStore;
     final result = await super.list(query: query, params: params);
 
-    if (store != null && result.items.isNotEmpty) {
-      final existing = {
-        for (final record in await store.getAll(cacheModel))
-          '${record['id']}': record,
-      };
-      final records = {
-        for (final item in result.items)
-          if (item.id != null)
-            '${item.id}': {...?existing['${item.id}'], ...item.toJson()},
-      };
-
-      await store.putAll(cacheModel, records);
-
+    if (result.items.isNotEmpty) {
+      final changed = <String>{};
       final mirror = imageMirror;
+      final ctx = await _replicaContext();
 
-      if (mirror != null) {
-        final changed = <String>{
-          for (final entry in records.entries)
-            ...mirror.changedPaths(
-              existing[entry.key],
-              entry.value,
-              syncImageFields,
-            ),
+      if (ctx != null) {
+        final merged = <Map<String, dynamic>>[];
+
+        for (final item in result.items) {
+          if (item.id == null) {
+            continue;
+          }
+
+          final existing = await ctx.replica.store.getById(
+            ctx.model.name,
+            ctx.scope,
+            item.id!,
+          );
+          final record = {...?existing, ...item.toJson()};
+          merged.add(record);
+
+          if (mirror != null) {
+            changed.addAll(
+              mirror.changedPaths(existing, record, syncImageFields),
+            );
+          }
+        }
+
+        await ctx.replica.ensure(ctx.model.name);
+        await ctx.replica.store.upsertAll(ctx.model, ctx.scope, merged);
+
+        if (mirror != null) {
+          await mirror.refresh(
+            ctx.imageNamespace,
+            await ctx.replica.store.getAll(ctx.model.name, ctx.scope),
+            syncImageFields,
+            prefetchPaths: changed,
+          );
+        }
+      } else if (localStore != null) {
+        final store = localStore!;
+        final existing = {
+          for (final record in await store.getAll(cacheModel))
+            '${record['id']}': record,
+        };
+        final records = {
+          for (final item in result.items)
+            if (item.id != null)
+              '${item.id}': {...?existing['${item.id}'], ...item.toJson()},
         };
 
-        await mirror.refreshNamespace(
-          cacheModel,
-          syncImageFields,
-          prefetchPaths: changed,
-        );
+        await store.putAll(cacheModel, records);
+
+        if (mirror != null) {
+          for (final entry in records.entries) {
+            changed.addAll(
+              mirror.changedPaths(
+                existing[entry.key],
+                entry.value,
+                syncImageFields,
+              ),
+            );
+          }
+
+          await mirror.refreshNamespace(
+            cacheModel,
+            syncImageFields,
+            prefetchPaths: changed,
+          );
+        }
       }
     }
 
@@ -435,6 +565,32 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
   // Merge a fetched record over its cached version (fresh fields win, fields
   // absent from the fetch — e.g. a narrow X-Fields selection — are retained).
   Future<void> _mergeRecord(Object id, Map<String, dynamic> json) async {
+    final mirror = imageMirror;
+    final ctx = await _replicaContext();
+
+    if (ctx != null) {
+      final existing = await ctx.replica.store.getById(
+        ctx.model.name,
+        ctx.scope,
+        id,
+      );
+      final merged = {...?existing, ...json};
+
+      await ctx.replica.ensure(ctx.model.name);
+      await ctx.replica.store.upsertAll(ctx.model, ctx.scope, [merged]);
+
+      if (mirror != null) {
+        await mirror.refresh(
+          ctx.imageNamespace,
+          await ctx.replica.store.getAll(ctx.model.name, ctx.scope),
+          syncImageFields,
+          prefetchPaths: mirror.changedPaths(existing, merged, syncImageFields),
+        );
+      }
+
+      return;
+    }
+
     final store = localStore;
 
     if (store == null) {
@@ -445,8 +601,6 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
     final merged = {...?existing, ...json};
     await store.put(cacheModel, id, merged);
 
-    final mirror = imageMirror;
-
     if (mirror != null) {
       await mirror.refreshNamespace(
         cacheModel,
@@ -455,6 +609,42 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
       );
     }
   }
+
+  Future<_ReplicaContext?> _replicaContext() async {
+    final replica = this.replica;
+    final model = replicaModel;
+
+    if (replica == null || model == null) {
+      return null;
+    }
+
+    final schema = await replica.schema();
+    final modelSchema = schema?.models[model];
+
+    if (schema == null || modelSchema == null) {
+      return null;
+    }
+
+    return _ReplicaContext(
+      replica: replica,
+      schema: schema,
+      model: modelSchema,
+      scope: replicaScope,
+      imageNamespace: '$cacheModel@$replicaScope',
+    );
+  }
+
+  Set<String> _imagePaths(Iterable<Map<String, dynamic>> records) => {
+    for (final record in records)
+      for (final field in syncImageFields)
+        if (record[field.field] is String &&
+            (record[field.field] as String).isNotEmpty)
+          record[field.field] as String,
+  };
+
+  int _totalPages(int total, int? limit) => limit == null || limit == 0
+      ? (total == 0 ? 0 : 1)
+      : (total / limit).ceil();
 
   int _queryOffset(ListQuery? query) {
     if (query?.offset != null) {
@@ -538,4 +728,20 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
 
     return '$a'.toLowerCase().compareTo('$b'.toLowerCase());
   }
+}
+
+class _ReplicaContext {
+  final Replica replica;
+  final LocalSchema schema;
+  final LocalModelSchema model;
+  final String scope;
+  final String imageNamespace;
+
+  const _ReplicaContext({
+    required this.replica,
+    required this.schema,
+    required this.model,
+    required this.scope,
+    required this.imageNamespace,
+  });
 }
