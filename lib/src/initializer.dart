@@ -20,7 +20,9 @@ import 'bus/bus.dart';
 import 'metadata/metadata_provider.dart';
 import 'metadata/default_metadata_provider.dart';
 import 'image/image_cache.dart';
+import 'offline/local_image_store.dart';
 import 'offline/local_store.dart';
+import 'offline/sembast_local_image_store.dart';
 import 'offline/sembast_local_store.dart';
 import 'storage/storage_downloader.dart';
 import 'storage/storage_uploader.dart';
@@ -72,11 +74,14 @@ Future<void> initializeFastEdgy({
 
   String? storagePrefix,
 
-  // Offline local store (opt-in): when enabled, server records can be mirrored
-  // locally through OfflineApiModel and read without connectivity.
+  // Offline local store (opt-in): when enabled, server records (and the
+  // images their declared fields reference) can be mirrored locally through
+  // OfflineApiModel and read without connectivity.
   bool offline = false,
   String? offlineDbName,
+  String? offlineImagesDbName,
   LocalStore Function()? localStoreFactory,
+  LocalImageStore Function()? localImageStoreFactory,
 
   // Core services factories (overridable)
   Bus Function()? busFactory,
@@ -211,6 +216,22 @@ Future<void> initializeFastEdgy({
     container.registerSingleton<LocalStore>(localStore);
     getService<Bus>().on<AuthLogoutEvent>().listen(
       (_) => localStore.clearAll(),
+    );
+  }
+
+  // LocalImageStore (opt-in, alongside LocalStore): persists the image blobs
+  // referenced by synced records; purged on logout like the record cache.
+  if ((offline || localImageStoreFactory != null) &&
+      !hasService<LocalImageStore>()) {
+    final localImageStore =
+        localImageStoreFactory?.call() ??
+        SembastLocalImageStore(
+          dbName: offlineImagesDbName ?? 'fastedgy_offline_images.db',
+        );
+    await localImageStore.open();
+    container.registerSingleton<LocalImageStore>(localImageStore);
+    getService<Bus>().on<AuthLogoutEvent>().listen(
+      (_) => localImageStore.clear(),
     );
   }
 }

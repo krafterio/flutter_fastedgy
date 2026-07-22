@@ -7,6 +7,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../container/container.dart';
+import '../offline/local_image_store.dart';
+import '../offline/offline_error.dart';
 import '../storage/storage_downloader.dart';
 import '../logging/logger.dart';
 import 'image_cache.dart' as fastedgy_cache;
@@ -150,12 +152,10 @@ class CachedApiImageProvider extends ImageProvider<CachedApiImageProvider> {
       'Loading image from path: $path with dimensions: ${physicalWidth}x$physicalHeight',
     );
 
-    final future = downloader.downloadPath(
-      path,
-      width: physicalWidth,
-      height: physicalHeight,
-      resizeMode: mode,
-      outputFormat: format,
+    final future = _fetchBytes(
+      downloader,
+      physicalWidth: physicalWidth,
+      physicalHeight: physicalHeight,
     );
 
     imageCache.setPendingRequest(cacheKey, future);
@@ -165,6 +165,55 @@ class CachedApiImageProvider extends ImageProvider<CachedApiImageProvider> {
 
     final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
     return decode(buffer);
+  }
+
+  // Network fetch with persistence in the offline image store (when
+  // registered) and disk fallback on connectivity failure: the exact stored
+  // variant first, else the most faithful one available for the path.
+  Future<Uint8List> _fetchBytes(
+    StorageDownloader downloader, {
+    int? physicalWidth,
+    int? physicalHeight,
+  }) async {
+    final imageStore = hasService<LocalImageStore>()
+        ? getService<LocalImageStore>()
+        : null;
+    final variantKey =
+        '${physicalWidth ?? 'auto'}x${physicalHeight ?? 'auto'}|$mode|${format ?? 'webp'}';
+
+    try {
+      final bytes = await downloader.downloadPath(
+        path,
+        width: physicalWidth,
+        height: physicalHeight,
+        resizeMode: mode,
+        outputFormat: format,
+      );
+
+      await imageStore?.putVariant(
+        path,
+        variantKey,
+        bytes,
+        width: physicalWidth,
+        height: physicalHeight,
+      );
+
+      return bytes;
+    } catch (error) {
+      if (imageStore == null || !isOfflineError(error)) {
+        rethrow;
+      }
+
+      final stored =
+          await imageStore.getVariant(path, variantKey) ??
+          await imageStore.getBestVariant(path);
+
+      if (stored == null) {
+        rethrow;
+      }
+
+      return stored;
+    }
   }
 
   @override

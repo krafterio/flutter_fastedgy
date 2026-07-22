@@ -3,8 +3,12 @@
  * MIT License (see LICENSE file).
  */
 
+export 'image_mirror.dart';
+export 'local_image_store.dart';
 export 'local_store.dart';
 export 'offline_api_model.dart';
 export 'offline_api_resource.dart';
 export 'offline_error.dart';
+export 'sembast_local_image_store.dart';
 export 'sembast_local_store.dart';
+export 'sync_image_field.dart';

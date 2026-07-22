@@ -9,8 +9,12 @@ import '../api/api_query.dart';
 import '../api/base_model.dart';
 import '../api/pagination_result.dart';
 import '../container/container.dart';
+import '../storage/storage_downloader.dart';
+import 'image_mirror.dart';
+import 'local_image_store.dart';
 import 'local_store.dart';
 import 'offline_error.dart';
+import 'sync_image_field.dart';
 
 /// [ApiModel] variant that mirrors server records into a [LocalStore] to keep
 /// reads working offline.
@@ -52,18 +56,50 @@ import 'offline_error.dart';
 /// ```
 abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
   final LocalStore? _localStore;
+  final ImageMirror? _imageMirror;
 
   /// Create an offline-capable API model for a resource.
   ///
-  /// [localStore] overrides the container-registered [LocalStore] (mainly for
-  /// tests).
-  OfflineApiModel(super.basePath, {super.fetcher, LocalStore? localStore})
-    : _localStore = localStore;
+  /// [localStore] and [imageMirror] override the container-registered
+  /// services (mainly for tests).
+  OfflineApiModel(
+    super.basePath, {
+    super.fetcher,
+    LocalStore? localStore,
+    ImageMirror? imageMirror,
+  }) : _localStore = localStore,
+       _imageMirror = imageMirror;
 
   /// The local store backing this model, or null when offline is disabled.
   LocalStore? get localStore =>
       _localStore ??
       (hasService<LocalStore>() ? getService<LocalStore>() : null);
+
+  /// The image mirror handling [syncImageFields], or null when the offline
+  /// image store is unavailable or no image field is declared.
+  ImageMirror? get imageMirror {
+    if (syncImageFields.isEmpty) {
+      return null;
+    }
+
+    if (_imageMirror != null) {
+      return _imageMirror;
+    }
+
+    final store = localStore;
+
+    if (store == null ||
+        !hasService<LocalImageStore>() ||
+        !hasService<StorageDownloader>()) {
+      return null;
+    }
+
+    return ImageMirror(
+      store,
+      getService<LocalImageStore>(),
+      getService<StorageDownloader>(),
+    );
+  }
 
   /// Cache namespace of this resource (defaults to [basePath]).
   String get cacheModel => basePath;
@@ -71,6 +107,10 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
   /// X-Fields used by [sync] to mirror the collection (relations to preload).
   /// Null selects the default server fields.
   dynamic get syncFields => null;
+
+  /// Image fields of the synced records to mirror into the local image store
+  /// (must be part of [syncFields]), with the renditions to prefetch.
+  List<SyncImageField> get syncImageFields => const [];
 
   /// Page size used by [sync] while walking the collection (transport detail,
   /// unrelated to the cache contract).
@@ -115,6 +155,24 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
     }
 
     await store.replaceAll(cacheModel, records);
+
+    final mirror = imageMirror;
+
+    if (mirror != null) {
+      final paths = <String>{
+        for (final record in records.values)
+          for (final field in syncImageFields)
+            if (record[field.field] is String &&
+                (record[field.field] as String).isNotEmpty)
+              record[field.field] as String,
+      };
+
+      await mirror.refreshNamespace(
+        cacheModel,
+        syncImageFields,
+        prefetchPaths: paths,
+      );
+    }
   }
 
   /// Get all cached records of this resource (raw namespace read).
@@ -172,6 +230,7 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
   /// Remove all cached records of this resource.
   Future<void> clearCache() async {
     await localStore?.clear(cacheModel);
+    await imageMirror?.refreshNamespace(cacheModel, syncImageFields);
   }
 
   @override
@@ -260,6 +319,7 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
     // TODO(offline): buffer offline deletes in an outbox and replay on reconnect.
     await super.delete(id, params: params);
     await localStore?.delete(cacheModel, id);
+    await imageMirror?.refreshNamespace(cacheModel, syncImageFields);
   }
 
   /// Emit the locally evaluated [query] immediately (when the cache holds
@@ -332,6 +392,25 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
       };
 
       await store.putAll(cacheModel, records);
+
+      final mirror = imageMirror;
+
+      if (mirror != null) {
+        final changed = <String>{
+          for (final entry in records.entries)
+            ...mirror.changedPaths(
+              existing[entry.key],
+              entry.value,
+              syncImageFields,
+            ),
+        };
+
+        await mirror.refreshNamespace(
+          cacheModel,
+          syncImageFields,
+          prefetchPaths: changed,
+        );
+      }
     }
 
     return result;
@@ -363,7 +442,18 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
     }
 
     final existing = await store.get(cacheModel, id);
-    await store.put(cacheModel, id, {...?existing, ...json});
+    final merged = {...?existing, ...json};
+    await store.put(cacheModel, id, merged);
+
+    final mirror = imageMirror;
+
+    if (mirror != null) {
+      await mirror.refreshNamespace(
+        cacheModel,
+        syncImageFields,
+        prefetchPaths: mirror.changedPaths(existing, merged, syncImageFields),
+      );
+    }
   }
 
   int _queryOffset(ListQuery? query) {
