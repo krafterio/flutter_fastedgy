@@ -10,6 +10,7 @@ import 'app_info/user_agent.dart';
 import 'container/container.dart';
 import 'i18n/i18n.dart';
 import 'logging/logger.dart';
+import 'auth/auth_events.dart';
 import 'auth/auth_provider.dart';
 import 'auth/default_auth_provider.dart';
 import 'auth/token_storage.dart';
@@ -19,6 +20,8 @@ import 'bus/bus.dart';
 import 'metadata/metadata_provider.dart';
 import 'metadata/default_metadata_provider.dart';
 import 'image/image_cache.dart';
+import 'offline/local_store.dart';
+import 'offline/sembast_local_store.dart';
 import 'storage/storage_downloader.dart';
 import 'storage/storage_uploader.dart';
 
@@ -68,6 +71,12 @@ Future<void> initializeFastEdgy({
   bool enableUserAgent = true,
 
   String? storagePrefix,
+
+  // Offline local store (opt-in): when enabled, server records can be mirrored
+  // locally through OfflineApiModel and read without connectivity.
+  bool offline = false,
+  String? offlineDbName,
+  LocalStore Function()? localStoreFactory,
 
   // Core services factories (overridable)
   Bus Function()? busFactory,
@@ -189,6 +198,19 @@ Future<void> initializeFastEdgy({
     container.registerSingleton<StorageUploader>(
       storageUploaderFactory?.call() ??
           StorageUploader(getService<Fetcher>(), prefix: storagePrefix ?? ''),
+    );
+  }
+
+  // LocalStore (opt-in): opened eagerly so offline reads work from the first
+  // frame; cached records are purged on logout.
+  if ((offline || localStoreFactory != null) && !hasService<LocalStore>()) {
+    final localStore =
+        localStoreFactory?.call() ??
+        SembastLocalStore(dbName: offlineDbName ?? 'fastedgy_offline.db');
+    await localStore.open();
+    container.registerSingleton<LocalStore>(localStore);
+    getService<Bus>().on<AuthLogoutEvent>().listen(
+      (_) => localStore.clearAll(),
     );
   }
 }

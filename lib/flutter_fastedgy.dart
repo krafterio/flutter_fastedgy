@@ -53,6 +53,9 @@ export 'src/api/api.dart';
 // Metadata
 export 'src/metadata/metadata.dart';
 
+// Offline
+export 'src/offline/offline.dart';
+
 // Image
 export 'src/image/image.dart';
 

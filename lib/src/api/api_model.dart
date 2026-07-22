@@ -7,6 +7,8 @@ import 'package:dio/dio.dart';
 import '../bus/bus.dart';
 import '../fetcher/client.dart';
 import '../container/container.dart';
+import '../metadata/metadata_provider.dart';
+import '../metadata/models.dart';
 import 'base_model.dart';
 import 'api_helpers.dart';
 import 'pagination_result.dart';
@@ -79,6 +81,41 @@ abstract class ApiModel<T extends BaseModel<T>> {
   ///
   /// Must be implemented by subclasses.
   T fromJson(Map<String, dynamic> json) => DynamicSchema<T>(json) as T;
+
+  /// Metadata of this model (fields, relations, choice values and labels),
+  /// resolved from the Metadata Generator by API name (last [basePath]
+  /// segment).
+  ///
+  /// Returns null when the metadata service is unavailable or the model is
+  /// unknown. Choice fields expose their server-defined values and
+  /// translated labels through [MetadataField.choices] and
+  /// [MetadataField.choiceLabel] — never hardcode them client-side.
+  Future<MetadataModel?> metadata() async {
+    if (!hasService<MetadataProvider>()) {
+      return null;
+    }
+
+    final metadatas = await getService<MetadataProvider>().getMetadatas();
+
+    if (metadatas == null) {
+      return null;
+    }
+
+    final apiName = basePath.split('/').last;
+
+    for (final model in metadatas.values) {
+      if (model.apiName == apiName) {
+        return model;
+      }
+    }
+
+    return null;
+  }
+
+  /// Metadata of a single field of this model (type, label, choices…), or
+  /// null when unknown.
+  Future<MetadataField?> metadataField(String name) async =>
+      (await metadata())?.fields[name];
 
   /// List resources with pagination
   ///
