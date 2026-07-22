@@ -7,8 +7,10 @@ import 'dart:convert';
 
 import 'package:drift/drift.dart';
 
+import 'filter_ast.dart';
 import 'local_schema.dart';
 import 'offline_database.dart';
+import 'replica_query.dart';
 
 /// Outcome of [ReplicaStore.ensureModel].
 class ReplicaMigration {
@@ -195,6 +197,59 @@ class ReplicaStore {
       [scope, '$id'],
     );
   }
+
+  /// Evaluate a FastEdgy query (X-Filter array, order_by, pagination) against
+  /// the replica of [model] under [scope], with server-parity semantics (see
+  /// [ReplicaQueryCompiler]).
+  ///
+  /// [scopeOf] overrides the scope per related model (e.g. a globally
+  /// replicated model traversed from a workspace-scoped one); defaults to
+  /// [scope] everywhere.
+  Future<({List<Map<String, dynamic>> records, int total})> query(
+    LocalSchema schema,
+    String model, {
+    required String scope,
+    String Function(String model)? scopeOf,
+    dynamic filter,
+    dynamic orderBy,
+    int? limit,
+    int? offset,
+  }) async {
+    final compiled = ReplicaQueryCompiler(schema).compile(
+      model: model,
+      scopeOf: scopeOf ?? (_) => scope,
+      filter: parseFilter(filter),
+      orderBy: orderBy,
+      limit: limit,
+      offset: offset,
+    );
+
+    final rows = await _database
+        .customSelect(
+          compiled.sql,
+          variables: compiled.args.map(_variable).toList(),
+        )
+        .get();
+    final count = await _database
+        .customSelect(
+          compiled.countSql,
+          variables: compiled.countArgs.map(_variable).toList(),
+        )
+        .get();
+
+    return (
+      records: rows.map((row) => _decode(row.read<String>('data'))).toList(),
+      total: count.single.read<int>('total'),
+    );
+  }
+
+  Variable _variable(Object? value) => switch (value) {
+    null => const Variable<String>(null),
+    final int v => Variable<int>(v),
+    final double v => Variable<double>(v),
+    final bool v => Variable<bool>(v),
+    _ => Variable<String>('$value'),
+  };
 
   /// Delete every record of [model] (all scopes), keeping the table.
   Future<void> clearModel(String model) {
