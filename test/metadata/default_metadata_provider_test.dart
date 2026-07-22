@@ -1,0 +1,185 @@
+/*
+ * Copyright Krafter SAS <developer@krafter.io>
+ * MIT License (see LICENSE file).
+ */
+
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:dio/dio.dart';
+import 'package:drift/native.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:flutter_fastedgy/flutter_fastedgy.dart';
+
+class _FakeAuthProvider implements AuthProvider {
+  @override
+  Future<bool> isAuthenticated() async => true;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName}');
+}
+
+class _ScriptedAdapter implements HttpClientAdapter {
+  bool offline = false;
+  final Map<String, Map<String, dynamic> Function(RequestOptions options)>
+  routes = {};
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    if (offline) {
+      throw DioException(
+        requestOptions: options,
+        type: DioExceptionType.connectionError,
+        error: 'offline',
+      );
+    }
+
+    final handler = routes['${options.method} ${options.path}'];
+
+    if (handler == null) {
+      return ResponseBody.fromString(
+        '{"detail": "Not found"}',
+        404,
+        headers: {
+          Headers.contentTypeHeader: [Headers.jsonContentType],
+        },
+      );
+    }
+
+    return ResponseBody.fromString(
+      jsonEncode(handler(options)),
+      200,
+      headers: {
+        Headers.contentTypeHeader: [Headers.jsonContentType],
+      },
+    );
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+
+const _metadatasPayload = {
+  'workspace_user': {
+    'name': 'workspace_user',
+    'api_name': 'workspace_users',
+    'label': 'Workspace user',
+    'label_plural': 'Workspace users',
+    'searchable': false,
+    'sortable': false,
+    'sortable_field': null,
+    'fields': {
+      'role': {
+        'name': 'role',
+        'label': 'Role',
+        'type': 'choice',
+        'readonly': false,
+        'required': false,
+        'searchable': false,
+        'extra': false,
+        'filter_operators': <String>[],
+        'target': null,
+        'targets': null,
+        'choices': {'ADMIN': 'Admin', 'MEMBER': 'Member'},
+      },
+    },
+  },
+};
+
+Fetcher _fetcher(_ScriptedAdapter adapter) => Fetcher.create(
+  dio: Dio(BaseOptions(baseUrl: 'http://localhost'))
+    ..httpClientAdapter = adapter,
+  bus: getService<Bus>(),
+  enableAuth: false,
+  enableTimezone: false,
+  enableRefreshToken: false,
+  enableConnectionRetry: false,
+  enableLogging: false,
+  enableErrorTransform: false,
+);
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  late _ScriptedAdapter adapter;
+  late DriftLocalStore store;
+  late DefaultMetadataProvider provider;
+
+  setUpAll(() {
+    dotenv.loadFromString(envString: 'API_BASE_URL=http://localhost');
+    initializeContainer();
+
+    if (!hasService<Bus>()) {
+      container.registerSingleton<Bus>(Bus());
+    }
+  });
+
+  setUp(() async {
+    adapter = _ScriptedAdapter();
+    store = DriftLocalStore(
+      databaseOpener: () => OfflineDatabase(NativeDatabase.memory()),
+    );
+    await store.open();
+
+    if (hasService<LocalStore>()) {
+      container.unregister<LocalStore>();
+    }
+    container.registerSingleton<LocalStore>(store);
+
+    provider = DefaultMetadataProvider(
+      _fetcher(adapter),
+      _FakeAuthProvider(),
+      getService<Bus>(),
+    );
+  });
+
+  tearDown(() async {
+    container.unregister<LocalStore>();
+    await store.close();
+  });
+
+  group('DefaultMetadataProvider offline mirror', () {
+    test('persists fetched metadata into the local store', () async {
+      adapter.routes['GET /dataset/metadatas'] = (options) => _metadatasPayload;
+
+      final metadatas = await provider.getMetadatas();
+
+      expect(metadatas?['workspace_user']?.apiName, 'workspace_users');
+      expect(await store.get('/dataset/metadatas', 'metadatas'), isNotNull);
+    });
+
+    test('serves the mirrored metadata when offline', () async {
+      adapter.routes['GET /dataset/metadatas'] = (options) => _metadatasPayload;
+      await provider.getMetadatas();
+
+      adapter.offline = true;
+      final offlineProvider = DefaultMetadataProvider(
+        _fetcher(adapter),
+        _FakeAuthProvider(),
+        getService<Bus>(),
+      );
+
+      final metadatas = await offlineProvider.getMetadatas();
+
+      expect(metadatas?['workspace_user']?.fields['role']?.choices, {
+        'ADMIN': 'Admin',
+        'MEMBER': 'Member',
+      });
+    });
+
+    test('reports the error when offline with no mirror', () async {
+      adapter.offline = true;
+
+      final metadatas = await provider.getMetadatas();
+
+      expect(metadatas, isNull);
+      expect(provider.error, isNotNull);
+    });
+  });
+}
