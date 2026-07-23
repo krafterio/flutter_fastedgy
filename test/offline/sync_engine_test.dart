@@ -12,13 +12,53 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_fastedgy/flutter_fastedgy.dart';
 
+/// Marks `items` synchronizable so the `/items` API mirrors offline.
+class _FakeMetadataProvider implements MetadataProvider {
+  const _FakeMetadataProvider();
+
+  static const _item = MetadataModel(
+    name: 'item',
+    apiName: 'items',
+    label: 'Item',
+    labelPlural: 'Items',
+    searchable: false,
+    sortable: false,
+    synchronizable: true,
+    fields: {},
+  );
+
+  @override
+  Future<Map<String, MetadataModel>?> getMetadatas() async => const {
+    'item': _item,
+  };
+
+  @override
+  Future<MetadataModel?> getMetadata(String name) async =>
+      name == 'item' ? _item : null;
+
+  @override
+  Future<void> fetchMetadatas() async {}
+
+  @override
+  bool get loading => false;
+
+  @override
+  dynamic get error => null;
+
+  @override
+  String? get prefix => null;
+
+  @override
+  void setPrefix(String? newPrefix) {}
+}
+
 class _Item extends BaseModel<_Item> {
   _Item(super.data);
 
   String get name => getString('name') ?? '';
 }
 
-class _ItemApi extends OfflineApiModel<_Item> {
+class _ItemApi extends ApiModel<_Item> {
   _ItemApi({
     required Fetcher fetcher,
     required LocalStore localStore,
@@ -26,8 +66,7 @@ class _ItemApi extends OfflineApiModel<_Item> {
   }) : super(
          '/items',
          fetcher: fetcher,
-         localStore: localStore,
-         outbox: outbox,
+         offlineBindings: OfflineStores(localStore: localStore, outbox: outbox),
        );
 
   @override
@@ -133,6 +172,18 @@ void main() {
 
     if (!hasService<Bus>()) {
       container.registerSingleton<Bus>(Bus());
+    }
+
+    if (!hasService<ApiModelEngineProvider>()) {
+      container.registerSingleton<ApiModelEngineProvider>(
+        const OfflineApiModelEngineProvider(),
+      );
+    }
+
+    if (!hasService<MetadataProvider>()) {
+      container.registerSingleton<MetadataProvider>(
+        const _FakeMetadataProvider(),
+      );
     }
   });
 

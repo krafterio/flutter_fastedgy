@@ -5,7 +5,7 @@
 
 import 'dart:async';
 
-import '../api/api_model.dart';
+import '../api/api_model_engine.dart';
 import '../bus/bus.dart';
 import '../fetcher/client.dart';
 import '../logging/logger.dart';

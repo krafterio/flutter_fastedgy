@@ -47,7 +47,7 @@ class _Item extends BaseModel<_Item> {
   String get name => getString('name') ?? '';
 }
 
-class _ItemApi extends OfflineApiModel<_Item> {
+class _ItemApi extends ApiModel<_Item> {
   _ItemApi({
     required Fetcher fetcher,
     required LocalStore localStore,
@@ -55,8 +55,7 @@ class _ItemApi extends OfflineApiModel<_Item> {
   }) : super(
          '/items',
          fetcher: fetcher,
-         localStore: localStore,
-         outbox: outbox,
+         offlineBindings: OfflineStores(localStore: localStore, outbox: outbox),
        );
 
   @override
@@ -191,6 +190,12 @@ void main() {
       container.registerSingleton<Bus>(Bus());
     }
 
+    if (!hasService<ApiModelEngineProvider>()) {
+      container.registerSingleton<ApiModelEngineProvider>(
+        const OfflineApiModelEngineProvider(),
+      );
+    }
+
     if (!hasService<MetadataProvider>()) {
       container.registerSingleton<MetadataProvider>(
         _FakeMetadataProvider({
@@ -201,6 +206,7 @@ void main() {
             labelPlural: 'Items',
             searchable: false,
             sortable: false,
+            synchronizable: true,
             fields: {},
           ),
         }),
@@ -347,7 +353,7 @@ void main() {
     });
   });
 
-  group('OfflineApiModel.sync', () {
+  group('ApiModel.sync', () {
     test('mirrors the whole collection by auto-paginating', () async {
       adapter.routes['GET /items'] = _paginated([
         {'id': 1, 'name': 'One'},
@@ -415,7 +421,7 @@ void main() {
     });
   });
 
-  group('OfflineApiModel.list', () {
+  group('ApiModel.list', () {
     test('merges fetched records into the cache without pruning', () async {
       adapter.routes['GET /items'] = _paginated([
         {'id': 1, 'name': 'One'},
@@ -509,7 +515,7 @@ void main() {
     });
   });
 
-  group('OfflineApiModel.cachedQuery', () {
+  group('ApiModel.cachedQuery', () {
     test('applies order_by desc and pagination locally', () async {
       adapter.routes['GET /items'] = _paginated([
         {'id': 1, 'name': 'Bravo'},
@@ -528,7 +534,7 @@ void main() {
     });
   });
 
-  group('OfflineApiModel.get', () {
+  group('ApiModel.get', () {
     test('serves the cached record when offline', () async {
       adapter.routes['GET /items/1'] = (options) => {'id': 1, 'name': 'One'};
       await api.get(1);
@@ -546,7 +552,7 @@ void main() {
     });
   });
 
-  group('OfflineApiModel writes', () {
+  group('ApiModel writes', () {
     test('create adds the record to the cache', () async {
       adapter.routes['POST /items'] = (options) => {'id': 3, 'name': 'Three'};
 
@@ -584,7 +590,7 @@ void main() {
     });
   });
 
-  group('OfflineApiModel.listCacheThenNetwork', () {
+  group('ApiModel.listCacheThenNetwork', () {
     test('emits the local evaluation first, then the fresh result', () async {
       adapter.routes['GET /items'] = _paginated([
         {'id': 1, 'name': 'One'},
@@ -625,10 +631,10 @@ void main() {
     });
   });
 
-  group('OfflineApiModel replicated mode', replicatedModeTests);
+  group('ApiModel replicated mode', replicatedModeTests);
 }
 
-class _ReplicatedItemApi extends OfflineApiModel<_Item> {
+class _ReplicatedItemApi extends ApiModel<_Item> {
   final String scope;
 
   _ReplicatedItemApi({
@@ -640,8 +646,10 @@ class _ReplicatedItemApi extends OfflineApiModel<_Item> {
          '',
          modelName: 'item',
          fetcher: fetcher,
-         localStore: localStore,
-         replica: replica,
+         offlineBindings: OfflineStores(
+           localStore: localStore,
+           replica: replica,
+         ),
        );
 
   @override

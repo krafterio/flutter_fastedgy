@@ -7,7 +7,7 @@ import '../logging/logger.dart';
 import '../storage/storage_downloader.dart';
 import 'local_image_store.dart';
 import 'local_store.dart';
-import 'sync_image_field.dart';
+import '../api/sync_image_field.dart';
 
 /// Mirrors the images referenced by synced records into the [LocalImageStore].
 ///

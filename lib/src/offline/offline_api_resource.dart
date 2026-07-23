@@ -11,10 +11,10 @@ import 'image_mirror.dart';
 import 'local_image_store.dart';
 import 'local_store.dart';
 import 'offline_error.dart';
-import 'sync_image_field.dart';
+import '../api/sync_image_field.dart';
 
 /// [ApiResource] variant providing keyed offline-cache primitives — the
-/// manual counterpart of [OfflineApiModel].
+/// manual counterpart of [ApiModel].
 ///
 /// A resource service writes its own methods against [fetcher] and mirrors
 /// whichever records it wants into the [LocalStore] inside the resource

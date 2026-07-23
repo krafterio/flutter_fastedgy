@@ -22,6 +22,8 @@ import 'metadata/default_metadata_provider.dart';
 import 'image/image_cache.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
+import 'api/api_model_engine.dart';
+import 'offline/offline_api_model_engine.dart';
 import 'offline/filesystem_local_image_store.dart';
 import 'offline/drift_local_store.dart';
 import 'offline/conflict_store.dart';
@@ -86,7 +88,7 @@ Future<void> initializeFastEdgy({
 
   // Offline local store (opt-in): when enabled, server records (and the
   // images their declared fields reference) can be mirrored locally through
-  // OfflineApiModel and read without connectivity.
+  // a synchronizable ApiModel and read without connectivity.
   bool offline = false,
   String? offlineDbName,
   String? offlineImagesDbName,
@@ -223,9 +225,8 @@ Future<void> initializeFastEdgy({
   // rebuild only DROPs its own tables, so it never touches the outbox, and
   // cross-store reads can join. Image bytes live on disk (not here).
   OfflineDatabase? offlineDb;
-  OfflineDatabase sharedDb() => offlineDb ??= OfflineDatabase.open(
-    offlineDbName ?? 'data.db',
-  );
+  OfflineDatabase sharedDb() =>
+      offlineDb ??= OfflineDatabase.open(offlineDbName ?? 'data.db');
 
   // LocalStore (opt-in): opened eagerly so offline reads work from the first
   // frame; cached records are purged on logout.
@@ -307,5 +308,11 @@ Future<void> initializeFastEdgy({
     );
     container.registerSingleton<SyncEngine>(engine);
     engine.start();
+  }
+
+  if (offline && !hasService<ApiModelEngineProvider>()) {
+    container.registerSingleton<ApiModelEngineProvider>(
+      const OfflineApiModelEngineProvider(),
+    );
   }
 }

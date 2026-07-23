@@ -5,101 +5,91 @@
 
 import 'package:dio/dio.dart';
 import '../bus/bus.dart';
-import '../fetcher/client.dart';
 import '../container/container.dart';
+import '../fetcher/client.dart';
 import '../metadata/metadata_provider.dart';
 import '../metadata/models.dart';
-import 'base_model.dart';
-import 'api_helpers.dart';
-import 'pagination_result.dart';
+import 'api_model_engine.dart';
 import 'api_query.dart';
+import 'base_model.dart';
+import 'pagination_result.dart';
+import 'sync_image_field.dart';
 
-enum ResourceChangeType { created, updated, deleted }
+export 'api_model_engine.dart';
 
-class ResourceChangedEvent {
-  final String basePath;
-  final ResourceChangeType? type;
-  final Object? id;
-  const ResourceChangedEvent(this.basePath, {this.type, this.id});
-}
+/// Opaque handle to the offline services an [ApiModel] forwards to its engine;
+/// the concrete implementation lives in the offline module so the facade never
+/// imports it.
+abstract interface class OfflineBindings {}
 
-enum ApiAction {
-  list,
-  get,
-  create,
-  update,
-  delete,
-  export,
-  import,
-  importTemplate,
-}
-
-/// Base class for API Models
-///
-/// Provides CRUD operations for a REST API resource.
-/// Similar to vue-fastedgy's useApiModel.
-///
-/// Example:
-/// ```dart
-/// class User extends BaseModel<User> {
-///   User(super.data);
-///
-///   String get name => getString('name')!;
-///   set name(String value) => setString('name', value);
-///
-///   String get email => getString('email')!;
-///   set email(String value) => setString('email', value);
-/// }
-///
-/// class UserApi extends ApiModel<User> {
-///   UserApi() : super('/users');
-/// }
-///
-/// // Usage
-/// final userApi = UserApi();
-/// final users = await userApi.list(params: {'page': 1, 'limit': 25});
-/// final user = await userApi.get(123); // or '123'
-/// final created = await userApi.create({'name': 'John', 'email': 'john@example.com'});
-/// ```
+/// Facade for a REST API resource. Carries the resource identity and hooks and
+/// delegates I/O to an [ApiModelEngine] chosen from the metadata on first use:
+/// the injected provider's engine for a `synchronizable` model (offline once
+/// `initializeFastEdgy(offline: true)` registers it), the online engine
+/// otherwise. Never imports the offline module.
 abstract class ApiModel<T extends BaseModel<T>> {
-  /// The base path for this resource (e.g. '/users'), or just the scope prefix
-  /// (e.g. '/{workspace}' or '') when [modelName] carries the resource segment.
   final String basePath;
-
-  /// Optional metadata model name (snake_case, e.g. 'user'). When set, the
-  /// resource segment of the path is the model's `api_name` (tablename)
-  /// resolved from the metadata and appended to [basePath]; the offline
-  /// variant also enables replication under this name. Keeps API declarations
-  /// to a scope prefix + a model name instead of a hardcoded path.
   final String? modelName;
-
-  /// The HTTP client used for requests
-  final Fetcher _fetcher;
+  final Fetcher fetcher;
+  final OfflineBindings? offlineBindings;
 
   String? _resolvedPath;
+  ApiModelEngine<T>? _engine;
+
+  ApiModel(
+    this.basePath, {
+    this.modelName,
+    Fetcher? fetcher,
+    this.offlineBindings,
+  }) : fetcher = fetcher ?? getService<Fetcher>();
+
+  Future<ApiModelEngine<T>> _resolveEngine() async {
+    final existing = _engine;
+
+    if (existing != null) {
+      return existing;
+    }
+
+    final meta = await metadata();
+
+    if (meta == null) {
+      return ApiModelEngine<T>(this);
+    }
+
+    return _engine = meta.synchronizable
+        ? _engineProvider().create<T>(this)
+        : ApiModelEngine<T>(this);
+  }
+
+  static ApiModelEngineProvider _engineProvider() =>
+      hasService<ApiModelEngineProvider>()
+      ? getService<ApiModelEngineProvider>()
+      : const DefaultApiModelEngineProvider();
+
+  T fromJson(Map<String, dynamic> json) => DynamicSchema<T>(json) as T;
 
   Set<ApiAction> get disabledActions => {};
 
-  /// Create an API model for a specific resource
-  ///
-  /// [basePath] is the base URL path (e.g. '/users') or the scope prefix when
-  /// [modelName] is given; [fetcher] is optional (falls back to the DI one).
-  ApiModel(this.basePath, {this.modelName, Fetcher? fetcher})
-    : _fetcher = fetcher ?? getService<Fetcher>();
+  String get cacheModel => modelName ?? basePath;
 
-  /// Convert JSON to model instance
-  ///
-  /// Must be implemented by subclasses.
-  T fromJson(Map<String, dynamic> json) => DynamicSchema<T>(json) as T;
+  /// Resolved path with `{workspace}` substituted by [replicaScope] — the base
+  /// path a buffered offline write replays against.
+  String get outboxBasePath => replicaScope.isEmpty
+      ? resolvedBasePath
+      : resolvedBasePath.replaceAll('{workspace}', replicaScope);
 
-  /// Metadata of this model (fields, relations, choice values and labels),
-  /// resolved from the Metadata Generator by API name (last [basePath]
-  /// segment).
-  ///
-  /// Returns null when the metadata service is unavailable or the model is
-  /// unknown. Choice fields expose their server-defined values and
-  /// translated labels through [MetadataField.choices] and
-  /// [MetadataField.choiceLabel] — never hardcode them client-side.
+  String get replicaScope => '';
+
+  String replicaScopeFor(String model) => replicaScope;
+
+  /// X-Fields to mirror; null derives them from the metadata.
+  List<String>? get syncFields => null;
+
+  int get syncPageSize => 200;
+
+  List<SyncImageField> get syncImageFields => const [];
+
+  /// Metadata resolved by [modelName], else by the last [basePath] segment.
   Future<MetadataModel?> metadata() async {
     if (!hasService<MetadataProvider>()) {
       return null;
@@ -129,13 +119,8 @@ abstract class ApiModel<T extends BaseModel<T>> {
     return null;
   }
 
-  /// The effective resource path used for requests.
-  ///
-  /// With [modelName] set, the resource segment is the model's `api_name`
-  /// (tablename) resolved from the metadata, appended to [basePath] (the scope
-  /// prefix); otherwise [basePath] is used as-is. The resolved value is
-  /// memoized once the metadata is available (a model's tablename is stable);
-  /// the metadata is mirrored locally, so this also resolves offline.
+  /// Resource path: [basePath] + the model `api_name` from the metadata (when
+  /// [modelName] is set), memoized once resolvable.
   Future<String> resolvePath() async {
     if (modelName == null) {
       return basePath;
@@ -150,340 +135,109 @@ abstract class ApiModel<T extends BaseModel<T>> {
     final apiName = (await metadata())?.apiName;
 
     if (apiName == null) {
-      // Metadata not available yet: fall back without memoizing so a later
-      // call resolves the real tablename.
       return _joinPath(basePath, modelName!);
     }
 
     return _resolvedPath = _joinPath(basePath, apiName);
   }
 
-  /// The resolved effective path once [resolvePath] has run, else [basePath].
   String get resolvedBasePath => _resolvedPath ?? basePath;
 
   static String _joinPath(String prefix, String segment) =>
       prefix.isEmpty ? '/$segment' : '$prefix/$segment';
 
-  /// Metadata of a single field of this model (type, label, choices…), or
-  /// null when unknown.
   Future<MetadataField?> metadataField(String name) async =>
       (await metadata())?.fields[name];
-
-  /// List resources with pagination
-  ///
-  /// [query] includes pagination, fields, filter, orderBy
-  /// [params] includes prefix and headers overrides
-  ///
-  /// Returns a [PaginationResult] with items and metadata.
-  ///
-  /// Example:
-  /// ```dart
-  /// final result = await api.list(
-  ///   query: ListQuery(
-  ///     page: 1,
-  ///     size: 25,
-  ///     fields: ['id', 'name'],
-  ///     filter: {'status': 'active'},
-  ///     orderBy: ['name:asc'],
-  ///   ),
-  /// );
-  /// ```
-  Future<PaginationResult<T>> list({
-    ListQuery? query,
-    ApiParams? params,
-  }) async {
-    if (disabledActions.contains(ApiAction.list)) {
-      throw Exception('List action is not available for this model');
-    }
-
-    final queryMap = query?.toMap() ?? {};
-    final paramsMap = params?.toMap() ?? {};
-
-    final response = await _fetcher.get(
-      await resolvePath(),
-      params: ApiHelpers.buildQueryParams(queryMap),
-      headers: ApiHelpers.buildHeaders(
-        queryMap,
-        extraHeaders: paramsMap['headers'] as Map<String, dynamic>?,
-      ),
-    );
-
-    return PaginationResult.fromJson(response.data, fromJson);
-  }
-
-  /// Get a single resource by ID
-  ///
-  /// [id] is the resource identifier (String or int)
-  /// [options] includes field selection
-  /// [params] includes prefix and headers overrides
-  ///
-  /// Example:
-  /// ```dart
-  /// final item = await api.get(
-  ///   123, // or '123'
-  ///   options: FieldsOptions(fields: ['id', 'name']),
-  /// );
-  /// ```
-  Future<T> get(Object id, {FieldsOptions? options, ApiParams? params}) async {
-    if (disabledActions.contains(ApiAction.get)) {
-      throw Exception('Get action is not available for this model');
-    }
-
-    final optionsMap = options?.toMap() ?? {};
-    final paramsMap = params?.toMap() ?? {};
-
-    final headers = ApiHelpers.buildHeaders(
-      optionsMap,
-      extraHeaders: paramsMap['headers'] as Map<String, dynamic>?,
-    );
-
-    final response = await _fetcher.get(
-      '${await resolvePath()}/${id.toString()}',
-      headers: headers,
-    );
-
-    return fromJson(response.data);
-  }
-
-  /// Create a new resource
-  ///
-  /// [payload] is the resource data to create
-  /// [options] includes field selection for response
-  /// [params] includes prefix and headers overrides
-  ///
-  /// Returns the created resource
-  ///
-  /// Example:
-  /// ```dart
-  /// final created = await api.create(
-  ///   {'name': 'John', 'email': 'john@example.com'},
-  ///   options: FieldsOptions(fields: ['id', 'name']),
-  /// );
-  /// ```
-  Future<T> create(
-    DynamicSchema<T> payload, {
-    FieldsOptions? options,
-    ApiParams? params,
-  }) async {
-    if (disabledActions.contains(ApiAction.create)) {
-      throw Exception('Create action is not available for this model');
-    }
-
-    final optionsMap = options?.toMap() ?? {};
-    final paramsMap = params?.toMap() ?? {};
-
-    final headers = ApiHelpers.buildHeaders(
-      optionsMap,
-      extraHeaders: paramsMap['headers'] as Map<String, dynamic>?,
-    );
-
-    final response = await _fetcher.post(
-      await resolvePath(),
-      payload.toJson(),
-      headers: headers,
-    );
-
-    final entity = fromJson(response.data);
-    notifyChanged(ResourceChangeType.created, entity.id);
-    return entity;
-  }
-
-  /// Update an existing resource (PATCH)
-  ///
-  /// [id] is the resource identifier (String or int)
-  /// [payload] is the updated resource data
-  /// [options] includes field selection for response
-  /// [params] includes prefix and headers overrides
-  ///
-  /// Returns the updated resource
-  ///
-  /// Example:
-  /// ```dart
-  /// final updated = await api.update(
-  ///   123, // or '123'
-  ///   {'name': 'Jane'},
-  ///   options: FieldsOptions(fields: ['id', 'name']),
-  /// );
-  /// ```
-  Future<T> update(
-    Object id,
-    DynamicSchema<T> payload, {
-    FieldsOptions? options,
-    ApiParams? params,
-  }) async {
-    if (disabledActions.contains(ApiAction.update)) {
-      throw Exception('Update action is not available for this model');
-    }
-
-    final optionsMap = options?.toMap() ?? {};
-    final paramsMap = params?.toMap() ?? {};
-
-    final headers = ApiHelpers.buildHeaders(
-      optionsMap,
-      extraHeaders: paramsMap['headers'] as Map<String, dynamic>?,
-    );
-
-    final response = await _fetcher.patch(
-      '${await resolvePath()}/${id.toString()}',
-      payload.toJson(),
-      headers: headers,
-    );
-
-    notifyChanged(ResourceChangeType.updated, id);
-    return fromJson(response.data);
-  }
-
-  /// Delete a resource
-  ///
-  /// [id] is the resource identifier (String or int)
-  /// [params] includes prefix and headers overrides
-  ///
-  /// Example:
-  /// ```dart
-  /// await api.delete(123); // or '123'
-  /// ```
-  Future<void> delete(Object id, {ApiParams? params}) async {
-    if (disabledActions.contains(ApiAction.delete)) {
-      throw Exception('Delete action is not available for this model');
-    }
-
-    final paramsMap = params?.toMap() ?? {};
-    final headers = paramsMap['headers'] as Map<String, dynamic>?;
-
-    await _fetcher.delete(
-      '${await resolvePath()}/${id.toString()}',
-      headers: headers,
-    );
-    notifyChanged(ResourceChangeType.deleted, id);
-  }
 
   void notifyChanged([ResourceChangeType? type, Object? id]) =>
       getService<Bus>().fire(
         ResourceChangedEvent(resolvedBasePath, type: type, id: id),
       );
 
-  /// Export resources
-  ///
-  /// [query] includes format, pagination, fields, filter, orderBy
-  /// [params] includes prefix and headers overrides
-  ///
-  /// Returns the raw response data (typically bytes for files)
-  ///
-  /// Example:
-  /// ```dart
-  /// final response = await api.export(
-  ///   query: ExportQuery(
-  ///     format: 'csv',
-  ///     fields: ['id', 'name'],
-  ///     filter: {'status': 'active'},
-  ///   ),
-  /// );
-  /// ```
-  Future<Response> export({ExportQuery? query, ApiParams? params}) async {
-    if (disabledActions.contains(ApiAction.export)) {
-      throw Exception('Export action is not available for this model');
-    }
+  Future<PaginationResult<T>> list({
+    ListQuery? query,
+    ApiParams? params,
+  }) async => (await _resolveEngine()).list(query: query, params: params);
 
-    final queryMap = query?.toMap() ?? {};
-    if (queryMap['format'] == null) {
-      queryMap['format'] = 'csv';
-    }
+  Future<T> get(Object id, {FieldsOptions? options, ApiParams? params}) async =>
+      (await _resolveEngine()).get(id, options: options, params: params);
 
-    final paramsMap = params?.toMap() ?? {};
+  Future<T> create(
+    DynamicSchema<T> payload, {
+    FieldsOptions? options,
+    ApiParams? params,
+  }) async => (await _resolveEngine()).create(
+    payload,
+    options: options,
+    params: params,
+  );
 
-    return _fetcher.get(
-      '${await resolvePath()}/export',
-      params: ApiHelpers.buildQueryParams(queryMap),
-      headers: ApiHelpers.buildHeaders(
-        queryMap,
-        extraHeaders: paramsMap['headers'] as Map<String, dynamic>?,
-      ),
-      responseType: ResponseType.bytes,
-    );
-  }
+  Future<T> update(
+    Object id,
+    DynamicSchema<T> payload, {
+    FieldsOptions? options,
+    ApiParams? params,
+  }) async => (await _resolveEngine()).update(
+    id,
+    payload,
+    options: options,
+    params: params,
+  );
 
-  /// Import resources from file
-  ///
-  /// [file] is the file bytes to import (CSV, XLSX, ODS)
-  /// [fileName] is the original file name
-  /// [params] includes prefix and headers overrides
-  ///
-  /// Returns import result with success/error counts
-  ///
-  /// Example:
-  /// ```dart
-  /// final response = await api.import(
-  ///   fileBytes,
-  ///   'data.csv',
-  /// );
-  /// ```
+  Future<void> delete(Object id, {ApiParams? params}) async =>
+      (await _resolveEngine()).delete(id, params: params);
+
+  Future<Response> export({ExportQuery? query, ApiParams? params}) async =>
+      (await _resolveEngine()).export(query: query, params: params);
+
   Future<Response> import(
     List<int> file,
     String fileName, {
     ApiParams? params,
-  }) async {
-    if (disabledActions.contains(ApiAction.import)) {
-      throw Exception('Import action is not available for this model');
-    }
+  }) async => (await _resolveEngine()).import(file, fileName, params: params);
 
-    final formData = FormData.fromMap({
-      'file': MultipartFile.fromBytes(file, filename: fileName),
-    });
-
-    final paramsMap = params?.toMap() ?? {};
-    final headers = paramsMap['headers'] as Map<String, dynamic>?;
-
-    return _fetcher.post(
-      '${await resolvePath()}/import',
-      formData,
-      headers: headers,
-    );
-  }
-
-  /// Download import template
-  ///
-  /// [query] includes format and fields selection
-  /// [params] includes prefix and headers overrides
-  ///
-  /// Returns the raw response data (typically bytes for files)
-  ///
-  /// Example:
-  /// ```dart
-  /// final response = await api.importTemplate(
-  ///   query: ImportTemplateQuery(
-  ///     format: 'xlsx',
-  ///     fields: ['id', 'name'],
-  ///   ),
-  /// );
-  /// ```
   Future<Response> importTemplate({
     ImportTemplateQuery? query,
     ApiParams? params,
-  }) async {
-    if (disabledActions.contains(ApiAction.importTemplate)) {
-      throw Exception('Import template action is not available for this model');
-    }
+  }) async =>
+      (await _resolveEngine()).importTemplate(query: query, params: params);
 
-    final queryMap = query?.toMap() ?? {};
-    if (queryMap['format'] == null) {
-      queryMap['format'] = 'xlsx';
-    }
+  Future<void> sync({ApiParams? params}) async =>
+      (await _resolveEngine()).sync(params: params);
 
-    final paramsMap = params?.toMap() ?? {};
+  Future<List<T>> cachedList() async => (await _resolveEngine()).cachedList();
 
-    return _fetcher.get(
-      '${await resolvePath()}/import/template',
-      params: ApiHelpers.buildQueryParams(queryMap),
-      headers: ApiHelpers.buildHeaders(
-        queryMap,
-        extraHeaders: paramsMap['headers'] as Map<String, dynamic>?,
-      ),
-      responseType: ResponseType.bytes,
+  Future<T?> cachedGet(Object id) async =>
+      (await _resolveEngine()).cachedGet(id);
+
+  Future<PaginationResult<T>> cachedQuery([ListQuery? query]) async =>
+      (await _resolveEngine()).cachedQuery(query);
+
+  Future<void> clearCache() async => (await _resolveEngine()).clearCache();
+
+  Stream<PaginationResult<T>> listCacheThenNetwork({
+    ListQuery? query,
+    ApiParams? params,
+  }) async* {
+    yield* (await _resolveEngine()).listCacheThenNetwork(
+      query: query,
+      params: params,
+    );
+  }
+
+  Stream<T> getCacheThenNetwork(
+    Object id, {
+    FieldsOptions? options,
+    ApiParams? params,
+  }) async* {
+    yield* (await _resolveEngine()).getCacheThenNetwork(
+      id,
+      options: options,
+      params: params,
     );
   }
 }
 
-// Generic base model and api model
 class GenericBaseModel extends BaseModel<GenericBaseModel> {
   GenericBaseModel(super.data);
 }

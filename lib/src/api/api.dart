@@ -11,6 +11,7 @@ export 'api_model.dart';
 export 'api_query.dart';
 export 'api_resource.dart';
 export 'base_model.dart';
+export 'sync_image_field.dart';
 export 'error_formatter.dart';
 export 'mixins.dart';
 export 'pagination_result.dart';
