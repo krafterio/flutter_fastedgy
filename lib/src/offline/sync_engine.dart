@@ -11,6 +11,7 @@ import '../fetcher/client.dart';
 import '../logging/logger.dart';
 import 'local_store.dart';
 import 'offline_error.dart';
+import 'conflict_store.dart';
 import 'outbox.dart';
 import 'replica.dart';
 import 'sync_status.dart';
@@ -44,6 +45,7 @@ class SyncEngine {
   final Replica? _replica;
   final Stream<bool>? _online;
   final SyncStatus? _status;
+  final ConflictStore? _conflicts;
   final _logger = getLogger('SyncEngine');
 
   /// Maximum operations per sync batch (matches the server-side cap).
@@ -77,6 +79,7 @@ class SyncEngine {
     Replica? replica,
     Stream<bool>? online,
     SyncStatus? status,
+    ConflictStore? conflicts,
     this.batchSize = 500,
     this.maxAttempts = 25,
     this.retryBaseDelay = const Duration(seconds: 5),
@@ -84,7 +87,8 @@ class SyncEngine {
   }) : _localStore = localStore,
        _replica = replica,
        _online = online,
-       _status = status;
+       _status = status,
+       _conflicts = conflicts;
 
   /// Start listening to connectivity: every regain triggers a flush.
   void start() {
@@ -388,7 +392,30 @@ class SyncEngine {
             await _cacheUpsert(operation.cache, record);
           }
 
-          await _discard(operation, 'conflict');
+          // An update that lost is parked for manual resolution instead of
+          // being dropped (delete-losses and payload-less ops have nothing to
+          // reconcile — those still discard).
+          if (_conflicts != null &&
+              operation.method != 'DELETE' &&
+              operation.payload != null &&
+              record != null) {
+            final entry = ConflictEntry(
+              basePath: basePath,
+              recordId: idMap['${operation.recordId}'] ?? operation.recordId!,
+              mine: operation.payload!,
+              base: operation.base,
+              server: record,
+              fields: (result['discarded_fields'] as List? ?? const [])
+                  .cast<String>(),
+              createdAt: operation.createdAt,
+              cache: operation.cache,
+            );
+            await _conflicts.park(entry);
+            _bus.fire(OutboxConflictParkedEvent(entry));
+          } else {
+            await _discard(operation, 'conflict');
+          }
+
           counters.discarded++;
         case 'deleted':
           if (operation.recordId != null) {
@@ -410,6 +437,45 @@ class SyncEngine {
       }
 
       await _outbox.remove(operation.id);
+    }
+  }
+
+  /// Resolve a parked [ConflictEntry], keeping either side wholesale.
+  ///
+  /// [keepMine] re-enqueues the buffered write with the server record as its
+  /// base, so the client values win the next flush's last-writer-wins;
+  /// otherwise the local cache already holds the server record and the entry
+  /// is simply dropped.
+  Future<void> resolveConflict(
+    ConflictEntry entry, {
+    required bool keepMine,
+  }) async {
+    if (keepMine) {
+      await _outbox.enqueue(
+        (id, createdAt) => PendingOperation(
+          id: id,
+          method: 'PATCH',
+          basePath: entry.basePath,
+          recordId: entry.recordId,
+          payload: entry.mine,
+          base: entry.server,
+          createdAt: createdAt,
+          cache: entry.cache,
+        ),
+      );
+    }
+
+    await _conflicts?.resolve(entry.basePath, entry.recordId);
+    _bus.fire(
+      OutboxConflictResolvedEvent(
+        entry.basePath,
+        entry.recordId,
+        keptMine: keepMine,
+      ),
+    );
+
+    if (keepMine) {
+      unawaited(flush());
     }
   }
 

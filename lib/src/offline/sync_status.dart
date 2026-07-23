@@ -21,11 +21,13 @@ class SyncStatusChangedEvent extends Event {
   final bool online;
   final bool syncing;
   final int pending;
+  final int conflicts;
 
   const SyncStatusChangedEvent({
     required this.online,
     required this.syncing,
     required this.pending,
+    required this.conflicts,
   });
 }
 
@@ -47,6 +49,7 @@ class SyncStatus extends ChangeNotifier {
   bool _online;
   bool _syncing = false;
   int _pending = 0;
+  int _conflicts = 0;
 
   SyncStatus(this._bus, {bool online = true}) : _online = online;
 
@@ -59,9 +62,12 @@ class SyncStatus extends ChangeNotifier {
   /// Number of buffered writes still waiting to be replayed.
   int get pending => _pending;
 
-  /// Whether there is anything worth surfacing (offline, syncing, or a
-  /// non-empty queue) — convenience for hiding an idle indicator.
-  bool get isActive => !_online || _syncing || _pending > 0;
+  /// Number of conflicts parked for manual resolution.
+  int get conflicts => _conflicts;
+
+  /// Whether there is anything worth surfacing (offline, syncing, a non-empty
+  /// queue, or a conflict) — convenience for hiding an idle indicator.
+  bool get isActive => !_online || _syncing || _pending > 0 || _conflicts > 0;
 
   void setOnline(bool value) {
     if (_online != value) {
@@ -84,12 +90,20 @@ class SyncStatus extends ChangeNotifier {
     }
   }
 
+  void setConflicts(int value) {
+    if (_conflicts != value) {
+      _conflicts = value;
+      _emit();
+    }
+  }
+
   void _emit() {
     _bus.fire(
       SyncStatusChangedEvent(
         online: _online,
         syncing: _syncing,
         pending: _pending,
+        conflicts: _conflicts,
       ),
     );
     notifyListeners();

@@ -24,6 +24,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 
 import 'offline/drift_local_image_store.dart';
 import 'offline/drift_local_store.dart';
+import 'offline/conflict_store.dart';
 import 'offline/local_image_store.dart';
 import 'offline/local_store.dart';
 import 'offline/offline_database.dart';
@@ -278,6 +279,13 @@ Future<void> initializeFastEdgy({
     container.registerSingleton<Outbox>(outbox);
     status.setPending((await outbox.all()).length);
 
+    final conflicts = ConflictStore(
+      getService<LocalStore>(),
+      onChanged: status.setConflicts,
+    );
+    container.registerSingleton<ConflictStore>(conflicts);
+    status.setConflicts((await conflicts.all()).length);
+
     final engine = SyncEngine(
       outbox,
       getService<Fetcher>(),
@@ -285,6 +293,7 @@ Future<void> initializeFastEdgy({
       localStore: getService<LocalStore>(),
       replica: hasService<Replica>() ? getService<Replica>() : null,
       status: status,
+      conflicts: conflicts,
       online: Connectivity().onConnectivityChanged.map(
         (results) => results.any((result) => result != ConnectivityResult.none),
       ),

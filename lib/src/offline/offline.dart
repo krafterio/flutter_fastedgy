@@ -5,6 +5,7 @@
 
 export 'drift_local_image_store.dart';
 export 'drift_local_store.dart';
+export 'conflict_store.dart';
 export 'filter_ast.dart';
 export 'image_mirror.dart';
 export 'local_image_store.dart';

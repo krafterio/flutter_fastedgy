@@ -340,6 +340,113 @@ void main() {
     });
 
     test(
+      'with a ConflictStore, a conflict is parked instead of discarded',
+      () async {
+        final conflicts = ConflictStore(store);
+        final parkEngine = SyncEngine(
+          outbox,
+          fetcher,
+          getService<Bus>(),
+          localStore: store,
+          conflicts: conflicts,
+        );
+
+        await store.put('/items', 1, {'id': 1, 'name': 'One'});
+        adapter.offline = true;
+        await api.update(1, _Item({'name': 'Mine'}));
+
+        adapter.offline = false;
+        adapter.routes['POST /items/sync'] = (options) => {
+          'results': [
+            {
+              'id': 1,
+              'status': 'conflict',
+              'record': {'id': 1, 'name': 'Theirs'},
+              'discarded_fields': ['name'],
+            },
+          ],
+        };
+        await parkEngine.flush();
+
+        final parked = await conflicts.all();
+        expect(parked, hasLength(1));
+        expect(parked.single.mine['name'], 'Mine');
+        expect(parked.single.server['name'], 'Theirs');
+        expect(parked.single.fields, ['name']);
+        expect(discarded, isEmpty);
+        expect(await outbox.all(), isEmpty);
+      },
+    );
+
+    test(
+      'resolveConflict keepMine re-enqueues a PATCH based on the server record',
+      () async {
+        final conflicts = ConflictStore(store);
+        final resolveEngine = SyncEngine(
+          outbox,
+          fetcher,
+          getService<Bus>(),
+          localStore: store,
+          conflicts: conflicts,
+        );
+        const entry = ConflictEntry(
+          basePath: '/items',
+          recordId: 1,
+          mine: {'name': 'Mine'},
+          base: {'name': 'One'},
+          server: {'id': 1, 'name': 'Theirs'},
+          fields: ['name'],
+          createdAt: '2026-07-22T10:00:00Z',
+          cache: OutboxCacheContext(kind: 'json', namespace: '/items'),
+        );
+        await conflicts.park(entry);
+        adapter.offline = true;
+
+        await resolveEngine.resolveConflict(entry, keepMine: true);
+        // resolveConflict fires a fire-and-forget flush; let it settle
+        // (offline, so it keeps the op) before asserting and teardown.
+        await pumpEventQueue();
+
+        expect(await conflicts.all(), isEmpty);
+        final queued = await outbox.all();
+        expect(queued, hasLength(1));
+        expect(queued.single.method, 'PATCH');
+        expect(queued.single.payload, {'name': 'Mine'});
+        expect(queued.single.base, {'id': 1, 'name': 'Theirs'});
+      },
+    );
+
+    test(
+      'resolveConflict keepServer drops the conflict without re-enqueuing',
+      () async {
+        final conflicts = ConflictStore(store);
+        final resolveEngine = SyncEngine(
+          outbox,
+          fetcher,
+          getService<Bus>(),
+          localStore: store,
+          conflicts: conflicts,
+        );
+        const entry = ConflictEntry(
+          basePath: '/items',
+          recordId: 1,
+          mine: {'name': 'Mine'},
+          base: {'name': 'One'},
+          server: {'id': 1, 'name': 'Theirs'},
+          fields: ['name'],
+          createdAt: '2026-07-22T10:00:00Z',
+          cache: OutboxCacheContext(kind: 'json', namespace: '/items'),
+        );
+        await conflicts.park(entry);
+
+        await resolveEngine.resolveConflict(entry, keepMine: false);
+
+        expect(await conflicts.all(), isEmpty);
+        expect(await outbox.all(), isEmpty);
+      },
+    );
+
+    test(
       'an update on a server-deleted record removes the local copy',
       () async {
         await store.put('/items', 1, {'id': 1, 'name': 'One'});
