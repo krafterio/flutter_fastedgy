@@ -25,7 +25,7 @@ class DriftLocalStore implements LocalStore {
   /// [databaseOpener] overrides the platform database (e.g. an in-memory
   /// drift database in tests).
   DriftLocalStore({
-    String dbName = 'fastedgy_offline.db',
+    String dbName = 'data.db',
     OfflineDatabase Function()? databaseOpener,
   }) : dbName = dbName,
        _databaseOpener = databaseOpener ?? (() => OfflineDatabase.open(dbName));

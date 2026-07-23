@@ -22,7 +22,7 @@ import 'metadata/default_metadata_provider.dart';
 import 'image/image_cache.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
-import 'offline/drift_local_image_store.dart';
+import 'offline/filesystem_local_image_store.dart';
 import 'offline/drift_local_store.dart';
 import 'offline/conflict_store.dart';
 import 'offline/local_image_store.dart';
@@ -218,13 +218,20 @@ Future<void> initializeFastEdgy({
     );
   }
 
+  // Single SQLite database for all offline data — records/outbox/conflicts,
+  // replica tables (`r_<model>`) and the image index — in one file. A replica
+  // rebuild only DROPs its own tables, so it never touches the outbox, and
+  // cross-store reads can join. Image bytes live on disk (not here).
+  OfflineDatabase? offlineDb;
+  OfflineDatabase sharedDb() => offlineDb ??= OfflineDatabase.open(
+    offlineDbName ?? 'data.db',
+  );
+
   // LocalStore (opt-in): opened eagerly so offline reads work from the first
   // frame; cached records are purged on logout.
   if ((offline || localStoreFactory != null) && !hasService<LocalStore>()) {
-    OfflineDatabase.allowMultipleInstances();
     final localStore =
-        localStoreFactory?.call() ??
-        DriftLocalStore(dbName: offlineDbName ?? 'fastedgy_offline.db');
+        localStoreFactory?.call() ?? DriftLocalStore(databaseOpener: sharedDb);
     await localStore.open();
     container.registerSingleton<LocalStore>(localStore);
     getService<Bus>().on<AuthLogoutEvent>().listen(
@@ -232,15 +239,14 @@ Future<void> initializeFastEdgy({
     );
   }
 
-  // LocalImageStore (opt-in, alongside LocalStore): persists the image blobs
-  // referenced by synced records; purged on logout like the record cache.
+  // LocalImageStore (opt-in, alongside LocalStore): persists the images
+  // referenced by synced records (bytes on disk, index in SQLite); purged on
+  // logout like the record cache.
   if ((offline || localImageStoreFactory != null) &&
       !hasService<LocalImageStore>()) {
     final localImageStore =
         localImageStoreFactory?.call() ??
-        DriftLocalImageStore(
-          dbName: offlineImagesDbName ?? 'fastedgy_offline_images.db',
-        );
+        FilesystemLocalImageStore(databaseOpener: sharedDb);
     await localImageStore.open();
     container.registerSingleton<LocalImageStore>(localImageStore);
     getService<Bus>().on<AuthLogoutEvent>().listen(
@@ -252,8 +258,7 @@ Future<void> initializeFastEdgy({
   // replication with server-parity offline queries; purged on logout.
   if ((offline || replicaStoreFactory != null) && !hasService<ReplicaStore>()) {
     final replicaStore =
-        replicaStoreFactory?.call() ??
-        ReplicaStore(dbName: replicaDbName ?? 'fastedgy_replica.db');
+        replicaStoreFactory?.call() ?? ReplicaStore(databaseOpener: sharedDb);
     await replicaStore.open();
     container.registerSingleton<ReplicaStore>(replicaStore);
     container.registerSingleton<Replica>(
