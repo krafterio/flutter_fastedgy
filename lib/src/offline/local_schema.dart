@@ -36,6 +36,17 @@ class LocalFieldSchema {
   /// Column persisting the target id of a `reference` field.
   String get referenceIdColumn => '${name}_id';
 
+  /// Whether this field is a geographic point (server `PointField`, PostGIS
+  /// `geometry(Point)`, payload `[longitude, latitude]`): locally it
+  /// materializes as the [pointLngColumn]/[pointLatColumn] REAL pair.
+  bool get isPoint => type == 'point';
+
+  /// Column persisting the longitude of a point field.
+  String get pointLngColumn => '${name}_lng';
+
+  /// Column persisting the latitude of a point field.
+  String get pointLatColumn => '${name}_lat';
+
   LocalRelationKind get relationKind => switch (type) {
     'many2one' || 'many2one_ref' || 'one2one' => LocalRelationKind.many2one,
     'one2many' => LocalRelationKind.one2many,
@@ -44,12 +55,14 @@ class LocalFieldSchema {
     _ => LocalRelationKind.none,
   };
 
-  /// Whether this field materializes as a table column (scalars and m2o ids;
-  /// inverse and generic relations are resolved through other tables). The
-  /// server fulltext field is metadata-only (excluded from API payloads):
-  /// locally it materializes as the derived `search_value_fts_*` columns.
+  /// Whether this field materializes as a single table column (scalars and
+  /// m2o ids; inverse and generic relations are resolved through other
+  /// tables). The server fulltext field is metadata-only (excluded from API
+  /// payloads): locally it materializes as the derived `search_value_fts_*`
+  /// columns. Point fields materialize as their lng/lat column pair.
   bool get isColumn =>
       type != 'fulltext' &&
+      !isPoint &&
       (relationKind == LocalRelationKind.none ||
           relationKind == LocalRelationKind.many2one);
 
@@ -136,6 +149,10 @@ class LocalModelSchema {
         field.target != null,
   );
 
+  /// Geographic point fields, persisted as a lng/lat REAL column pair.
+  Iterable<LocalFieldSchema> get points =>
+      fields.values.where((field) => field.isPoint);
+
   /// Stable schema fingerprint driving the auto-migrator: any change in the
   /// column set (name, type or target) changes it.
   String get fingerprint {
@@ -148,6 +165,7 @@ class LocalModelSchema {
             '${field.name}:reference:${(field.targets ?? const []).join(',')}',
       ),
       ...manyToMany.map((field) => '${field.name}:many2many:${field.target}'),
+      ...points.map((field) => '${field.name}:point'),
     ].toList()..sort();
 
     return parts.join('|');

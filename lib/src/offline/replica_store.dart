@@ -436,6 +436,7 @@ class ReplicaStore {
 
     final columns = model.columns.toList();
     final references = model.references.toList();
+    final points = model.points.toList();
     final search = model.searchable
         ? computeSearchValues(model, record)
         : const <String, String>{};
@@ -447,6 +448,10 @@ class ReplicaStore {
         '"${field.referenceModelColumn}"',
         '"${field.referenceIdColumn}"',
       ],
+      for (final field in points) ...[
+        '"${field.pointLngColumn}"',
+        '"${field.pointLatColumn}"',
+      ],
       ...search.keys.map((column) => '"$column"'),
     ];
     final values = <Object?>[
@@ -456,6 +461,10 @@ class ReplicaStore {
       for (final field in references) ...[
         (record[field.name] as Map?)?[r'$model'],
         (record[field.name] as Map?)?['id'],
+      ],
+      for (final field in points) ...[
+        _pointCoordinate(record[field.name], 0),
+        _pointCoordinate(record[field.name], 1),
       ],
       ...search.values,
     ];
@@ -493,6 +502,16 @@ class ReplicaStore {
         }
       }
     }
+  }
+
+  /// Coordinate [index] (0 = longitude, 1 = latitude) of a raw point payload
+  /// (`[lon, lat]`), or null when absent or malformed.
+  double? _pointCoordinate(dynamic value, int index) {
+    if (value is List && value.length >= 2 && value[index] is num) {
+      return (value[index] as num).toDouble();
+    }
+
+    return null;
   }
 
   Object? _columnValue(LocalFieldSchema field, dynamic value) {
@@ -544,6 +563,15 @@ class ReplicaStore {
       await _database.customStatement(
         'CREATE INDEX IF NOT EXISTS "idx_${table}_${field.name}_pair" '
         'ON "$table" ("${field.referenceModelColumn}", "${field.referenceIdColumn}")',
+      );
+    }
+
+    // Serves the bounding-box prefilter of the spatial distance operators
+    // (lat range scan, lng filtered within the index).
+    for (final field in model.points) {
+      await _database.customStatement(
+        'CREATE INDEX IF NOT EXISTS "idx_${table}_${field.name}_geo" '
+        'ON "$table" ("${field.pointLatColumn}", "${field.pointLngColumn}")',
       );
     }
   }
@@ -767,6 +795,10 @@ class ReplicaStore {
     for (final field in model.references) ...{
       field.referenceModelColumn: 'TEXT',
       field.referenceIdColumn: 'INTEGER',
+    },
+    for (final field in model.points) ...{
+      field.pointLngColumn: 'REAL',
+      field.pointLatColumn: 'REAL',
     },
     if (model.searchable)
       for (final column in searchColumns) column: 'TEXT',

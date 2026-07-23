@@ -3,6 +3,8 @@
  * MIT License (see LICENSE file).
  */
 
+import 'dart:math' as math;
+
 import '../api/api_helpers.dart';
 import 'filter_ast.dart';
 import 'local_schema.dart';
@@ -43,12 +45,23 @@ class CompiledReplicaQuery {
 ///   ordering on the fulltext field maps the server's `ts_rank` to a
 ///   weighted `bm25()` (only meaningful alongside a search rule on the root
 ///   model — skipped otherwise, like the server's rank extra select);
+/// - spatial operators on point fields compile over their lng/lat column
+///   pair: the distance family follows the Query Builder contract
+///   (`[[lon, lat], meters]`, doc "Spatial field operators") through the
+///   haversine great-circle formula guarded by an indexable bounding-box
+///   prefilter — the SQLite counterpart of ST_Distance/ST_DWithin; the
+///   geometry predicates keep the server's point-vs-point semantics (its
+///   Point type only binds 2-coordinate points): contains/within/
+///   intersects/equals are point equality, disjoint its negation and
+///   touches/crosses/overlaps never match;
 /// - every table access is confined to its replica scope (`_workspace`).
 ///
 /// Unsupported offline (throws [UnsupportedError]): `match`,
-/// vector and spatial operators, filters ending on a to-many field, paths
-/// through m2m or generic relations, and o2m hops with an ambiguous reverse
-/// FK (declare/replicate the pivot instead).
+/// vector operators, the bare `spatial distance` (not a boolean predicate,
+/// rejected by PostgreSQL server-side too), order_by on a point field,
+/// filters ending on a to-many field, paths through m2m or generic
+/// relations, and o2m hops with an ambiguous reverse FK (declare/replicate
+/// the pivot instead).
 class ReplicaQueryCompiler {
   final LocalSchema schema;
 
@@ -219,13 +232,7 @@ class ReplicaQueryCompiler {
 
       if (_allMany2one(rest)) {
         parts.add(
-          _predicate(
-            ctx,
-            _scalarChain(ctx, alias, rest, entry.$1.leaf, args),
-            entry.$1.leaf,
-            entry.$2,
-            args,
-          ),
+          _leafPredicate(ctx, alias, rest, entry.$1.leaf, entry.$2, args),
         );
       } else {
         deeper
@@ -259,35 +266,64 @@ class ReplicaQueryCompiler {
     FilterRule rule,
     List<Object?> args,
   ) {
+    return _leafPredicate(ctx, alias, path.hops, path.leaf, rule, args);
+  }
+
+  String _leafPredicate(
+    _Context ctx,
+    String alias,
+    List<_Hop> hops,
+    LocalFieldSchema leaf,
+    FilterRule rule,
+    List<Object?> args,
+  ) {
+    if (leaf.isPoint) {
+      return _spatialPredicate(ctx, alias, hops, leaf, rule, args);
+    }
+
     return _predicate(
       ctx,
-      _scalarChain(ctx, alias, path.hops, path.leaf, args),
-      path.leaf,
+      _scalarChain(ctx, alias, hops, leaf, args),
+      leaf,
       rule,
       args,
     );
   }
 
-  // Nested correlated scalar subqueries following a m2o chain; the innermost
-  // expression is the leaf column, a missing related row yields NULL.
   String _scalarChain(
     _Context ctx,
     String parentAlias,
     List<_Hop> hops,
     LocalFieldSchema leaf,
     List<Object?> args,
+  ) => _chainExpr(
+    ctx,
+    parentAlias,
+    hops,
+    (alias) => '$alias."${leaf.name}"',
+    args,
+  );
+
+  // Nested correlated scalar subqueries following a m2o chain; the innermost
+  // expression comes from [inner], a missing related row yields NULL.
+  String _chainExpr(
+    _Context ctx,
+    String parentAlias,
+    List<_Hop> hops,
+    String Function(String alias) inner,
+    List<Object?> args,
   ) {
     if (hops.isEmpty) {
-      return '$parentAlias."${leaf.name}"';
+      return inner(parentAlias);
     }
 
     final hop = hops.first;
     final alias = ctx.nextAlias('s');
-    final inner = _scalarChain(ctx, alias, hops.sublist(1), leaf, args);
+    final sql = _chainExpr(ctx, alias, hops.sublist(1), inner, args);
 
     args.add(ctx.scopeOf(hop.target.name));
 
-    return '(SELECT $inner FROM "${_table(hop.target)}" $alias '
+    return '(SELECT $sql FROM "${_table(hop.target)}" $alias '
         'WHERE $parentAlias."${hop.field.name}" = $alias.id '
         'AND $alias._workspace = ?)';
   }
@@ -447,6 +483,196 @@ class ReplicaQueryCompiler {
     return parts.length == 1 ? parts.single : '(${parts.join(' AND ')})';
   }
 
+  /// Spatial operators on a point field, compiled over its lng/lat column
+  /// pair (`fastedgy/orm/fields/field_point.py`, doc "Query Builder →
+  /// Spatial field operators"). Emptiness keeps the LEFT JOIN semantics of
+  /// the other leafs (the NULL check wraps the m2o chain: a broken chain
+  /// matches `is empty`); the boolean predicates evaluate inside the chain,
+  /// so a broken chain or a NULL point never matches — like their PostGIS
+  /// counterparts on a NULL geometry.
+  String _spatialPredicate(
+    _Context ctx,
+    String alias,
+    List<_Hop> hops,
+    LocalFieldSchema leaf,
+    FilterRule rule,
+    List<Object?> args,
+  ) {
+    switch (rule.operator) {
+      case 'is empty':
+        return '${_chainExpr(ctx, alias, hops, (a) => '$a."${leaf.pointLatColumn}"', args)} IS NULL';
+      case 'is not empty':
+        return '${_chainExpr(ctx, alias, hops, (a) => '$a."${leaf.pointLatColumn}"', args)} IS NOT NULL';
+      // Point-vs-point degenerate predicates: two points never touch, cross
+      // nor overlap (dimension rules) — the value is still validated.
+      case 'spatial touches' || 'spatial crosses' || 'spatial overlaps':
+        _pointValue(rule);
+        return '0 = 1';
+      case 'spatial distance':
+        throw UnsupportedError(
+          'The bare "spatial distance" operator is not a boolean predicate '
+          '(use "spatial distance <", "spatial within distance"…)',
+        );
+      case 'spatial equals' ||
+          'spatial contains' ||
+          'spatial within' ||
+          'spatial intersects' ||
+          'spatial disjoint' ||
+          'spatial within distance' ||
+          'spatial distance <' ||
+          'spatial distance <=' ||
+          'spatial distance >' ||
+          'spatial distance >=':
+        return _chainExpr(
+          ctx,
+          alias,
+          hops,
+          (a) => _spatialSql(a, leaf, rule, args),
+          args,
+        );
+      default:
+        throw UnsupportedError(
+          'Operator "${rule.operator}" is not supported on a point field '
+          'offline',
+        );
+    }
+  }
+
+  String _spatialSql(
+    String alias,
+    LocalFieldSchema leaf,
+    FilterRule rule,
+    List<Object?> args,
+  ) {
+    final lng = '$alias."${leaf.pointLngColumn}"';
+    final lat = '$alias."${leaf.pointLatColumn}"';
+
+    switch (rule.operator) {
+      case 'spatial equals' ||
+          'spatial contains' ||
+          'spatial within' ||
+          'spatial intersects':
+        final point = _pointValue(rule);
+        args.add(point.$1);
+        args.add(point.$2);
+        return '($lng = ? AND $lat = ?)';
+      case 'spatial disjoint':
+        final point = _pointValue(rule);
+        args.add(point.$1);
+        args.add(point.$2);
+        return 'NOT ($lng = ? AND $lat = ?)';
+      case 'spatial within distance':
+        final (point, distance) = _pointDistanceValue(rule);
+        return _boundedDistanceSql(lng, lat, point, distance, '<=', args);
+      case 'spatial distance <' || 'spatial distance <=':
+        final (point, distance) = _pointDistanceValue(rule);
+        final op = rule.operator == 'spatial distance <' ? '<' : '<=';
+        return _boundedDistanceSql(lng, lat, point, distance, op, args);
+      case 'spatial distance >' || 'spatial distance >=':
+        final (point, distance) = _pointDistanceValue(rule);
+        final op = rule.operator == 'spatial distance >' ? '>' : '>=';
+        final distanceSql = _haversineSql(lng, lat, point, args);
+        args.add(distance);
+        return '$distanceSql $op ?';
+      default:
+        throw StateError('Unexpected spatial operator "${rule.operator}"');
+    }
+  }
+
+  /// Great-circle distance in meters between the row point and the bound
+  /// reference point — 2R·asin(√a) with the mean Earth radius, matching the
+  /// documented meter-based distance contract of the spatial operators.
+  String _haversineSql(
+    String lng,
+    String lat,
+    (double, double) point,
+    List<Object?> args,
+  ) {
+    args.add(point.$2);
+    args.add(point.$2);
+    args.add(point.$1);
+
+    return '12742000.0 * asin(min(1.0, sqrt('
+        'pow(sin(radians(? - $lat) / 2), 2) '
+        '+ cos(radians($lat)) * cos(radians(?)) '
+        '* pow(sin(radians(? - $lng) / 2), 2))))';
+  }
+
+  /// `haversine OP ?` guarded by an indexable bounding-box prefilter — the
+  /// SQLite counterpart of the ST_DWithin index strategy. The box is a
+  /// conservative superset (worst-latitude degree scale, poles and
+  /// antimeridian skip the lng bound); the haversine keeps the exact
+  /// semantics.
+  String _boundedDistanceSql(
+    String lng,
+    String lat,
+    (double, double) point,
+    double distance,
+    String op,
+    List<Object?> args,
+  ) {
+    const metersPerDegree = 111000.0;
+    final parts = <String>[];
+    final latDelta = distance / metersPerDegree;
+
+    args.add(point.$2 - latDelta);
+    args.add(point.$2 + latDelta);
+    parts.add('$lat BETWEEN ? AND ?');
+
+    final maxAbsLat = math.min(point.$2.abs() + latDelta, 90.0);
+
+    if (maxAbsLat < 89.9) {
+      final lngDelta =
+          distance / (metersPerDegree * math.cos(maxAbsLat * math.pi / 180));
+
+      if (point.$1 - lngDelta >= -180 && point.$1 + lngDelta <= 180) {
+        args.add(point.$1 - lngDelta);
+        args.add(point.$1 + lngDelta);
+        parts.add('$lng BETWEEN ? AND ?');
+      }
+    }
+
+    final distanceSql = _haversineSql(lng, lat, point, args);
+    args.add(distance);
+    parts.add('$distanceSql $op ?');
+
+    return '(${parts.join(' AND ')})';
+  }
+
+  /// A `[longitude, latitude]` filter value.
+  (double, double) _pointValue(FilterRule rule) {
+    final value =
+        rule.operator.startsWith('spatial distance') ||
+            rule.operator == 'spatial within distance'
+        ? (rule.value as List)[0]
+        : rule.value;
+
+    if (value is List &&
+        value.length == 2 &&
+        value[0] is num &&
+        value[1] is num) {
+      return ((value[0] as num).toDouble(), (value[1] as num).toDouble());
+    }
+
+    throw InvalidFilterException(
+      'Operator "${rule.operator}" expects a [longitude, latitude] point',
+    );
+  }
+
+  /// A `[[longitude, latitude], meters]` filter value.
+  ((double, double), double) _pointDistanceValue(FilterRule rule) {
+    final value = rule.value;
+
+    if (value is! List || value.length != 2 || value[1] is! num) {
+      throw InvalidFilterException(
+        'Operator "${rule.operator}" expects [[longitude, latitude], '
+        'distance in meters]',
+      );
+    }
+
+    return (_pointValue(rule), (value[1] as num).toDouble());
+  }
+
   Object? _coerce(LocalFieldSchema leaf, dynamic value) {
     if (value == null) {
       return null;
@@ -490,6 +716,12 @@ class ReplicaQueryCompiler {
 
       final descending = parts.length > 1 && parts[1].trim() == 'desc';
       final path = _resolvePath(ctx, root, fieldPath);
+
+      if (path.leaf.isPoint) {
+        throw UnsupportedError(
+          'order_by on the point field "$fieldPath" is not supported offline',
+        );
+      }
 
       if (path.leaf.type == 'fulltext') {
         if (path.hops.isNotEmpty) {
@@ -634,6 +866,12 @@ class ReplicaQueryCompiler {
               target: current.name,
             ),
           );
+        }
+
+        // Point fields carry no single column: the predicates compile over
+        // their lng/lat pair (see _spatialPredicate).
+        if (field.isPoint) {
+          return _Path(hops: hops, leaf: field);
         }
 
         if (!field.isColumn) {
