@@ -60,7 +60,7 @@ class _ItemApi extends OfflineApiModel<_Item> {
        );
 
   @override
-  dynamic get syncFields => 'id,name,tag';
+  List<String>? get syncFields => const ['id', 'name', 'tag'];
 
   @override
   int get syncPageSize => 2;
@@ -648,7 +648,7 @@ class _ReplicatedItemApi extends OfflineApiModel<_Item> {
   String get replicaScope => scope;
 
   @override
-  dynamic get syncFields => 'id,name,tag,qty';
+  List<String>? get syncFields => const ['id', 'name', 'tag', 'qty'];
 
   @override
   int get syncPageSize => 2;

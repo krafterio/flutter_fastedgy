@@ -136,9 +136,36 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
   /// path (defaults to [replicaScope] for every model).
   String replicaScopeFor(String model) => replicaScope;
 
-  /// X-Fields used by [sync] to mirror the collection (relations to preload).
-  /// Null selects the default server fields.
-  dynamic get syncFields => null;
+  /// X-Fields used by [sync] to mirror the collection, as a list of field
+  /// names. Null (the default) derives them from the metadata — every field
+  /// of the model except reverse relations (see [_resolveSyncFields]).
+  List<String>? get syncFields => null;
+
+  /// Fields sent as X-Fields by [sync]: the [syncFields] override, else all of
+  /// the model's own fields from the metadata **except to-many relations** —
+  /// `one2many` (incl. the generic reverse, typed `one2many` server-side) and
+  /// `many2many`. They are collections that would over-fetch; a model that
+  /// needs an m2m replicated overrides [syncFields] to opt it back in. Null
+  /// lets the server return its default representation (no metadata available).
+  Future<List<String>?> _resolveSyncFields() async {
+    final override = syncFields;
+
+    if (override != null) {
+      return override;
+    }
+
+    final meta = await metadata();
+
+    if (meta == null) {
+      return null;
+    }
+
+    return [
+      for (final entry in meta.fields.entries)
+        if (entry.value.type != 'one2many' && entry.value.type != 'many2many')
+          entry.key,
+    ];
+  }
 
   /// Page size used by [sync] while walking the collection (transport detail,
   /// unrelated to the cache contract).
@@ -261,7 +288,7 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
       while (true) {
         final page = await super.list(
           query: ListQuery(
-            fields: syncFields,
+            fields: await _resolveSyncFields(),
             filter: ['id', 'in', ids],
             limit: syncPageSize,
             offset: chunkOffset,

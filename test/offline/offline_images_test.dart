@@ -29,7 +29,7 @@ class _ItemApi extends OfflineApiModel<_Item> {
        );
 
   @override
-  dynamic get syncFields => 'id,name,avatar';
+  List<String>? get syncFields => const ['id', 'name', 'avatar'];
 
   @override
   List<SyncImageField> get syncImageFields => const [
