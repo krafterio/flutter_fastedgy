@@ -30,3 +30,24 @@ bool isOfflineError(Object error) {
 
   return false;
 }
+
+/// The HTTP status code carried by [error], if any.
+int? errorStatusCode(Object error) {
+  if (error is HttpError) {
+    return error.statusCode;
+  }
+
+  if (error is DioException) {
+    return error.response?.statusCode;
+  }
+
+  return null;
+}
+
+/// Whether [error] is a transient server failure (5xx, 429) that must be
+/// retried later rather than treated as a definitive rejection.
+bool isRetryableServerError(Object error) {
+  final status = errorStatusCode(error);
+
+  return status != null && (status >= 500 || status == 429);
+}

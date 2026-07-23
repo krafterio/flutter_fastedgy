@@ -20,13 +20,17 @@ import 'bus/bus.dart';
 import 'metadata/metadata_provider.dart';
 import 'metadata/default_metadata_provider.dart';
 import 'image/image_cache.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+
 import 'offline/drift_local_image_store.dart';
 import 'offline/drift_local_store.dart';
 import 'offline/local_image_store.dart';
 import 'offline/local_store.dart';
 import 'offline/offline_database.dart';
+import 'offline/outbox.dart';
 import 'offline/replica.dart';
 import 'offline/replica_store.dart';
+import 'offline/sync_engine.dart';
 import 'storage/storage_downloader.dart';
 import 'storage/storage_uploader.dart';
 
@@ -255,5 +259,25 @@ Future<void> initializeFastEdgy({
     getService<Bus>().on<AuthLogoutEvent>().listen(
       (_) => replicaStore.clearAll(),
     );
+  }
+
+  // Outbox + SyncEngine (opt-in): offline writes are buffered in the local
+  // store and replayed in order when connectivity comes back.
+  if (offline && hasService<LocalStore>() && !hasService<Outbox>()) {
+    final outbox = Outbox(getService<LocalStore>());
+    container.registerSingleton<Outbox>(outbox);
+
+    final engine = SyncEngine(
+      outbox,
+      getService<Fetcher>(),
+      getService<Bus>(),
+      localStore: getService<LocalStore>(),
+      replica: hasService<Replica>() ? getService<Replica>() : null,
+      online: Connectivity().onConnectivityChanged.map(
+        (results) => results.any((result) => result != ConnectivityResult.none),
+      ),
+    );
+    container.registerSingleton<SyncEngine>(engine);
+    engine.start();
   }
 }

@@ -198,6 +198,52 @@ class ReplicaStore {
     );
   }
 
+  /// Local manifest of [model] under [scope]: record id (as string) →
+  /// raw `updated_at` (null when the model has no such column).
+  Future<Map<String, String?>> manifest(
+    LocalModelSchema model,
+    String scope,
+  ) async {
+    final hasUpdatedAt = model.fields.containsKey('updated_at');
+    final rows = await _database
+        .customSelect(
+          'SELECT id${hasUpdatedAt ? ', updated_at' : ''} '
+          'FROM "${_tableName(model.name)}" WHERE ws_scope = ?',
+          variables: [Variable<String>(scope)],
+        )
+        .get();
+
+    return {
+      for (final row in rows)
+        '${row.data['id']}': hasUpdatedAt
+            ? row.data['updated_at'] as String?
+            : null,
+    };
+  }
+
+  /// Apply a sync delta transactionally: delete [deletedIds] then upsert
+  /// [upserts] under [scope].
+  Future<void> applyDelta(
+    LocalModelSchema model,
+    String scope,
+    Iterable<Map<String, dynamic>> upserts,
+    Iterable<Object> deletedIds,
+  ) {
+    return _database.transaction(() async {
+      for (final id in deletedIds) {
+        await _database.customStatement(
+          'DELETE FROM "${_tableName(model.name)}" '
+          'WHERE ws_scope = ? AND id = ?',
+          [scope, '$id'],
+        );
+      }
+
+      for (final record in upserts) {
+        await _upsert(model, scope, record);
+      }
+    });
+  }
+
   /// Number of records of [model] under [scope].
   Future<int> countScope(String model, String scope) async {
     final rows = await _database

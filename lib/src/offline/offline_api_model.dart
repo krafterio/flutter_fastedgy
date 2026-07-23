@@ -9,12 +9,15 @@ import '../api/api_query.dart';
 import '../api/base_model.dart';
 import '../api/pagination_result.dart';
 import '../container/container.dart';
+import '../logging/logger.dart';
 import '../storage/storage_downloader.dart';
 import 'image_mirror.dart';
 import 'local_image_store.dart';
 import 'local_schema.dart';
 import 'local_store.dart';
 import 'offline_error.dart';
+import 'outbox.dart';
+import 'sync_engine.dart';
 import 'replica.dart';
 import 'sync_image_field.dart';
 
@@ -49,6 +52,7 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
   final LocalStore? _localStore;
   final ImageMirror? _imageMirror;
   final Replica? _replica;
+  final Outbox? _outbox;
 
   /// Create an offline-capable API model for a resource.
   ///
@@ -60,9 +64,11 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
     LocalStore? localStore,
     ImageMirror? imageMirror,
     Replica? replica,
+    Outbox? outbox,
   }) : _localStore = localStore,
        _imageMirror = imageMirror,
-       _replica = replica;
+       _replica = replica,
+       _outbox = outbox;
 
   /// The local store backing this model, or null when offline is disabled.
   LocalStore? get localStore =>
@@ -103,8 +109,20 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
           ? getService<Replica>()
           : null);
 
+  /// The outbox buffering offline writes, or null when unavailable.
+  Outbox? get outbox =>
+      _outbox ?? (hasService<Outbox>() ? getService<Outbox>() : null);
+
   /// Cache namespace of this resource (defaults to [basePath]).
   String get cacheModel => basePath;
+
+  /// The base path stored on buffered operations and used for their replay.
+  ///
+  /// Defaults to [basePath]. Override it to resolve dynamic path parameters
+  /// (e.g. `/{workspace}/users`) **at enqueue time**: a buffered write must
+  /// replay against the context it was made in, not whatever context is
+  /// active when connectivity comes back.
+  String get outboxBasePath => basePath;
 
   /// Metadata name of the replicated model (e.g. 'user'); null keeps the
   /// JSON namespace cache.
@@ -130,11 +148,17 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
   /// (must be part of [syncFields]), with the renditions to prefetch.
   List<SyncImageField> get syncImageFields => const [];
 
-  /// Mirror the whole collection into the local store.
+  /// Mirror the collection into the local store, incrementally.
   ///
-  /// Fetches every record (auto-paginated by [syncPageSize], preloading
-  /// [syncFields]) then transactionally replaces the namespace/scope,
-  /// pruning records deleted on the server. No-op when offline is disabled.
+  /// Walks a paginated **manifest** of the collection (`X-Fields:
+  /// id,updated_at` — a few bytes per record), diffs it against the local
+  /// mirror, then fetches only the new/changed records in batches
+  /// (`X-Filter: ["id","in",[...]]` with [syncFields]) and prunes the ids
+  /// gone from the server — deletions are derived from the set difference,
+  /// covering every server-side deletion path (SQL cascades included), and
+  /// the `updated_at` comparison is server-value vs server-value (no device
+  /// clock). Pending offline records (temporary ids) are never pruned.
+  /// No-op when offline is disabled.
   Future<void> sync({ApiParams? params}) async {
     final ctx = await _replicaContext();
 
@@ -146,22 +170,46 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
       await ctx.replica.ensure(ctx.model.name);
     }
 
-    final records = <Map<String, dynamic>>[];
+    // 0) Replay the buffered writes first so the merge happens server-side
+    // before the pull; whatever could not be flushed (still offline, 5xx) is
+    // protected below.
+    if (hasService<SyncEngine>()) {
+      try {
+        await getService<SyncEngine>().flush();
+      } catch (error) {
+        // The pull still runs: whatever stayed buffered is protected below.
+        getLogger('OfflineApiModel').warning('Outbox flush failed: $error');
+      }
+    }
+
+    final pendingByRecord = <String, List<PendingOperation>>{};
+
+    for (final operation in await outbox?.all() ?? const <PendingOperation>[]) {
+      if (operation.basePath == outboxBasePath && operation.recordId != null) {
+        pendingByRecord
+            .putIfAbsent('${operation.recordId}', () => [])
+            .add(operation);
+      }
+    }
+
+    // 1) Paginated server manifest: id → updated_at.
+    final serverManifest = <String, String?>{};
     var offset = 0;
 
     while (true) {
       final page = await super.list(
         query: ListQuery(
-          fields: syncFields,
+          fields: 'id,updated_at',
           limit: syncPageSize,
           offset: offset,
+          orderBy: 'id',
         ),
         params: params,
       );
 
       for (final item in page.items) {
         if (item.id != null) {
-          records.add(item.toJson());
+          serverManifest['${item.id}'] = item.toJson()['updated_at'] as String?;
         }
       }
 
@@ -172,22 +220,151 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
       }
     }
 
+    // 2) Diff against the local manifest.
+    final localManifest = ctx != null
+        ? await ctx.replica.store.manifest(ctx.model, ctx.scope)
+        : {
+            for (final record in await localStore!.getAll(cacheModel))
+              '${record['id']}': record['updated_at'] as String?,
+          };
+
+    final toFetch = <String>[
+      for (final entry in serverManifest.entries)
+        if (localManifest[entry.key] == null ||
+            entry.value == null ||
+            localManifest[entry.key] != entry.value)
+          entry.key,
+    ];
+    // Records with buffered writes are never pruned nor clobbered blindly:
+    // the outbox replay is the authority on their fate.
+    final toDelete = <String>[
+      for (final id in localManifest.keys)
+        if (!serverManifest.containsKey(id) &&
+            !id.startsWith('-') &&
+            !pendingByRecord.containsKey(id))
+          id,
+    ];
+
+    // 3) Batched fetch of the needed records only.
+    final records = <Map<String, dynamic>>[];
+
+    for (var start = 0; start < toFetch.length; start += syncPageSize) {
+      final end = start + syncPageSize > toFetch.length
+          ? toFetch.length
+          : start + syncPageSize;
+      final ids = toFetch
+          .sublist(start, end)
+          .map((id) => int.tryParse(id) ?? id)
+          .toList();
+      var chunkOffset = 0;
+
+      while (true) {
+        final page = await super.list(
+          query: ListQuery(
+            fields: syncFields,
+            filter: ['id', 'in', ids],
+            limit: syncPageSize,
+            offset: chunkOffset,
+            orderBy: 'id',
+          ),
+          params: params,
+        );
+
+        for (final item in page.items) {
+          if (item.id != null) {
+            records.add(item.toJson());
+          }
+        }
+
+        chunkOffset += page.items.length;
+
+        if (page.items.isEmpty || chunkOffset >= page.total) {
+          break;
+        }
+      }
+    }
+
+    // 4) Transactional apply + image mirror refresh.
     if (ctx != null) {
-      await ctx.replica.store.replaceScope(ctx.model, ctx.scope, records);
+      await ctx.replica.store.applyDelta(
+        ctx.model,
+        ctx.scope,
+        records,
+        toDelete,
+      );
+      await _reapplyPending(pendingByRecord, ctx: ctx);
       await imageMirror?.refresh(
         ctx.imageNamespace,
-        records,
+        await ctx.replica.store.getAll(ctx.model.name, ctx.scope),
         syncImageFields,
         prefetchPaths: _imagePaths(records),
       );
     } else {
-      final byId = {for (final record in records) '${record['id']}': record};
-      await localStore!.replaceAll(cacheModel, byId);
+      final store = localStore!;
+
+      for (final id in toDelete) {
+        await store.delete(cacheModel, id);
+      }
+
+      await store.putAll(cacheModel, {
+        for (final record in records) '${record['id']}': record,
+      });
+      await _reapplyPending(pendingByRecord);
       await imageMirror?.refreshNamespace(
         cacheModel,
         syncImageFields,
         prefetchPaths: _imagePaths(records),
       );
+    }
+  }
+
+  /// Re-apply the optimistic effect of the still-buffered operations on top
+  /// of the freshly pulled records, so a sync never visually reverts a write
+  /// the user made offline.
+  Future<void> _reapplyPending(
+    Map<String, List<PendingOperation>> pendingByRecord, {
+    _ReplicaContext? ctx,
+  }) async {
+    for (final entry in pendingByRecord.entries) {
+      for (final operation in entry.value) {
+        if (operation.method == 'PATCH' && operation.payload != null) {
+          if (ctx != null) {
+            final current = await ctx.replica.store.getById(
+              ctx.model.name,
+              ctx.scope,
+              operation.recordId!,
+            );
+
+            if (current != null) {
+              await ctx.replica.store.upsertAll(ctx.model, ctx.scope, [
+                {...current, ...operation.payload!},
+              ]);
+            }
+          } else {
+            final current = await localStore!.get(
+              cacheModel,
+              operation.recordId!,
+            );
+
+            if (current != null) {
+              await localStore!.put(cacheModel, operation.recordId!, {
+                ...current,
+                ...operation.payload!,
+              });
+            }
+          }
+        } else if (operation.method == 'DELETE') {
+          if (ctx != null) {
+            await ctx.replica.store.deleteById(
+              ctx.model.name,
+              ctx.scope,
+              operation.recordId!,
+            );
+          } else {
+            await localStore!.delete(cacheModel, operation.recordId!);
+          }
+        }
+      }
     }
   }
 
@@ -337,18 +514,51 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
     FieldsOptions? options,
     ApiParams? params,
   }) async {
-    // TODO(offline): buffer offline creates in an outbox and replay on reconnect.
-    final entity = await super.create(
-      payload,
-      options: options,
-      params: params,
-    );
+    try {
+      final entity = await super.create(
+        payload,
+        options: options,
+        params: params,
+      );
 
-    if (entity.id != null) {
-      await _mergeRecord(entity.id!, entity.toJson());
+      if (entity.id != null) {
+        await _mergeRecord(entity.id!, entity.toJson());
+      }
+
+      return entity;
+    } catch (error) {
+      final outbox = this.outbox;
+
+      if (outbox == null || !isOfflineError(error)) {
+        rethrow;
+      }
+
+      // Optimistic offline create: a negative temporary id marks the record
+      // as pending until the outbox replay assigns the real one.
+      final tempId = -DateTime.now().microsecondsSinceEpoch;
+      final record = {
+        ...payload.toJson(),
+        'id': tempId,
+        '_offline_pending': true,
+      };
+      final cache = await _cacheContext();
+
+      await _mergeRecord(tempId, record);
+      await outbox.enqueue(
+        (id, createdAt) => PendingOperation(
+          id: id,
+          method: 'POST',
+          basePath: outboxBasePath,
+          recordId: tempId,
+          payload: payload.toJson(),
+          createdAt: createdAt,
+          cache: cache,
+        ),
+      );
+      notifyChanged(ResourceChangeType.created, tempId);
+
+      return fromJson(record);
     }
-
-    return entity;
   }
 
   @override
@@ -358,24 +568,106 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
     FieldsOptions? options,
     ApiParams? params,
   }) async {
-    // TODO(offline): buffer offline updates in an outbox and replay on reconnect.
-    final entity = await super.update(
-      id,
-      payload,
-      options: options,
-      params: params,
-    );
+    try {
+      final entity = await super.update(
+        id,
+        payload,
+        options: options,
+        params: params,
+      );
 
-    await _mergeRecord(entity.id ?? id, entity.toJson());
+      await _mergeRecord(entity.id ?? id, entity.toJson());
 
-    return entity;
+      return entity;
+    } catch (error) {
+      final outbox = this.outbox;
+
+      if (outbox == null || !isOfflineError(error)) {
+        rethrow;
+      }
+
+      final cache = await _cacheContext();
+      // Base snapshot of the three-way merge: the record as known before the
+      // optimistic local write below.
+      final base = (await cachedGet(id))?.toJson();
+
+      await _mergeRecord(id, {
+        ...payload.toJson(),
+        'id': id,
+        '_offline_pending': true,
+      });
+      await outbox.enqueue(
+        (opId, createdAt) => PendingOperation(
+          id: opId,
+          method: 'PATCH',
+          basePath: outboxBasePath,
+          recordId: id,
+          payload: payload.toJson(),
+          createdAt: createdAt,
+          base: base,
+          cache: cache,
+        ),
+      );
+      notifyChanged(ResourceChangeType.updated, id);
+
+      final cached = await cachedGet(id);
+
+      return cached ?? fromJson({...payload.toJson(), 'id': id});
+    }
   }
 
   @override
   Future<void> delete(Object id, {ApiParams? params}) async {
-    // TODO(offline): buffer offline deletes in an outbox and replay on reconnect.
-    await super.delete(id, params: params);
+    try {
+      await super.delete(id, params: params);
+    } catch (error) {
+      final outbox = this.outbox;
 
+      if (outbox == null || !isOfflineError(error)) {
+        rethrow;
+      }
+
+      // Deleting a record that only exists as a pending offline create
+      // cancels both operations.
+      if (!await outbox.cancelCreateFor(outboxBasePath, id)) {
+        final cache = await _cacheContext();
+        final base = (await cachedGet(id))?.toJson();
+
+        await outbox.enqueue(
+          (opId, createdAt) => PendingOperation(
+            id: opId,
+            method: 'DELETE',
+            basePath: outboxBasePath,
+            recordId: id,
+            createdAt: createdAt,
+            base: base,
+            cache: cache,
+          ),
+        );
+      }
+
+      notifyChanged(ResourceChangeType.deleted, id);
+    }
+
+    await _removeLocal(id);
+  }
+
+  Future<OutboxCacheContext> _cacheContext() async {
+    final ctx = await _replicaContext();
+
+    if (ctx != null) {
+      return OutboxCacheContext(
+        kind: 'replica',
+        namespace: cacheModel,
+        model: ctx.model.name,
+        scope: ctx.scope,
+      );
+    }
+
+    return OutboxCacheContext(kind: 'json', namespace: cacheModel);
+  }
+
+  Future<void> _removeLocal(Object id) async {
     final ctx = await _replicaContext();
 
     if (ctx != null) {
@@ -624,6 +916,11 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
     if (schema == null || modelSchema == null) {
       return null;
     }
+
+    // The table must exist before any read: a never-synced model (fresh
+    // install, dropped database) would otherwise crash the cached reads.
+    // Memoized per model, so this is a one-time cost.
+    await replica.ensure(model);
 
     return _ReplicaContext(
       replica: replica,

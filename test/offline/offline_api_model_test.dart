@@ -19,8 +19,16 @@ class _Item extends BaseModel<_Item> {
 }
 
 class _ItemApi extends OfflineApiModel<_Item> {
-  _ItemApi({required Fetcher fetcher, required LocalStore localStore})
-    : super('/items', fetcher: fetcher, localStore: localStore);
+  _ItemApi({
+    required Fetcher fetcher,
+    required LocalStore localStore,
+    Outbox? outbox,
+  }) : super(
+         '/items',
+         fetcher: fetcher,
+         localStore: localStore,
+         outbox: outbox,
+       );
 
   @override
   dynamic get syncFields => 'id,name,tag';
@@ -30,6 +38,20 @@ class _ItemApi extends OfflineApiModel<_Item> {
 
   @override
   _Item fromJson(Map<String, dynamic> json) => _Item(json);
+}
+
+class _ScopedItemApi extends _ItemApi {
+  final String scope;
+
+  _ScopedItemApi({
+    required super.fetcher,
+    required super.localStore,
+    required this.scope,
+    super.outbox,
+  });
+
+  @override
+  String get outboxBasePath => '/$scope/items';
 }
 
 class _ScriptedAdapter implements HttpClientAdapter {
@@ -91,20 +113,36 @@ Map<String, dynamic> _page(
   'total_pages': 1,
 };
 
-/// Serve [all] as a paginated collection honoring limit/offset params.
+/// Serve [all] as a paginated collection honoring limit/offset params and
+/// an `X-Filter: ["id","in",[...]]` header (the sync fetch phase).
 Map<String, dynamic> Function(RequestOptions) _paginated(
   List<Map<String, dynamic>> all,
 ) {
   return (options) {
+    var data = all;
+    final filterHeader = options.headers['X-Filter'];
+
+    if (filterHeader is String && filterHeader.isNotEmpty) {
+      final filter = jsonDecode(filterHeader);
+
+      if (filter is List &&
+          filter.length == 3 &&
+          filter[0] == 'id' &&
+          filter[1] == 'in') {
+        final ids = (filter[2] as List).toSet();
+        data = all.where((record) => ids.contains(record['id'])).toList();
+      }
+    }
+
     final offset = int.tryParse('${options.queryParameters['offset']}') ?? 0;
     final limit =
-        int.tryParse('${options.queryParameters['limit']}') ?? all.length;
-    final end = offset + limit > all.length ? all.length : offset + limit;
-    final items = offset >= all.length
+        int.tryParse('${options.queryParameters['limit']}') ?? data.length;
+    final end = offset + limit > data.length ? data.length : offset + limit;
+    final items = offset >= data.length
         ? <Map<String, dynamic>>[]
-        : all.sublist(offset, end);
+        : data.sublist(offset, end);
 
-    return _page(items, total: all.length, offset: offset);
+    return _page(items, total: data.length, offset: offset);
   };
 }
 
@@ -113,6 +151,7 @@ void main() {
 
   late _ScriptedAdapter adapter;
   late DriftLocalStore store;
+  late Fetcher fetcher;
   late _ItemApi api;
 
   setUpAll(() {
@@ -128,7 +167,7 @@ void main() {
     adapter = _ScriptedAdapter();
     final dio = Dio(BaseOptions(baseUrl: 'http://localhost'));
     dio.httpClientAdapter = adapter;
-    final fetcher = Fetcher.create(
+    fetcher = Fetcher.create(
       dio: dio,
       bus: getService<Bus>(),
       enableAuth: false,
@@ -147,6 +186,122 @@ void main() {
 
   tearDown(() => store.close());
 
+  group('sync with pending outbox writes', () {
+    late Outbox outbox;
+    late _ItemApi bufferedApi;
+
+    setUp(() {
+      outbox = Outbox(store);
+      bufferedApi = _ItemApi(
+        fetcher: fetcher,
+        localStore: store,
+        outbox: outbox,
+      );
+    });
+
+    test('re-applies pending optimistic updates over pulled records', () async {
+      await store.put('/items', 1, {
+        'id': 1,
+        'name': 'One',
+        'updated_at': 't1',
+      });
+
+      adapter.offline = true;
+      await bufferedApi.update(1, _Item({'name': 'Mine'}));
+
+      adapter.offline = false;
+      adapter.routes['GET /items'] = _paginated([
+        {'id': 1, 'name': 'Server', 'tag': 'fresh', 'updated_at': 't2'},
+      ]);
+      await bufferedApi.sync();
+
+      final cached = await bufferedApi.cachedGet(1);
+      expect(cached?.name, 'Mine');
+      expect(cached?.getString('tag'), 'fresh');
+      expect(await outbox.all(), hasLength(1));
+    });
+
+    test('keeps records with pending writes missing from the server', () async {
+      await store.put('/items', 2, {
+        'id': 2,
+        'name': 'Two',
+        'updated_at': 't1',
+      });
+
+      adapter.offline = true;
+      await bufferedApi.update(2, _Item({'name': 'Kept'}));
+
+      adapter.offline = false;
+      adapter.routes['GET /items'] = _paginated([]);
+      await bufferedApi.sync();
+
+      expect((await bufferedApi.cachedGet(2))?.name, 'Kept');
+    });
+
+    test(
+      'operations are enqueued with the resolved outbox base path',
+      () async {
+        final scoped = _ScopedItemApi(
+          fetcher: fetcher,
+          localStore: store,
+          outbox: outbox,
+          scope: 'ws-a',
+        );
+
+        adapter.offline = true;
+        await store.put('/items', 1, {'id': 1, 'name': 'One'});
+        await scoped.update(1, _Item({'name': 'Mine'}));
+
+        expect((await outbox.all()).single.basePath, '/ws-a/items');
+      },
+    );
+
+    test('sync only considers pending writes of its own scope', () async {
+      final scopeA = _ScopedItemApi(
+        fetcher: fetcher,
+        localStore: store,
+        outbox: outbox,
+        scope: 'ws-a',
+      );
+
+      // A pending delete buffered in ws-a for record 9.
+      adapter.offline = true;
+      await store.put('/items', 9, {'id': 9, 'name': 'Nine'});
+      await scopeA.delete(9);
+
+      // Record 9 also exists in the plain namespace: syncing it must NOT
+      // replay ws-a's pending delete.
+      adapter.offline = false;
+      adapter.routes['GET /items'] = _paginated([
+        {'id': 9, 'name': 'Nine', 'updated_at': 't2'},
+      ]);
+      await bufferedApi.sync();
+
+      expect((await bufferedApi.cachedGet(9))?.name, 'Nine');
+      expect(await outbox.all(), hasLength(1));
+    });
+
+    test('applies pending deletes over pulled records', () async {
+      await store.put('/items', 3, {
+        'id': 3,
+        'name': 'Three',
+        'updated_at': 't1',
+      });
+
+      adapter.offline = true;
+      await bufferedApi.delete(3);
+
+      adapter.offline = false;
+      adapter.routes['GET /items'] = _paginated([
+        {'id': 3, 'name': 'Three', 'updated_at': 't2'},
+      ]);
+      await bufferedApi.sync();
+
+      expect(await bufferedApi.cachedGet(3), isNull);
+      expect(await outbox.all(), hasLength(1));
+    });
+  });
+
   group('OfflineApiModel.sync', () {
     test('mirrors the whole collection by auto-paginating', () async {
       adapter.routes['GET /items'] = _paginated([
@@ -160,7 +315,40 @@ void main() {
       await api.sync();
 
       expect(await api.cachedList(), hasLength(5));
-      expect(adapter.callCount, 3); // 5 records walked by pages of 2
+      // Manifest walked by pages of 2 (3 calls), then 3 id-batches fetched.
+      expect(adapter.callCount, 6);
+    });
+
+    test('an unchanged collection costs only the manifest walk', () async {
+      adapter.routes['GET /items'] = _paginated([
+        {'id': 1, 'name': 'One', 'updated_at': '2020-01-01T00:00:00'},
+        {'id': 2, 'name': 'Two', 'updated_at': '2020-01-01T00:00:00'},
+      ]);
+
+      await api.sync();
+      final afterFirst = adapter.callCount;
+
+      await api.sync();
+
+      // Second sync: manifest only (1 page), nothing to fetch.
+      expect(adapter.callCount, afterFirst + 1);
+      expect(await api.cachedList(), hasLength(2));
+    });
+
+    test('pending offline records survive the sync pruning', () async {
+      await store.put('/items', -5, {
+        'id': -5,
+        'name': 'Draft',
+        '_offline_pending': true,
+      });
+      adapter.routes['GET /items'] = _paginated([
+        {'id': 1, 'name': 'One'},
+      ]);
+
+      await api.sync();
+
+      expect(await api.cachedGet(-5), isNotNull);
+      expect(await api.cachedList(), hasLength(2));
     });
 
     test('prunes records deleted on the server', () async {
@@ -480,6 +668,13 @@ void replicatedModeTests() {
   tearDown(() async {
     await store.close();
     await replicaStore.close();
+  });
+
+  test('cached reads on a never-synced model create the table', () async {
+    // Regression: a fresh replica database (first install, purge) must not
+    // crash the cached reads called before the first sync.
+    expect(await api.cachedList(), isEmpty);
+    expect(await api.cachedGet(1), isNull);
   });
 
   test('sync mirrors the collection into the scoped replica table', () async {
