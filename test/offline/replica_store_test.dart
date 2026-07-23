@@ -231,7 +231,7 @@ void main() {
       },
     );
 
-    test('clearAll empties every replicated model', () async {
+    test('clearAll drops every replicated model', () async {
       await store.ensureModel(_userSchema());
       await store.upsertAll(_userSchema(), 'acme', [
         {'id': 1, 'name': 'Ada'},
@@ -239,6 +239,8 @@ void main() {
 
       await store.clearAll();
 
+      final migration = await store.ensureModel(_userSchema());
+      expect(migration.created, isTrue);
       expect(await store.getAll('user', 'acme'), isEmpty);
     });
   });

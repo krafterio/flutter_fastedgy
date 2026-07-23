@@ -36,7 +36,7 @@ class CompiledReplicaQuery {
 ///   compile to `GLOB`, insensitive ones to SQLite `LIKE` (ASCII folding);
 /// - nested `order_by` follows m2o paths through `LEFT JOIN`s with the
 ///   PostgreSQL null ordering (ASC → NULLS LAST, DESC → NULLS FIRST);
-/// - every table access is confined to its replica scope (`ws_scope`).
+/// - every table access is confined to its replica scope (`_workspace`).
 ///
 /// Unsupported offline (throws [UnsupportedError]): `match`/full-text,
 /// vector and spatial operators, filters ending on a to-many field, paths
@@ -71,10 +71,10 @@ class ReplicaQueryCompiler {
     final order = _compileOrderBy(ctx, root, orderBy, joinArgs);
 
     final where =
-        't0.ws_scope = ?${filterSql == null ? '' : ' AND ($filterSql)'}';
+        't0._workspace = ?${filterSql == null ? '' : ' AND ($filterSql)'}';
 
     var sql =
-        'SELECT t0.data FROM "${_table(root)}" t0'
+        'SELECT t0._raw FROM "${_table(root)}" t0'
         '${order.joins} WHERE $where${order.orderBy}';
     final args = <Object?>[...joinArgs, scopeOf(model), ...filterArgs];
 
@@ -190,8 +190,8 @@ class ReplicaQueryCompiler {
         from =
             '"${hop.pivotTable}" $pivot '
             'JOIN "${_table(hop.target)}" $alias '
-            'ON $alias.id = $pivot.target_id AND $alias.ws_scope = ?';
-        link = '$pivot.parent_id = $parentAlias.id AND $pivot.ws_scope = ?';
+            'ON $alias.id = $pivot.target_id AND $alias._workspace = ?';
+        link = '$pivot.parent_id = $parentAlias.id AND $pivot._workspace = ?';
         args.add(ctx.scopeOf(hop.target.name));
         args.add(ctx.scopeOf(parentModel));
     }
@@ -227,7 +227,7 @@ class ReplicaQueryCompiler {
     }
 
     return 'EXISTS (SELECT 1 FROM $from '
-        'WHERE $link AND $alias.ws_scope = ? AND ${parts.join(' AND ')})';
+        'WHERE $link AND $alias._workspace = ? AND ${parts.join(' AND ')})';
   }
 
   /// Whether the path only traverses single-valued (m2o) hops — compiled as
@@ -274,7 +274,7 @@ class ReplicaQueryCompiler {
 
     return '(SELECT $inner FROM "${_table(hop.target)}" $alias '
         'WHERE $parentAlias."${hop.field.name}" = $alias.id '
-        'AND $alias.ws_scope = ?)';
+        'AND $alias._workspace = ?)';
   }
 
   String _predicate(
@@ -430,7 +430,7 @@ class ReplicaQueryCompiler {
           joins.write(
             ' LEFT JOIN "${_table(hop.target)}" $joinAlias '
             'ON $alias."${hop.field.name}" = $joinAlias.id '
-            'AND $joinAlias.ws_scope = ?',
+            'AND $joinAlias._workspace = ?',
           );
           args.add(ctx.scopeOf(hop.target.name));
           joinAliases[prefix] = joinAlias;

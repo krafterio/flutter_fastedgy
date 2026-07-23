@@ -29,9 +29,9 @@ class ReplicaMigration {
 
 /// Normalized local replica of server models on drift/SQLite: one table per
 /// model, generated at runtime from the [LocalModelSchema] (typed scalar
-/// columns, indexed m2o id columns) — plus a `data` column holding the full
+/// columns, indexed m2o id columns) — plus a `_raw` column holding the full
 /// JSON payload (fidelity: extra/computed fields survive untouched) and a
-/// `ws_scope` column isolating per-workspace mirrors.
+/// `_workspace` column isolating per-workspace mirrors.
 ///
 /// Migrations are automatic: each model's schema fingerprint is stored, and
 /// [ensureModel] diffs the live table against the expected schema — additive
@@ -159,14 +159,14 @@ class ReplicaStore {
   ) {
     return _database.transaction(() async {
       await _database.customStatement(
-        'DELETE FROM "${_tableName(model.name)}" WHERE ws_scope = ?',
+        'DELETE FROM "${_tableName(model.name)}" WHERE _workspace = ?',
         [scope],
       );
 
       for (final field in model.manyToMany) {
         await _database.customStatement(
           'DELETE FROM "${pivotTableName(model.name, field.name)}" '
-          'WHERE ws_scope = ?',
+          'WHERE _workspace = ?',
           [scope],
         );
       }
@@ -181,12 +181,12 @@ class ReplicaStore {
   Future<List<Map<String, dynamic>>> getAll(String model, String scope) async {
     final rows = await _database
         .customSelect(
-          'SELECT data FROM "${_tableName(model)}" WHERE ws_scope = ?',
+          'SELECT _raw FROM "${_tableName(model)}" WHERE _workspace = ?',
           variables: [Variable<String>(scope)],
         )
         .get();
 
-    return rows.map((row) => _decode(row.read<String>('data'))).toList();
+    return rows.map((row) => _decode(row.read<String>('_raw'))).toList();
   }
 
   /// A record by id under [scope], or null.
@@ -197,19 +197,19 @@ class ReplicaStore {
   ) async {
     final rows = await _database
         .customSelect(
-          'SELECT data FROM "${_tableName(model)}" '
-          'WHERE ws_scope = ? AND id = ?',
+          'SELECT _raw FROM "${_tableName(model)}" '
+          'WHERE _workspace = ? AND id = ?',
           variables: [Variable<String>(scope), Variable<String>('$id')],
         )
         .get();
 
-    return rows.isEmpty ? null : _decode(rows.single.read<String>('data'));
+    return rows.isEmpty ? null : _decode(rows.single.read<String>('_raw'));
   }
 
   /// Delete a record by id under [scope].
   Future<void> deleteById(String model, String scope, Object id) {
     return _database.customStatement(
-      'DELETE FROM "${_tableName(model)}" WHERE ws_scope = ? AND id = ?',
+      'DELETE FROM "${_tableName(model)}" WHERE _workspace = ? AND id = ?',
       [scope, '$id'],
     );
   }
@@ -224,7 +224,7 @@ class ReplicaStore {
     final rows = await _database
         .customSelect(
           'SELECT id${hasUpdatedAt ? ', updated_at' : ''} '
-          'FROM "${_tableName(model.name)}" WHERE ws_scope = ?',
+          'FROM "${_tableName(model.name)}" WHERE _workspace = ?',
           variables: [Variable<String>(scope)],
         )
         .get();
@@ -249,14 +249,14 @@ class ReplicaStore {
       for (final id in deletedIds) {
         await _database.customStatement(
           'DELETE FROM "${_tableName(model.name)}" '
-          'WHERE ws_scope = ? AND id = ?',
+          'WHERE _workspace = ? AND id = ?',
           [scope, '$id'],
         );
 
         for (final field in model.manyToMany) {
           await _database.customStatement(
             'DELETE FROM "${pivotTableName(model.name, field.name)}" '
-            'WHERE ws_scope = ? AND parent_id = ?',
+            'WHERE _workspace = ? AND parent_id = ?',
             [scope, '$id'],
           );
         }
@@ -273,7 +273,7 @@ class ReplicaStore {
     final rows = await _database
         .customSelect(
           'SELECT COUNT(*) AS total FROM "${_tableName(model)}" '
-          'WHERE ws_scope = ?',
+          'WHERE _workspace = ?',
           variables: [Variable<String>(scope)],
         )
         .get();
@@ -284,7 +284,7 @@ class ReplicaStore {
   /// Delete every record of [model] under [scope].
   Future<void> clearScope(String model, String scope) {
     return _database.customStatement(
-      'DELETE FROM "${_tableName(model)}" WHERE ws_scope = ?',
+      'DELETE FROM "${_tableName(model)}" WHERE _workspace = ?',
       [scope],
     );
   }
@@ -329,7 +329,7 @@ class ReplicaStore {
         .get();
 
     return (
-      records: rows.map((row) => _decode(row.read<String>('data'))).toList(),
+      records: rows.map((row) => _decode(row.read<String>('_raw'))).toList(),
       total: count.single.read<int>('total'),
     );
   }
@@ -348,15 +348,29 @@ class ReplicaStore {
   }
 
   /// Delete every record of every replicated model (e.g. on logout).
+  /// Full reset (logout): drop every replicated model table and its pivots and
+  /// forget their fingerprints, so the next sync rebuilds them from scratch.
   Future<void> clearAll() async {
-    final rows = await _database
-        .customSelect('SELECT model FROM $_metaTable')
-        .get();
+    final models =
+        (await _database.customSelect('SELECT model FROM $_metaTable').get())
+            .map((row) => row.read<String>('model'))
+            .toSet();
+    final tables =
+        (await _database
+                .customSelect(
+                  "SELECT name FROM sqlite_master WHERE type = 'table'",
+                )
+                .get())
+            .map((row) => row.read<String>('name'));
 
     await _database.transaction(() async {
-      for (final row in rows) {
-        await clearModel(row.read<String>('model'));
+      for (final table in tables) {
+        if (models.contains(table) ||
+            models.any((model) => table.startsWith('${model}__'))) {
+          await _database.customStatement('DROP TABLE IF EXISTS "$table"');
+        }
       }
+      await _database.customStatement('DELETE FROM $_metaTable');
     });
   }
 
@@ -372,8 +386,8 @@ class ReplicaStore {
     final columns = model.columns.toList();
     final references = model.references.toList();
     final names = [
-      'ws_scope',
-      'data',
+      '_workspace',
+      '_raw',
       ...columns.map((c) => '"${c.name}"'),
       for (final field in references) ...[
         '"${field.referenceModelColumn}"',
@@ -407,7 +421,7 @@ class ReplicaStore {
       final pivot = pivotTableName(model.name, field.name);
 
       await _database.customStatement(
-        'DELETE FROM "$pivot" WHERE ws_scope = ? AND parent_id = ?',
+        'DELETE FROM "$pivot" WHERE _workspace = ? AND parent_id = ?',
         [scope, record['id']],
       );
 
@@ -417,7 +431,7 @@ class ReplicaStore {
         if (targetId != null) {
           await _database.customStatement(
             'INSERT OR REPLACE INTO "$pivot" '
-            '(ws_scope, parent_id, target_id) VALUES (?, ?, ?)',
+            '(_workspace, parent_id, target_id) VALUES (?, ?, ?)',
             [scope, record['id'], targetId],
           );
         }
@@ -455,7 +469,7 @@ class ReplicaStore {
         .join(', ');
 
     await _database.customStatement(
-      'CREATE TABLE "$table" ($defs, PRIMARY KEY (ws_scope, id))',
+      'CREATE TABLE "$table" ($defs, PRIMARY KEY (_workspace, id))',
     );
     await _createIndexes(model, table);
   }
@@ -485,8 +499,8 @@ class ReplicaStore {
 
       await _database.customStatement(
         'CREATE TABLE IF NOT EXISTS "$pivot" ('
-        'ws_scope TEXT, parent_id INTEGER, target_id INTEGER, '
-        'PRIMARY KEY (ws_scope, parent_id, target_id))',
+        '_workspace CHAR, parent_id INTEGER, target_id INTEGER, '
+        'PRIMARY KEY (_workspace, parent_id, target_id))',
       );
       await _database.customStatement(
         'CREATE INDEX IF NOT EXISTS "idx_${pivot}_target" '
@@ -504,8 +518,8 @@ class ReplicaStore {
   }
 
   Map<String, String> _expectedColumns(LocalModelSchema model) => {
-    'ws_scope': 'TEXT',
-    'data': 'TEXT',
+    '_workspace': 'CHAR',
+    '_raw': 'JSON',
     for (final field in model.columns) field.name: field.sqlAffinity,
     for (final field in model.references) ...{
       field.referenceModelColumn: 'TEXT',
