@@ -20,3 +20,4 @@ export 'replica_query.dart';
 export 'replica_store.dart';
 export 'sync_engine.dart';
 export 'sync_image_field.dart';
+export 'sync_status.dart';

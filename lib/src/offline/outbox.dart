@@ -177,7 +177,11 @@ class Outbox {
   final LocalStore _store;
   var _sequence = 0;
 
-  Outbox(this._store);
+  /// Called with the new pending count after every queue mutation (enqueue,
+  /// remove, update) — the single hook driving [SyncStatus.pending].
+  final void Function(int pending)? onChanged;
+
+  Outbox(this._store, {this.onChanged});
 
   /// Enqueue [operation] built by [build] with a fresh monotonic id.
   Future<PendingOperation> enqueue(
@@ -190,6 +194,7 @@ class Outbox {
     final operation = build(id, now.toIso8601String());
 
     await _store.put(_namespace, operation.id, operation.toJson());
+    await _notifyChanged();
 
     return operation;
   }
@@ -215,12 +220,23 @@ class Outbox {
     }
 
     await _store.delete(_namespace, id);
+    await _notifyChanged();
 
     return true;
   }
 
-  Future<void> update(PendingOperation operation) =>
-      _store.put(_namespace, operation.id, operation.toJson());
+  Future<void> update(PendingOperation operation) async {
+    await _store.put(_namespace, operation.id, operation.toJson());
+    await _notifyChanged();
+  }
+
+  Future<void> _notifyChanged() async {
+    final callback = onChanged;
+
+    if (callback != null) {
+      callback((await all()).length);
+    }
+  }
 
   /// Deleting a record that only exists as a pending offline create cancels
   /// both operations; returns true when the pair was cancelled.

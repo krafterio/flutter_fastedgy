@@ -13,6 +13,7 @@ import 'local_store.dart';
 import 'offline_error.dart';
 import 'outbox.dart';
 import 'replica.dart';
+import 'sync_status.dart';
 
 /// Replays the [Outbox] against the server when connectivity comes back.
 ///
@@ -42,6 +43,7 @@ class SyncEngine {
   final LocalStore? _localStore;
   final Replica? _replica;
   final Stream<bool>? _online;
+  final SyncStatus? _status;
   final _logger = getLogger('SyncEngine');
 
   /// Maximum operations per sync batch (matches the server-side cap).
@@ -74,17 +76,21 @@ class SyncEngine {
     LocalStore? localStore,
     Replica? replica,
     Stream<bool>? online,
+    SyncStatus? status,
     this.batchSize = 500,
     this.maxAttempts = 25,
     this.retryBaseDelay = const Duration(seconds: 5),
     this.retryMaxDelay = const Duration(minutes: 5),
   }) : _localStore = localStore,
        _replica = replica,
-       _online = online;
+       _online = online,
+       _status = status;
 
   /// Start listening to connectivity: every regain triggers a flush.
   void start() {
     _subscription ??= _online?.listen((online) {
+      _status?.setOnline(online);
+
       if (online) {
         unawaited(flush());
       }
@@ -138,6 +144,16 @@ class SyncEngine {
       return;
     }
 
+    _status?.setSyncing(true);
+
+    try {
+      await _drain(operations);
+    } finally {
+      _status?.setSyncing(false);
+    }
+  }
+
+  Future<void> _drain(List<PendingOperation> operations) async {
     final idMap = <String, Object>{};
 
     // Temp→server mappings persisted by earlier flushes (an operation may

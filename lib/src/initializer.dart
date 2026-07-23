@@ -31,6 +31,7 @@ import 'offline/outbox.dart';
 import 'offline/replica.dart';
 import 'offline/replica_store.dart';
 import 'offline/sync_engine.dart';
+import 'offline/sync_status.dart';
 import 'storage/storage_downloader.dart';
 import 'storage/storage_uploader.dart';
 
@@ -264,8 +265,18 @@ Future<void> initializeFastEdgy({
   // Outbox + SyncEngine (opt-in): offline writes are buffered in the local
   // store and replayed in order when connectivity comes back.
   if (offline && hasService<LocalStore>() && !hasService<Outbox>()) {
-    final outbox = Outbox(getService<LocalStore>());
+    final initialOnline = (await Connectivity().checkConnectivity()).any(
+      (result) => result != ConnectivityResult.none,
+    );
+    final status = SyncStatus(getService<Bus>(), online: initialOnline);
+    container.registerSingleton<SyncStatus>(status);
+
+    final outbox = Outbox(
+      getService<LocalStore>(),
+      onChanged: status.setPending,
+    );
     container.registerSingleton<Outbox>(outbox);
+    status.setPending((await outbox.all()).length);
 
     final engine = SyncEngine(
       outbox,
@@ -273,6 +284,7 @@ Future<void> initializeFastEdgy({
       getService<Bus>(),
       localStore: getService<LocalStore>(),
       replica: hasService<Replica>() ? getService<Replica>() : null,
+      status: status,
       online: Connectivity().onConnectivityChanged.map(
         (results) => results.any((result) => result != ConnectivityResult.none),
       ),
