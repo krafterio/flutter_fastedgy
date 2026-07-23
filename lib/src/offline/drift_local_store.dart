@@ -13,7 +13,7 @@ import 'offline_database.dart';
 /// [LocalStore] backed by drift/SQLite (native file on io platforms, wasm on
 /// the web).
 ///
-/// Records live in a single generic `records` table (namespace, id, JSON
+/// Records live in a single generic `_records` table (namespace, id, JSON
 /// payload) — schema-less at the storage level, no migrations needed.
 class DriftLocalStore implements LocalStore {
   final String dbName;
@@ -45,8 +45,9 @@ class DriftLocalStore implements LocalStore {
     }
 
     final db = _databaseOpener();
+    await renameTableIfNeeded(db, 'records', '_records');
     await db.customStatement(
-      'CREATE TABLE IF NOT EXISTS records ('
+      'CREATE TABLE IF NOT EXISTS _records ('
       'namespace TEXT NOT NULL, '
       'id TEXT NOT NULL, '
       'data TEXT NOT NULL, '
@@ -65,7 +66,7 @@ class DriftLocalStore implements LocalStore {
   Future<Map<String, dynamic>?> get(String model, Object id) async {
     final rows = await _database
         .customSelect(
-          'SELECT data FROM records WHERE namespace = ? AND id = ?',
+          'SELECT data FROM _records WHERE namespace = ? AND id = ?',
           variables: [Variable<String>(model), Variable<String>(id.toString())],
         )
         .get();
@@ -77,7 +78,7 @@ class DriftLocalStore implements LocalStore {
   Future<List<Map<String, dynamic>>> getAll(String model) async {
     final rows = await _database
         .customSelect(
-          'SELECT data FROM records WHERE namespace = ?',
+          'SELECT data FROM _records WHERE namespace = ?',
           variables: [Variable<String>(model)],
         )
         .get();
@@ -88,7 +89,7 @@ class DriftLocalStore implements LocalStore {
   @override
   Future<void> put(String model, Object id, Map<String, dynamic> record) {
     return _database.customStatement(
-      'INSERT OR REPLACE INTO records (namespace, id, data) VALUES (?, ?, ?)',
+      'INSERT OR REPLACE INTO _records (namespace, id, data) VALUES (?, ?, ?)',
       [model, id.toString(), jsonEncode(record)],
     );
   }
@@ -119,7 +120,7 @@ class DriftLocalStore implements LocalStore {
   @override
   Future<void> delete(String model, Object id) {
     return _database.customStatement(
-      'DELETE FROM records WHERE namespace = ? AND id = ?',
+      'DELETE FROM _records WHERE namespace = ? AND id = ?',
       [model, id.toString()],
     );
   }
@@ -127,14 +128,14 @@ class DriftLocalStore implements LocalStore {
   @override
   Future<void> clear(String model) {
     return _database.customStatement(
-      'DELETE FROM records WHERE namespace = ?',
+      'DELETE FROM _records WHERE namespace = ?',
       [model],
     );
   }
 
   @override
   Future<void> clearAll() {
-    return _database.customStatement('DELETE FROM records');
+    return _database.customStatement('DELETE FROM _records');
   }
 
   Map<String, dynamic> _decode(String data) =>

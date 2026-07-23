@@ -21,9 +21,8 @@ class OfflineDatabase extends GeneratedDatabase {
   /// Open the platform database [name].
   OfflineDatabase.open(String name) : super(driftDatabase(name: name));
 
-  /// Silence drift's multiple-database warning: the offline layer opens two
-  /// databases of this class on purpose (records + images), never sharing an
-  /// executor.
+  /// Silence drift's multiple-database warning: tests open several in-memory
+  /// databases of this class (production shares a single one).
   static void allowMultipleInstances() {
     driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
   }
@@ -33,4 +32,25 @@ class OfflineDatabase extends GeneratedDatabase {
 
   @override
   int get schemaVersion => 1;
+}
+
+/// Rename table [from] to [to] when [from] exists and [to] does not — a
+/// one-time, idempotent migration (e.g. prefixing the system tables with `_`).
+/// Safe to call on every open.
+Future<void> renameTableIfNeeded(
+  OfflineDatabase db,
+  String from,
+  String to,
+) async {
+  final rows = await db
+      .customSelect(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (?, ?)",
+        variables: [Variable<String>(from), Variable<String>(to)],
+      )
+      .get();
+  final names = rows.map((row) => row.read<String>('name')).toSet();
+
+  if (names.contains(from) && !names.contains(to)) {
+    await db.customStatement('ALTER TABLE "$from" RENAME TO "$to"');
+  }
 }

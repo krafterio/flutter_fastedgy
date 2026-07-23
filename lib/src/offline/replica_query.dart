@@ -565,7 +565,7 @@ class ReplicaQueryCompiler {
           kind: _HopKind.many2many,
           field: field,
           target: target,
-          pivotTable: 'r_${model.name}__${field.name}',
+          pivotTable: '${model.name}__${field.name}',
         );
       case LocalRelationKind.reference:
         throw UnsupportedError(
@@ -579,7 +579,7 @@ class ReplicaQueryCompiler {
     }
   }
 
-  String _table(LocalModelSchema model) => 'r_${model.name}';
+  String _table(LocalModelSchema model) => model.name;
 
   String _globEscape(String value) => value
       .replaceAll('[', '[[]')

@@ -38,6 +38,25 @@ void main() {
       expect(await store.get('/users', 7), isNotNull);
     });
 
+    test('open() migrates a legacy `records` table to `_records`', () async {
+      OfflineDatabase.allowMultipleInstances();
+      final db = OfflineDatabase(NativeDatabase.memory());
+      await db.customStatement(
+        'CREATE TABLE records (namespace TEXT NOT NULL, id TEXT NOT NULL, '
+        'data TEXT NOT NULL, PRIMARY KEY (namespace, id))',
+      );
+      await db.customStatement(
+        "INSERT INTO records (namespace, id, data) VALUES ('_outbox', '1', '{\"x\": 1}')",
+      );
+
+      final migrated = DriftLocalStore(databaseOpener: () => db);
+      await migrated.open();
+
+      // The pending write survived the rename.
+      expect((await migrated.get('_outbox', '1'))?['x'], 1);
+      await migrated.close();
+    });
+
     test('putAll merges records', () async {
       await store.put('/users', 1, {'id': 1, 'name': 'Ada'});
       await store.putAll('/users', {

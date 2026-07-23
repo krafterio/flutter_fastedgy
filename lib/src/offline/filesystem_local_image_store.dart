@@ -22,7 +22,7 @@ import 'offline_database.dart';
 /// variant overwrites its file. A missing file (deleted out of band) resolves
 /// to null like an absent variant.
 class FilesystemLocalImageStore implements LocalImageStore {
-  static const _table = 'image_files';
+  static const _table = '_image_files';
 
   final String dbName;
   final OfflineDatabase Function() _databaseOpener;
@@ -89,6 +89,7 @@ class FilesystemLocalImageStore implements LocalImageStore {
     final db = _databaseOpener();
     // Reclaim the legacy BLOB table: bytes now live on disk.
     await db.customStatement('DROP TABLE IF EXISTS images');
+    await renameTableIfNeeded(db, 'image_files', _table);
     await db.customStatement(
       'CREATE TABLE IF NOT EXISTS $_table ('
       'path TEXT NOT NULL, '

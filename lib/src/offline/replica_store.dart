@@ -38,7 +38,7 @@ class ReplicaMigration {
 /// changes become `ALTER TABLE ADD COLUMN`, anything else rebuilds the table
 /// (a replica can always be resynced from the server; no migration files).
 class ReplicaStore {
-  static const _metaTable = 'replica_models';
+  static const _metaTable = '_replica_models';
 
   final String dbName;
   final OfflineDatabase Function() _databaseOpener;
@@ -68,6 +68,7 @@ class ReplicaStore {
     }
 
     final db = _databaseOpener();
+    await renameTableIfNeeded(db, 'replica_models', _metaTable);
     await db.customStatement(
       'CREATE TABLE IF NOT EXISTS $_metaTable ('
       'model TEXT NOT NULL PRIMARY KEY, '
@@ -89,6 +90,7 @@ class ReplicaStore {
     }
 
     final table = _tableName(model.name);
+    await renameTableIfNeeded(_database, 'r_$table', table);
     final expected = _expectedColumns(model);
     final existing = await _tableInfo(table);
 
@@ -479,6 +481,7 @@ class ReplicaStore {
   Future<void> _ensurePivots(LocalModelSchema model) async {
     for (final field in model.manyToMany) {
       final pivot = pivotTableName(model.name, field.name);
+      await renameTableIfNeeded(_database, 'r_$pivot', pivot);
 
       await _database.customStatement(
         'CREATE TABLE IF NOT EXISTS "$pivot" ('
@@ -511,7 +514,7 @@ class ReplicaStore {
   };
 
   /// Pivot table persisting the pairs of a direct m2m [field] of [model].
-  String pivotTableName(String model, String field) => 'r_${model}__$field';
+  String pivotTableName(String model, String field) => '${model}__$field';
 
   Future<Map<String, String>?> _tableInfo(String table) async {
     final rows = await _database
@@ -546,7 +549,7 @@ class ReplicaStore {
     );
   }
 
-  String _tableName(String model) => 'r_$model';
+  String _tableName(String model) => model;
 
   Map<String, dynamic> _decode(String data) =>
       jsonDecode(data) as Map<String, dynamic>;
