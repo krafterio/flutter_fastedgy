@@ -618,6 +618,34 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
 
   @override
   Future<void> delete(Object id, {ApiParams? params}) async {
+    // A temporary id never existed server-side: cancel locally without any
+    // network call (online or not). If the create already left the queue
+    // (replay in flight or done), buffer a delete — the engine resolves the
+    // temporary id through its persisted map.
+    final temp = id is int && id < 0;
+
+    if (temp && outbox != null) {
+      if (!await outbox!.cancelCreateFor(outboxBasePath, id)) {
+        final cache = await _cacheContext();
+
+        await outbox!.enqueue(
+          (opId, createdAt) => PendingOperation(
+            id: opId,
+            method: 'DELETE',
+            basePath: outboxBasePath,
+            recordId: id,
+            createdAt: createdAt,
+            cache: cache,
+          ),
+        );
+      }
+
+      notifyChanged(ResourceChangeType.deleted, id);
+      await _removeLocal(id);
+
+      return;
+    }
+
     try {
       await super.delete(id, params: params);
     } catch (error) {

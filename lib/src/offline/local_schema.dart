@@ -20,7 +20,21 @@ class LocalFieldSchema {
   /// Target model name for relation fields.
   final String? target;
 
-  const LocalFieldSchema({required this.name, required this.type, this.target});
+  /// Allowed target model names of a generic `reference` field.
+  final List<String>? targets;
+
+  const LocalFieldSchema({
+    required this.name,
+    required this.type,
+    this.target,
+    this.targets,
+  });
+
+  /// Column persisting the target model name of a `reference` field.
+  String get referenceModelColumn => '${name}_model';
+
+  /// Column persisting the target id of a `reference` field.
+  String get referenceIdColumn => '${name}_id';
 
   LocalRelationKind get relationKind => switch (type) {
     'many2one' || 'many2one_ref' || 'one2one' => LocalRelationKind.many2one,
@@ -66,14 +80,31 @@ class LocalModelSchema {
   Iterable<LocalFieldSchema> get columns =>
       fields.values.where((field) => field.isColumn);
 
+  /// Generic `reference` fields, persisted as a model/id column pair.
+  Iterable<LocalFieldSchema> get references => fields.values.where(
+    (field) => field.relationKind == LocalRelationKind.reference,
+  );
+
+  /// Direct many2many fields, persisted in pivot tables.
+  Iterable<LocalFieldSchema> get manyToMany => fields.values.where(
+    (field) =>
+        field.relationKind == LocalRelationKind.many2many &&
+        field.target != null,
+  );
+
   /// Stable schema fingerprint driving the auto-migrator: any change in the
   /// column set (name, type or target) changes it.
   String get fingerprint {
-    final parts =
-        columns
-            .map((field) => '${field.name}:${field.type}:${field.target ?? ''}')
-            .toList()
-          ..sort();
+    final parts = [
+      ...columns.map(
+        (field) => '${field.name}:${field.type}:${field.target ?? ''}',
+      ),
+      ...references.map(
+        (field) =>
+            '${field.name}:reference:${(field.targets ?? const []).join(',')}',
+      ),
+      ...manyToMany.map((field) => '${field.name}:many2many:${field.target}'),
+    ].toList()..sort();
 
     return parts.join('|');
   }
@@ -113,6 +144,7 @@ class LocalSchema {
               name: fieldName,
               type: field.type,
               target: field.target,
+              targets: field.targets,
             ),
           ),
         ),
@@ -164,5 +196,28 @@ class LocalSchema {
         .toList();
 
     return candidates.length == 1 ? candidates.single.name : null;
+  }
+
+  /// Resolve the generic `reference` field backing the [o2mField] inverse
+  /// relation of [model]: the single reference field of the target whose
+  /// allowed targets include [model].
+  LocalFieldSchema? resolveGenericReverse(String model, String o2mField) {
+    final field = models[model]?.fields[o2mField];
+
+    if (field == null || field.relationKind != LocalRelationKind.one2many) {
+      return null;
+    }
+
+    final target = models[field.target];
+
+    if (target == null) {
+      return null;
+    }
+
+    final candidates = target.references
+        .where((f) => (f.targets ?? const []).contains(model))
+        .toList();
+
+    return candidates.length == 1 ? candidates.single : null;
   }
 }

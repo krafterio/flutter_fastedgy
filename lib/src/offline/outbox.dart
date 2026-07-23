@@ -205,7 +205,19 @@ class Outbox {
     return operations;
   }
 
-  Future<void> remove(String id) => _store.delete(_namespace, id);
+  /// Remove [id] from the queue; returns false when the operation was
+  /// already gone (e.g. cancelled while its replay was in flight).
+  Future<bool> remove(String id) async {
+    final existing = await _store.get(_namespace, id);
+
+    if (existing == null) {
+      return false;
+    }
+
+    await _store.delete(_namespace, id);
+
+    return true;
+  }
 
   Future<void> update(PendingOperation operation) =>
       _store.put(_namespace, operation.id, operation.toJson());

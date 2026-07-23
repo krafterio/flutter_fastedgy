@@ -38,6 +38,11 @@ class _ScriptedAdapter implements HttpClientAdapter {
   bool offline = false;
   final Map<String, Map<String, dynamic> Function(RequestOptions options)>
   routes = {};
+  final Map<
+    String,
+    Future<Map<String, dynamic>> Function(RequestOptions options)
+  >
+  asyncRoutes = {};
   final Map<String, int> errorRoutes = {};
   final List<String> calls = [];
   final List<Object?> postBodies = [];
@@ -67,6 +72,18 @@ class _ScriptedAdapter implements HttpClientAdapter {
       return ResponseBody.fromString(
         '{"detail": "boom"}',
         errorStatus,
+        headers: {
+          Headers.contentTypeHeader: [Headers.jsonContentType],
+        },
+      );
+    }
+
+    final asyncHandler = asyncRoutes['${options.method} ${options.path}'];
+
+    if (asyncHandler != null) {
+      return ResponseBody.fromString(
+        jsonEncode(await asyncHandler(options)),
+        200,
         headers: {
           Headers.contentTypeHeader: [Headers.jsonContentType],
         },
@@ -552,6 +569,145 @@ void main() {
 
       expect(await outbox.all(), hasLength(1));
       expect(discarded, isEmpty);
+    });
+
+    test('a transient server failure schedules a deferred retry', () async {
+      final retrying = SyncEngine(
+        outbox,
+        fetcher,
+        getService<Bus>(),
+        localStore: store,
+        retryBaseDelay: const Duration(milliseconds: 20),
+      );
+
+      await store.put('/items', 1, {'id': 1, 'name': 'One'});
+      adapter.offline = true;
+      await api.update(1, _Item({'name': 'A'}));
+
+      adapter.offline = false;
+      adapter.errorRoutes['POST /items/sync'] = 500;
+      await retrying.flush();
+      expect(await outbox.all(), hasLength(1));
+
+      // The server recovers: the deferred retry drains the queue by itself.
+      adapter.errorRoutes.remove('POST /items/sync');
+      adapter.routes['POST /items/sync'] = (options) => {
+        'results': [
+          {
+            'id': 1,
+            'status': 'applied',
+            'record': {'id': 1, 'name': 'A'},
+          },
+        ],
+      };
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+
+      expect(await outbox.all(), isEmpty);
+      await retrying.stop();
+    });
+
+    test('offline failures do not schedule a deferred retry', () async {
+      final retrying = SyncEngine(
+        outbox,
+        fetcher,
+        getService<Bus>(),
+        localStore: store,
+        retryBaseDelay: const Duration(milliseconds: 10),
+      );
+
+      await store.put('/items', 1, {'id': 1, 'name': 'One'});
+      adapter.offline = true;
+      await api.update(1, _Item({'name': 'A'}));
+
+      await retrying.flush();
+      adapter.routes['POST /items/sync'] = (options) => throw StateError('x');
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+
+      // Still queued and never retried while offline (no network call made).
+      expect(await outbox.all(), hasLength(1));
+      expect(adapter.calls, isEmpty);
+      await retrying.stop();
+    });
+
+    test(
+      'deleting a temp record online cancels both without network',
+      () async {
+        adapter.offline = true;
+        final created = await api.create(_Item({'name': 'Draft'}));
+
+        adapter.offline = false;
+        adapter.calls.clear();
+        await api.delete(created.id!);
+
+        expect(adapter.calls, isEmpty);
+        expect(await outbox.all(), isEmpty);
+        expect(await api.cachedList(), isEmpty);
+      },
+    );
+
+    test('a create cancelled mid-replay deletes the server record', () async {
+      adapter.offline = true;
+      final created = await api.create(_Item({'name': 'Draft'}));
+
+      adapter.offline = false;
+      adapter.asyncRoutes['POST /items'] = (options) async {
+        // The user deletes the record while the create request is in flight.
+        await api.delete(created.id!);
+
+        return {'id': 42, 'name': 'Draft'};
+      };
+      adapter.routes['POST /items/sync'] = (options) => {
+        'results': [
+          {'id': 42, 'status': 'applied'},
+        ],
+      };
+      await engine.flush();
+      // The compensating delete replays in the follow-up flush.
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      final body = adapter.postBodies.last as Map;
+      final operation = (body['operations'] as List).single as Map;
+      expect(operation['op'], 'delete');
+      expect(operation['id'], 42);
+      expect(await outbox.all(), isEmpty);
+      expect(await api.cachedList(), isEmpty);
+    });
+
+    test('the temp id map survives across flushes', () async {
+      adapter.offline = true;
+      final created = await api.create(_Item({'name': 'Draft'}));
+
+      adapter.offline = false;
+      adapter.routes['POST /items'] = (options) => {'id': 42, 'name': 'Draft'};
+      await engine.flush();
+
+      // An operation enqueued later still references the temporary id
+      // (e.g. app restarted between the swap and this write).
+      await outbox.enqueue(
+        (id, createdAt) => PendingOperation(
+          id: id,
+          method: 'PATCH',
+          basePath: '/items',
+          recordId: created.id,
+          payload: {'name': 'Late'},
+          createdAt: createdAt,
+          cache: const OutboxCacheContext(kind: 'json', namespace: '/items'),
+        ),
+      );
+      adapter.routes['POST /items/sync'] = (options) => {
+        'results': [
+          {
+            'id': 42,
+            'status': 'applied',
+            'record': {'id': 42, 'name': 'Late'},
+          },
+        ],
+      };
+      await engine.flush();
+
+      final body = adapter.postBodies.last as Map;
+      expect((body['operations'] as List).single['id'], 42);
+      expect(await outbox.all(), isEmpty);
     });
 
     test('going offline mid-flush keeps the remaining operations', () async {

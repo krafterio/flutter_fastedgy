@@ -52,8 +52,20 @@ class SyncEngine {
   /// connectivity failures never discard).
   final int maxAttempts;
 
+  /// Base delay of the deferred retry after a transient server failure
+  /// (exponential backoff, capped by [retryMaxDelay]). Connectivity failures
+  /// do not schedule a retry: the connectivity stream is their trigger.
+  final Duration retryBaseDelay;
+
+  /// Upper bound of the deferred retry delay.
+  final Duration retryMaxDelay;
+
+  static const _idMapNamespace = '_outbox_idmap';
+
   StreamSubscription<bool>? _subscription;
   Future<void>? _running;
+  Timer? _retryTimer;
+  bool _reflush = false;
 
   SyncEngine(
     this._outbox,
@@ -64,6 +76,8 @@ class SyncEngine {
     Stream<bool>? online,
     this.batchSize = 500,
     this.maxAttempts = 25,
+    this.retryBaseDelay = const Duration(seconds: 5),
+    this.retryMaxDelay = const Duration(minutes: 5),
   }) : _localStore = localStore,
        _replica = replica,
        _online = online;
@@ -80,12 +94,42 @@ class SyncEngine {
   Future<void> stop() async {
     await _subscription?.cancel();
     _subscription = null;
+    _retryTimer?.cancel();
+    _retryTimer = null;
   }
 
   /// Replay the pending operations in order (single flight).
-  Future<void> flush() => _running ??= _flush().whenComplete(() {
-    _running = null;
-  });
+  Future<void> flush() {
+    _retryTimer?.cancel();
+    _retryTimer = null;
+
+    return _running ??= _flush().whenComplete(() {
+      _running = null;
+
+      if (_reflush) {
+        _reflush = false;
+        unawaited(flush());
+      }
+    });
+  }
+
+  /// Schedule a deferred flush after a transient server failure, with
+  /// exponential backoff on the head operation's attempts.
+  void _scheduleRetry(int attempts) {
+    final exponent = attempts < 1 ? 0 : (attempts > 16 ? 16 : attempts - 1);
+    var delay = retryBaseDelay * (1 << exponent);
+
+    if (delay > retryMaxDelay) {
+      delay = retryMaxDelay;
+    }
+
+    _logger.fine('Retrying the outbox flush in $delay');
+    _retryTimer?.cancel();
+    _retryTimer = Timer(delay, () {
+      _retryTimer = null;
+      unawaited(flush());
+    });
+  }
 
   Future<void> _flush() async {
     final operations = await _outbox.all();
@@ -95,6 +139,20 @@ class SyncEngine {
     }
 
     final idMap = <String, Object>{};
+
+    // Temp→server mappings persisted by earlier flushes (an operation may
+    // reference a temporary id swapped before an app restart).
+    if (_localStore != null) {
+      for (final entry in await _localStore.getAll(_idMapNamespace)) {
+        final temp = entry['temp'];
+        final server = entry['server'];
+
+        if (temp != null && server != null) {
+          idMap['$temp'] = server as Object;
+        }
+      }
+    }
+
     final counters = _Counters();
     var index = 0;
 
@@ -148,6 +206,10 @@ class SyncEngine {
           'Transient failure ($error), keeping ${pending.id} for later',
         );
         await _outbox.update(updated);
+
+        if (!isOfflineError(error)) {
+          _scheduleRetry(updated.attempts);
+        }
       }
     }
 
@@ -172,10 +234,31 @@ class SyncEngine {
         _remapTempIds(operation.payload ?? const {}, idMap) as Map,
       );
       final record = (response.data as Map).cast<String, dynamic>();
+      final stillQueued = await _outbox.remove(operation.id);
 
       if (operation.recordId != null) {
         idMap['${operation.recordId}'] = record['id'] as Object;
+        await _localStore?.put(_idMapNamespace, '${operation.recordId}', {
+          'temp': operation.recordId,
+          'server': record['id'],
+        });
         await _cacheDelete(operation.cache, operation.recordId!);
+      }
+
+      if (!stillQueued) {
+        // The user cancelled this create while its replay was in flight: the
+        // record now exists server-side but must not — compensate with a
+        // delete replayed right after this flush.
+        _logger.fine(
+          'Create ${operation.id} cancelled mid-flight, deleting the record',
+        );
+        await outboxEnqueueCompensatingDelete(
+          operation,
+          record['id'] as Object,
+        );
+        _reflush = true;
+        counters.replayed++;
+        return;
       }
 
       await _cacheUpsert(operation.cache, record);
@@ -187,7 +270,6 @@ class SyncEngine {
         ),
       );
       counters.replayed++;
-      await _outbox.remove(operation.id);
     } on Object catch (error) {
       if (isOfflineError(error) || isRetryableServerError(error)) {
         rethrow;
@@ -313,6 +395,23 @@ class SyncEngine {
 
       await _outbox.remove(operation.id);
     }
+  }
+
+  /// Enqueue the delete compensating a create cancelled mid-replay.
+  Future<void> outboxEnqueueCompensatingDelete(
+    PendingOperation operation,
+    Object serverId,
+  ) {
+    return _outbox.enqueue(
+      (id, createdAt) => PendingOperation(
+        id: id,
+        method: 'DELETE',
+        basePath: operation.basePath,
+        recordId: serverId,
+        createdAt: createdAt,
+        cache: operation.cache,
+      ),
+    );
   }
 
   Future<void> _discard(

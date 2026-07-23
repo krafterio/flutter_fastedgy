@@ -94,12 +94,15 @@ class ReplicaStore {
 
     if (existing == null) {
       await _createTable(model, table, expected);
+      await _ensurePivots(model);
       await _saveFingerprint(model);
 
       return const ReplicaMigration(created: true);
     }
 
     if (await _storedFingerprint(model.name) == model.fingerprint) {
+      await _ensurePivots(model);
+
       return const ReplicaMigration();
     }
 
@@ -109,7 +112,9 @@ class ReplicaStore {
 
     if (removedOrChanged) {
       await _database.customStatement('DROP TABLE IF EXISTS "$table"');
+      await _dropPivots(model);
       await _createTable(model, table, expected);
+      await _ensurePivots(model);
       await _saveFingerprint(model);
 
       return const ReplicaMigration(rebuilt: true);
@@ -124,6 +129,7 @@ class ReplicaStore {
     }
 
     await _createIndexes(model, table);
+    await _ensurePivots(model);
     await _saveFingerprint(model);
 
     return const ReplicaMigration();
@@ -154,6 +160,14 @@ class ReplicaStore {
         'DELETE FROM "${_tableName(model.name)}" WHERE ws_scope = ?',
         [scope],
       );
+
+      for (final field in model.manyToMany) {
+        await _database.customStatement(
+          'DELETE FROM "${pivotTableName(model.name, field.name)}" '
+          'WHERE ws_scope = ?',
+          [scope],
+        );
+      }
 
       for (final record in records) {
         await _upsert(model, scope, record);
@@ -236,6 +250,14 @@ class ReplicaStore {
           'WHERE ws_scope = ? AND id = ?',
           [scope, '$id'],
         );
+
+        for (final field in model.manyToMany) {
+          await _database.customStatement(
+            'DELETE FROM "${pivotTableName(model.name, field.name)}" '
+            'WHERE ws_scope = ? AND parent_id = ?',
+            [scope, '$id'],
+          );
+        }
       }
 
       for (final record in upserts) {
@@ -346,11 +368,24 @@ class ReplicaStore {
     }
 
     final columns = model.columns.toList();
-    final names = ['ws_scope', 'data', ...columns.map((c) => '"${c.name}"')];
+    final references = model.references.toList();
+    final names = [
+      'ws_scope',
+      'data',
+      ...columns.map((c) => '"${c.name}"'),
+      for (final field in references) ...[
+        '"${field.referenceModelColumn}"',
+        '"${field.referenceIdColumn}"',
+      ],
+    ];
     final values = <Object?>[
       scope,
       jsonEncode(record),
       ...columns.map((c) => _columnValue(c, record[c.name])),
+      for (final field in references) ...[
+        (record[field.name] as Map?)?[r'$model'],
+        (record[field.name] as Map?)?['id'],
+      ],
     ];
     final placeholders = List.filled(names.length, '?').join(', ');
 
@@ -359,6 +394,33 @@ class ReplicaStore {
       '(${names.join(', ')}) VALUES ($placeholders)',
       values,
     );
+
+    for (final field in model.manyToMany) {
+      // Only records carrying the m2m key rewrite its pairs: a partial merge
+      // (outbox healing) must not clobber the mirrored links.
+      if (!record.containsKey(field.name) || record[field.name] is! List) {
+        continue;
+      }
+
+      final pivot = pivotTableName(model.name, field.name);
+
+      await _database.customStatement(
+        'DELETE FROM "$pivot" WHERE ws_scope = ? AND parent_id = ?',
+        [scope, record['id']],
+      );
+
+      for (final item in record[field.name] as List) {
+        final targetId = item is Map ? item['id'] : item;
+
+        if (targetId != null) {
+          await _database.customStatement(
+            'INSERT OR REPLACE INTO "$pivot" '
+            '(ws_scope, parent_id, target_id) VALUES (?, ?, ?)',
+            [scope, record['id'], targetId],
+          );
+        }
+      }
+    }
   }
 
   Object? _columnValue(LocalFieldSchema field, dynamic value) {
@@ -405,13 +467,51 @@ class ReplicaStore {
         );
       }
     }
+
+    for (final field in model.references) {
+      await _database.customStatement(
+        'CREATE INDEX IF NOT EXISTS "idx_${table}_${field.name}_pair" '
+        'ON "$table" ("${field.referenceModelColumn}", "${field.referenceIdColumn}")',
+      );
+    }
+  }
+
+  Future<void> _ensurePivots(LocalModelSchema model) async {
+    for (final field in model.manyToMany) {
+      final pivot = pivotTableName(model.name, field.name);
+
+      await _database.customStatement(
+        'CREATE TABLE IF NOT EXISTS "$pivot" ('
+        'ws_scope TEXT, parent_id INTEGER, target_id INTEGER, '
+        'PRIMARY KEY (ws_scope, parent_id, target_id))',
+      );
+      await _database.customStatement(
+        'CREATE INDEX IF NOT EXISTS "idx_${pivot}_target" '
+        'ON "$pivot" (target_id)',
+      );
+    }
+  }
+
+  Future<void> _dropPivots(LocalModelSchema model) async {
+    for (final field in model.manyToMany) {
+      await _database.customStatement(
+        'DROP TABLE IF EXISTS "${pivotTableName(model.name, field.name)}"',
+      );
+    }
   }
 
   Map<String, String> _expectedColumns(LocalModelSchema model) => {
     'ws_scope': 'TEXT',
     'data': 'TEXT',
     for (final field in model.columns) field.name: field.sqlAffinity,
+    for (final field in model.references) ...{
+      field.referenceModelColumn: 'TEXT',
+      field.referenceIdColumn: 'INTEGER',
+    },
   };
+
+  /// Pivot table persisting the pairs of a direct m2m [field] of [model].
+  String pivotTableName(String model, String field) => 'r_${model}__$field';
 
   Future<Map<String, String>?> _tableInfo(String table) async {
     final rows = await _database

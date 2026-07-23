@@ -131,7 +131,7 @@ class ReplicaQueryCompiler {
       }
 
       for (final group in grouped.values) {
-        parts.add(_existsTree(ctx, alias, group, 0, args));
+        parts.add(_existsTree(ctx, model.name, alias, group, 0, args));
       }
     } else {
       for (final node in condition.rules) {
@@ -142,7 +142,9 @@ class ReplicaQueryCompiler {
             if (_isSingleValued(path.hops)) {
               parts.add(_scalarPredicate(ctx, alias, path, node, args));
             } else {
-              parts.add(_existsTree(ctx, alias, [(path, node)], 0, args));
+              parts.add(
+                _existsTree(ctx, model.name, alias, [(path, node)], 0, args),
+              );
             }
           case FilterCondition():
             parts.add('(${_compileCondition(ctx, model, alias, node, args)})');
@@ -162,6 +164,7 @@ class ReplicaQueryCompiler {
   // `members.role` and `members.user.name` constrain the SAME members row.
   String _existsTree(
     _Context ctx,
+    String parentModel,
     String parentAlias,
     List<(_Path, FilterRule)> rules,
     int depth,
@@ -169,9 +172,29 @@ class ReplicaQueryCompiler {
   ) {
     final hop = rules.first.$1.hops[depth];
     final alias = ctx.nextAlias('e');
-    final link = hop.reverseField != null
-        ? '$alias."${hop.reverseField}" = $parentAlias.id'
-        : '$parentAlias."${hop.field.name}" = $alias.id';
+    var from = '"${_table(hop.target)}" $alias';
+    final String link;
+
+    switch (hop.kind) {
+      case _HopKind.one2many:
+        link = '$alias."${hop.reverseField}" = $parentAlias.id';
+      case _HopKind.many2one:
+        link = '$parentAlias."${hop.field.name}" = $alias.id';
+      case _HopKind.genericOne2many:
+        link =
+            '$alias."${hop.genericReverse!.referenceIdColumn}" = $parentAlias.id '
+            'AND $alias."${hop.genericReverse!.referenceModelColumn}" = ?';
+        args.add(hop.sourceModel);
+      case _HopKind.many2many:
+        final pivot = ctx.nextAlias('p');
+        from =
+            '"${hop.pivotTable}" $pivot '
+            'JOIN "${_table(hop.target)}" $alias '
+            'ON $alias.id = $pivot.target_id AND $alias.ws_scope = ?';
+        link = '$pivot.parent_id = $parentAlias.id AND $pivot.ws_scope = ?';
+        args.add(ctx.scopeOf(hop.target.name));
+        args.add(ctx.scopeOf(parentModel));
+    }
 
     args.add(ctx.scopeOf(hop.target.name));
 
@@ -198,10 +221,12 @@ class ReplicaQueryCompiler {
     }
 
     for (final group in deeper.values) {
-      parts.add(_existsTree(ctx, alias, group, depth + 1, args));
+      parts.add(
+        _existsTree(ctx, hop.target.name, alias, group, depth + 1, args),
+      );
     }
 
-    return 'EXISTS (SELECT 1 FROM "${_table(hop.target)}" $alias '
+    return 'EXISTS (SELECT 1 FROM $from '
         'WHERE $link AND $alias.ws_scope = ? AND ${parts.join(' AND ')})';
   }
 
@@ -211,7 +236,7 @@ class ReplicaQueryCompiler {
   bool _isSingleValued(List<_Hop> hops) => hops.isEmpty || _allMany2one(hops);
 
   bool _allMany2one(List<_Hop> hops) =>
-      hops.every((hop) => hop.reverseField == null);
+      hops.every((hop) => hop.kind == _HopKind.many2one);
 
   String _scalarPredicate(
     _Context ctx,
@@ -451,6 +476,24 @@ class ReplicaQueryCompiler {
         );
       }
 
+      if (field.relationKind == LocalRelationKind.reference &&
+          i == segments.length - 2 &&
+          (segments[i + 1] == r'$model' || segments[i + 1] == 'id')) {
+        // Virtual pair path on a generic reference: <field>.$model / <field>.id
+        // map to the persisted pair columns.
+        final isModel = segments[i + 1] == r'$model';
+
+        return _Path(
+          hops: hops,
+          leaf: LocalFieldSchema(
+            name: isModel
+                ? field.referenceModelColumn
+                : field.referenceIdColumn,
+            type: isModel ? 'char' : 'integer',
+          ),
+        );
+      }
+
       if (i == segments.length - 1) {
         if (!field.isColumn) {
           throw UnsupportedError(
@@ -485,23 +528,49 @@ class ReplicaQueryCompiler {
 
     switch (field.relationKind) {
       case LocalRelationKind.many2one:
-        return _Hop(field: field, target: target);
+        return _Hop(kind: _HopKind.many2one, field: field, target: target);
       case LocalRelationKind.one2many:
         final reverse = ctx.schema.resolveReverseField(model.name, field.name);
 
-        if (reverse == null) {
-          throw UnsupportedError(
-            'The reverse FK of "${model.name}.${field.name}" is ambiguous or '
-            'unknown (path "$fieldPath")',
+        if (reverse != null) {
+          return _Hop(
+            kind: _HopKind.one2many,
+            field: field,
+            target: target,
+            reverseField: reverse,
           );
         }
 
-        return _Hop(field: field, target: target, reverseField: reverse);
-      case LocalRelationKind.many2many || LocalRelationKind.reference:
+        final genericReverse = ctx.schema.resolveGenericReverse(
+          model.name,
+          field.name,
+        );
+
+        if (genericReverse != null) {
+          return _Hop(
+            kind: _HopKind.genericOne2many,
+            field: field,
+            target: target,
+            genericReverse: genericReverse,
+            sourceModel: model.name,
+          );
+        }
+
         throw UnsupportedError(
-          'Paths through ${field.relationKind.name} relations are not '
-          'supported offline (path "$fieldPath") — replicate the pivot model '
-          'and traverse it instead',
+          'The reverse FK of "${model.name}.${field.name}" is ambiguous or '
+          'unknown (path "$fieldPath")',
+        );
+      case LocalRelationKind.many2many:
+        return _Hop(
+          kind: _HopKind.many2many,
+          field: field,
+          target: target,
+          pivotTable: 'r_${model.name}__${field.name}',
+        );
+      case LocalRelationKind.reference:
+        throw UnsupportedError(
+          'Paths through the forward reference "${model.name}.${field.name}" '
+          'are not supported offline (path "$fieldPath")',
         );
       case LocalRelationKind.none:
         throw InvalidFilterException(
@@ -536,14 +605,34 @@ class _Context {
   String nextAlias(String prefix) => '$prefix${_counter++}';
 }
 
+enum _HopKind { many2one, one2many, many2many, genericOne2many }
+
 class _Hop {
+  final _HopKind kind;
   final LocalFieldSchema field;
   final LocalModelSchema target;
 
-  /// FK column on [target] pointing back (o2m hop); null for a m2o hop.
+  /// FK column on [target] pointing back (o2m hop).
   final String? reverseField;
 
-  const _Hop({required this.field, required this.target, this.reverseField});
+  /// Reference field on [target] pointing back (generic o2m hop).
+  final LocalFieldSchema? genericReverse;
+
+  /// Model name stored in the reference pair (generic o2m hop).
+  final String? sourceModel;
+
+  /// Pivot table of the m2m hop.
+  final String? pivotTable;
+
+  const _Hop({
+    required this.kind,
+    required this.field,
+    required this.target,
+    this.reverseField,
+    this.genericReverse,
+    this.sourceModel,
+    this.pivotTable,
+  });
 }
 
 class _Path {
