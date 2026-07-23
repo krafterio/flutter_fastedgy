@@ -62,19 +62,29 @@ enum ApiAction {
 /// final created = await userApi.create({'name': 'John', 'email': 'john@example.com'});
 /// ```
 abstract class ApiModel<T extends BaseModel<T>> {
-  /// The base path for this resource (e.g., '/users')
+  /// The base path for this resource (e.g. '/users'), or just the scope prefix
+  /// (e.g. '/{workspace}' or '') when [modelName] carries the resource segment.
   final String basePath;
+
+  /// Optional metadata model name (snake_case, e.g. 'user'). When set, the
+  /// resource segment of the path is the model's `api_name` (tablename)
+  /// resolved from the metadata and appended to [basePath]; the offline
+  /// variant also enables replication under this name. Keeps API declarations
+  /// to a scope prefix + a model name instead of a hardcoded path.
+  final String? modelName;
 
   /// The HTTP client used for requests
   final Fetcher _fetcher;
+
+  String? _resolvedPath;
 
   Set<ApiAction> get disabledActions => {};
 
   /// Create an API model for a specific resource
   ///
-  /// [basePath] is the base URL path for this resource (e.g., '/users')
-  /// [fetcher] is optional; if not provided, uses the global Fetcher from DI
-  ApiModel(this.basePath, {Fetcher? fetcher})
+  /// [basePath] is the base URL path (e.g. '/users') or the scope prefix when
+  /// [modelName] is given; [fetcher] is optional (falls back to the DI one).
+  ApiModel(this.basePath, {this.modelName, Fetcher? fetcher})
     : _fetcher = fetcher ?? getService<Fetcher>();
 
   /// Convert JSON to model instance
@@ -95,7 +105,14 @@ abstract class ApiModel<T extends BaseModel<T>> {
       return null;
     }
 
-    final metadatas = await getService<MetadataProvider>().getMetadatas();
+    final provider = getService<MetadataProvider>();
+    final name = modelName;
+
+    if (name != null) {
+      return provider.getMetadata(name);
+    }
+
+    final metadatas = await provider.getMetadatas();
 
     if (metadatas == null) {
       return null;
@@ -111,6 +128,41 @@ abstract class ApiModel<T extends BaseModel<T>> {
 
     return null;
   }
+
+  /// The effective resource path used for requests.
+  ///
+  /// With [modelName] set, the resource segment is the model's `api_name`
+  /// (tablename) resolved from the metadata, appended to [basePath] (the scope
+  /// prefix); otherwise [basePath] is used as-is. The resolved value is
+  /// memoized once the metadata is available (a model's tablename is stable);
+  /// the metadata is mirrored locally, so this also resolves offline.
+  Future<String> resolvePath() async {
+    if (modelName == null) {
+      return basePath;
+    }
+
+    final cached = _resolvedPath;
+
+    if (cached != null) {
+      return cached;
+    }
+
+    final apiName = (await metadata())?.apiName;
+
+    if (apiName == null) {
+      // Metadata not available yet: fall back without memoizing so a later
+      // call resolves the real tablename.
+      return _joinPath(basePath, modelName!);
+    }
+
+    return _resolvedPath = _joinPath(basePath, apiName);
+  }
+
+  /// The resolved effective path once [resolvePath] has run, else [basePath].
+  String get resolvedBasePath => _resolvedPath ?? basePath;
+
+  static String _joinPath(String prefix, String segment) =>
+      prefix.isEmpty ? '/$segment' : '$prefix/$segment';
 
   /// Metadata of a single field of this model (type, label, choices…), or
   /// null when unknown.
@@ -148,7 +200,7 @@ abstract class ApiModel<T extends BaseModel<T>> {
     final paramsMap = params?.toMap() ?? {};
 
     final response = await _fetcher.get(
-      basePath,
+      await resolvePath(),
       params: ApiHelpers.buildQueryParams(queryMap),
       headers: ApiHelpers.buildHeaders(
         queryMap,
@@ -186,7 +238,7 @@ abstract class ApiModel<T extends BaseModel<T>> {
     );
 
     final response = await _fetcher.get(
-      '$basePath/${id.toString()}',
+      '${await resolvePath()}/${id.toString()}',
       headers: headers,
     );
 
@@ -226,7 +278,7 @@ abstract class ApiModel<T extends BaseModel<T>> {
     );
 
     final response = await _fetcher.post(
-      basePath,
+      await resolvePath(),
       payload.toJson(),
       headers: headers,
     );
@@ -272,7 +324,7 @@ abstract class ApiModel<T extends BaseModel<T>> {
     );
 
     final response = await _fetcher.patch(
-      '$basePath/${id.toString()}',
+      '${await resolvePath()}/${id.toString()}',
       payload.toJson(),
       headers: headers,
     );
@@ -298,13 +350,16 @@ abstract class ApiModel<T extends BaseModel<T>> {
     final paramsMap = params?.toMap() ?? {};
     final headers = paramsMap['headers'] as Map<String, dynamic>?;
 
-    await _fetcher.delete('$basePath/${id.toString()}', headers: headers);
+    await _fetcher.delete(
+      '${await resolvePath()}/${id.toString()}',
+      headers: headers,
+    );
     notifyChanged(ResourceChangeType.deleted, id);
   }
 
   void notifyChanged([ResourceChangeType? type, Object? id]) =>
       getService<Bus>().fire(
-        ResourceChangedEvent(basePath, type: type, id: id),
+        ResourceChangedEvent(resolvedBasePath, type: type, id: id),
       );
 
   /// Export resources
@@ -337,7 +392,7 @@ abstract class ApiModel<T extends BaseModel<T>> {
     final paramsMap = params?.toMap() ?? {};
 
     return _fetcher.get(
-      '$basePath/export',
+      '${await resolvePath()}/export',
       params: ApiHelpers.buildQueryParams(queryMap),
       headers: ApiHelpers.buildHeaders(
         queryMap,
@@ -378,7 +433,11 @@ abstract class ApiModel<T extends BaseModel<T>> {
     final paramsMap = params?.toMap() ?? {};
     final headers = paramsMap['headers'] as Map<String, dynamic>?;
 
-    return _fetcher.post('$basePath/import', formData, headers: headers);
+    return _fetcher.post(
+      '${await resolvePath()}/import',
+      formData,
+      headers: headers,
+    );
   }
 
   /// Download import template
@@ -413,7 +472,7 @@ abstract class ApiModel<T extends BaseModel<T>> {
     final paramsMap = params?.toMap() ?? {};
 
     return _fetcher.get(
-      '$basePath/import/template',
+      '${await resolvePath()}/import/template',
       params: ApiHelpers.buildQueryParams(queryMap),
       headers: ApiHelpers.buildHeaders(
         queryMap,
@@ -430,7 +489,7 @@ class GenericBaseModel extends BaseModel<GenericBaseModel> {
 }
 
 class GenericApiModel extends ApiModel<GenericBaseModel> {
-  GenericApiModel(super.basePath, {super.fetcher});
+  GenericApiModel(super.basePath, {super.modelName, super.fetcher});
 }
 
 GenericApiModel useGenericApiModel(String basePath) =>

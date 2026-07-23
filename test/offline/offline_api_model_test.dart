@@ -12,6 +12,35 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_fastedgy/flutter_fastedgy.dart';
 
+/// Minimal metadata provider so `modelName`-based APIs resolve their path
+/// (`item` → api_name `items`).
+class _FakeMetadataProvider implements MetadataProvider {
+  final Map<String, MetadataModel> _map;
+
+  _FakeMetadataProvider(this._map);
+
+  @override
+  Future<Map<String, MetadataModel>?> getMetadatas() async => _map;
+
+  @override
+  Future<MetadataModel?> getMetadata(String name) async => _map[name];
+
+  @override
+  Future<void> fetchMetadatas() async {}
+
+  @override
+  bool get loading => false;
+
+  @override
+  dynamic get error => null;
+
+  @override
+  String? get prefix => null;
+
+  @override
+  void setPrefix(String? newPrefix) {}
+}
+
 class _Item extends BaseModel<_Item> {
   _Item(super.data);
 
@@ -160,6 +189,22 @@ void main() {
 
     if (!hasService<Bus>()) {
       container.registerSingleton<Bus>(Bus());
+    }
+
+    if (!hasService<MetadataProvider>()) {
+      container.registerSingleton<MetadataProvider>(
+        _FakeMetadataProvider({
+          'item': const MetadataModel(
+            name: 'item',
+            apiName: 'items',
+            label: 'Item',
+            labelPlural: 'Items',
+            searchable: false,
+            sortable: false,
+            fields: {},
+          ),
+        }),
+      );
     }
   });
 
@@ -592,14 +637,12 @@ class _ReplicatedItemApi extends OfflineApiModel<_Item> {
     required LocalStore localStore,
     this.scope = 'acme',
   }) : super(
-         '/items',
+         '',
+         modelName: 'item',
          fetcher: fetcher,
          localStore: localStore,
          replica: replica,
        );
-
-  @override
-  String? get replicaModel => 'item';
 
   @override
   String get replicaScope => scope;

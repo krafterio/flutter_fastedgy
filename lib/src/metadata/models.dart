@@ -88,6 +88,9 @@ class MetadataModel {
   final bool searchable;
   final bool sortable;
   final String? sortableField;
+
+  /// Whether the client may replicate/sync this model offline (server-driven).
+  final bool synchronizable;
   final Map<String, MetadataField> fields;
 
   const MetadataModel({
@@ -99,6 +102,7 @@ class MetadataModel {
     required this.sortable,
     required this.fields,
     this.sortableField,
+    this.synchronizable = false,
   });
 
   /// Create a MetadataModel from JSON
@@ -117,6 +121,7 @@ class MetadataModel {
       searchable: json['searchable'] as bool,
       sortable: json['sortable'] as bool,
       sortableField: json['sortable_field'] as String?,
+      synchronizable: json['synchronizable'] as bool? ?? false,
       fields: fields,
     );
   }
@@ -131,6 +136,7 @@ class MetadataModel {
       'searchable': searchable,
       'sortable': sortable,
       'sortable_field': sortableField,
+      'synchronizable': synchronizable,
       'fields': fields.map((key, value) => MapEntry(key, value.toJson())),
     };
   }

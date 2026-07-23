@@ -29,7 +29,7 @@ import 'sync_image_field.dart';
 /// prune; `list`/`get` deep-merge fetched records without pruning; server
 /// errors are always rethrown):
 ///
-/// - **Replicated** (opt-in via [replicaModel]): records live in typed
+/// - **Replicated** (opt-in via [modelName]): records live in typed
 ///   [ReplicaStore] tables scoped by [replicaScope]; offline queries are
 ///   compiled to SQL with full server parity (filters, nested order_by).
 /// - **JSON namespace** (default): records live in the [LocalStore] as JSON;
@@ -39,10 +39,9 @@ import 'sync_image_field.dart';
 /// Example:
 /// ```dart
 /// class UserApi extends OfflineApiModel<User> {
-///   UserApi() : super('/{workspace}/users');
-///
-///   @override
-///   String? get replicaModel => 'user';
+///   // `modelName` resolves the resource segment (`users`) from the metadata
+///   // and enables replication; only the runtime scope is left to declare.
+///   UserApi() : super('/{workspace}', modelName: 'user');
 ///
 ///   @override
 ///   String get replicaScope => currentWorkspaceSlug;
@@ -60,6 +59,7 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
   /// container-registered services (mainly for tests).
   OfflineApiModel(
     super.basePath, {
+    super.modelName,
     super.fetcher,
     LocalStore? localStore,
     ImageMirror? imageMirror,
@@ -102,10 +102,10 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
   }
 
   /// The replication service, or null when replication is unavailable or not
-  /// requested ([replicaModel] null).
+  /// requested ([modelName] null keeps the JSON namespace cache).
   Replica? get replica =>
       _replica ??
-      (replicaModel != null && hasService<Replica>()
+      (modelName != null && hasService<Replica>()
           ? getService<Replica>()
           : null);
 
@@ -113,20 +113,20 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
   Outbox? get outbox =>
       _outbox ?? (hasService<Outbox>() ? getService<Outbox>() : null);
 
-  /// Cache namespace of this resource (defaults to [basePath]).
-  String get cacheModel => basePath;
+  /// Cache namespace of this resource: [modelName] when given (stable), else
+  /// [basePath].
+  String get cacheModel => modelName ?? basePath;
 
   /// The base path stored on buffered operations and used for their replay.
   ///
-  /// Defaults to [basePath]. Override it to resolve dynamic path parameters
-  /// (e.g. `/{workspace}/users`) **at enqueue time**: a buffered write must
-  /// replay against the context it was made in, not whatever context is
-  /// active when connectivity comes back.
-  String get outboxBasePath => basePath;
-
-  /// Metadata name of the replicated model (e.g. 'user'); null keeps the
-  /// JSON namespace cache.
-  String? get replicaModel => null;
+  /// The resolved path with its `{workspace}` placeholder substituted by the
+  /// current [replicaScope] **at enqueue time**: a buffered write must replay
+  /// against the context it was made in, not whatever context is active when
+  /// connectivity comes back. (Resolution runs in [_replicaContext] before any
+  /// read of this getter.)
+  String get outboxBasePath => replicaScope.isEmpty
+      ? resolvedBasePath
+      : resolvedBasePath.replaceAll('{workspace}', replicaScope);
 
   /// Replica scope of this resource's rows (e.g. the current workspace
   /// slug); '' for globally-scoped models.
@@ -618,6 +618,10 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
 
   @override
   Future<void> delete(Object id, {ApiParams? params}) async {
+    // Resolve the effective path up front: the temp-id branch below reads
+    // [outboxBasePath] without going through the network or _replicaContext.
+    await resolvePath();
+
     // A temporary id never existed server-side: cancel locally without any
     // network call (online or not). If the create already left the queue
     // (replay in flight or done), buffer a delete — the engine resolves the
@@ -931,8 +935,13 @@ abstract class OfflineApiModel<T extends BaseModel<T>> extends ApiModel<T> {
   }
 
   Future<_ReplicaContext?> _replicaContext() async {
+    // Resolve the effective path once up front: every offline entry point
+    // funnels through here, so [outboxBasePath]/[resolvedBasePath] are correct
+    // before any downstream read (enqueue, flush comparison, cache keys).
+    await resolvePath();
+
     final replica = this.replica;
-    final model = replicaModel;
+    final model = modelName;
 
     if (replica == null || model == null) {
       return null;
