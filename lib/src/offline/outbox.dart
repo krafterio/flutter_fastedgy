@@ -44,6 +44,11 @@ class OutboxCacheContext {
   };
 }
 
+/// Shallow equality of two operation contexts.
+bool sameContext(Map<String, String> a, Map<String, String> b) =>
+    a.length == b.length &&
+    a.entries.every((entry) => b[entry.key] == entry.value);
+
 /// A buffered offline write, replayed in order by the sync engine.
 class PendingOperation {
   final String id;
@@ -51,8 +56,13 @@ class PendingOperation {
   /// 'POST', 'PATCH' or 'DELETE'.
   final String method;
 
-  /// Base path of the resource (e.g. '/{workspace}/users').
+  /// Base path of the resource, unresolved (e.g. '/{workspace}/users').
   final String basePath;
+
+  /// Path param values captured at enqueue time — the replay resolves
+  /// [basePath] with them, not with the current context (a workspace switch
+  /// must not reroute buffered writes).
+  final Map<String, String> context;
 
   /// Target record id (the optimistic temporary id for creates).
   final Object? recordId;
@@ -77,6 +87,7 @@ class PendingOperation {
     required this.basePath,
     required this.cache,
     required this.createdAt,
+    this.context = const {},
     this.recordId,
     this.payload,
     this.base,
@@ -88,6 +99,11 @@ class PendingOperation {
         id: json['id'] as String,
         method: json['method'] as String,
         basePath: json['base_path'] as String,
+        context:
+            (json['context'] as Map?)?.map(
+              (key, value) => MapEntry('$key', '$value'),
+            ) ??
+            const {},
         recordId: json['record_id'],
         payload: (json['payload'] as Map?)?.cast<String, dynamic>(),
         createdAt: json['created_at'] as String,
@@ -102,6 +118,7 @@ class PendingOperation {
     'id': id,
     'method': method,
     'base_path': basePath,
+    'context': context,
     'record_id': recordId,
     'payload': payload,
     'created_at': createdAt,
@@ -114,6 +131,7 @@ class PendingOperation {
     id: id,
     method: method,
     basePath: basePath,
+    context: context,
     recordId: recordId,
     payload: payload,
     createdAt: createdAt,
@@ -240,10 +258,15 @@ class Outbox {
 
   /// Deleting a record that only exists as a pending offline create cancels
   /// both operations; returns true when the pair was cancelled.
-  Future<bool> cancelCreateFor(String basePath, Object recordId) async {
+  Future<bool> cancelCreateFor(
+    String basePath,
+    Object recordId, {
+    Map<String, String> context = const {},
+  }) async {
     for (final operation in await all()) {
       if (operation.method == 'POST' &&
           operation.basePath == basePath &&
+          sameContext(operation.context, context) &&
           '${operation.recordId}' == '$recordId') {
         await remove(operation.id);
 

@@ -3,6 +3,7 @@
  * MIT License (see LICENSE file).
  */
 
+export 'offline_context_params.dart';
 export 'drift_local_image_store.dart';
 export 'drift_local_store.dart';
 export 'filesystem_local_image_store.dart';

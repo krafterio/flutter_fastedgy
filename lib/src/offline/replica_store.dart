@@ -84,6 +84,22 @@ class ReplicaStore {
 
   /// Create or auto-migrate the table of [model]; check [ReplicaMigration.needsSync]
   /// to know whether the model must be resynced from the server.
+  ///
+  /// The physical table is ALWAYS diffed against the expected schema — the
+  /// stored fingerprint is never trusted as a proof of health: it only
+  /// captures the model's fields, so a table left by an older storage layout
+  /// (renamed system columns, old table prefixes) can carry a matching
+  /// fingerprint while being unusable. Any drift is repaired here: additive
+  /// changes become `ALTER TABLE ADD COLUMN`, anything else rebuilds the
+  /// table (a replica can always be resynced from the server; no migration
+  /// files).
+  ///
+  /// Repairs are decided ONLY from this observed state, never from a caught
+  /// exception (when a statement throws, neither the connection health nor
+  /// the transience of the error is knowable — dropping a table there could
+  /// destroy data over a transient failure). A migration interrupted by an
+  /// error simply rethrows: the next ensure re-diffs the half-migrated table
+  /// and finishes or rebuilds it deterministically.
   Future<ReplicaMigration> ensureModel(LocalModelSchema model) async {
     if (!model.fields.containsKey('id')) {
       throw ArgumentError('Model "${model.name}" has no id field');
@@ -102,24 +118,12 @@ class ReplicaStore {
       return const ReplicaMigration(created: true);
     }
 
-    if (await _storedFingerprint(model.name) == model.fingerprint) {
-      await _ensurePivots(model);
-
-      return const ReplicaMigration();
-    }
-
     final removedOrChanged = existing.entries.any(
       (entry) => expected[entry.key] != entry.value,
     );
 
     if (removedOrChanged) {
-      await _database.customStatement('DROP TABLE IF EXISTS "$table"');
-      await _dropPivots(model);
-      await _createTable(model, table, expected);
-      await _ensurePivots(model);
-      await _saveFingerprint(model);
-
-      return const ReplicaMigration(rebuilt: true);
+      return _rebuild(model, table, expected);
     }
 
     for (final entry in expected.entries) {
@@ -135,6 +139,22 @@ class ReplicaStore {
     await _saveFingerprint(model);
 
     return const ReplicaMigration();
+  }
+
+  /// Drop and recreate the table of [model] (and its pivots): local data is
+  /// lost, the caller must resync from the server.
+  Future<ReplicaMigration> _rebuild(
+    LocalModelSchema model,
+    String table,
+    Map<String, String> expected,
+  ) async {
+    await _database.customStatement('DROP TABLE IF EXISTS "$table"');
+    await _dropPivots(model);
+    await _createTable(model, table, expected);
+    await _ensurePivots(model);
+    await _saveFingerprint(model);
+
+    return const ReplicaMigration(rebuilt: true);
   }
 
   /// Insert or update [records] (full JSON payloads) under [scope].
@@ -492,15 +512,39 @@ class ReplicaStore {
     }
   }
 
+  /// Physical schema of every m2m pivot table: the workspace isolation
+  /// column and the relation pair. Single source for both the CREATE
+  /// statement and the self-repair diff of [_ensurePivots].
+  static const _pivotColumns = {
+    '_workspace': 'CHAR',
+    'parent_id': 'INTEGER',
+    'target_id': 'INTEGER',
+  };
+
   Future<void> _ensurePivots(LocalModelSchema model) async {
     for (final field in model.manyToMany) {
       final pivot = pivotTableName(model.name, field.name);
       await renameTableIfNeeded(_database, 'r_$pivot', pivot);
+      final existing = await _tableInfo(pivot);
+
+      // Same self-repair as the model tables: a pivot left by an older
+      // storage layout is dropped and recreated (its pairs come back with
+      // the next sync of the parent model).
+      if (existing != null &&
+          (existing.length != _pivotColumns.length ||
+              existing.entries.any(
+                (entry) => _pivotColumns[entry.key] != entry.value,
+              ))) {
+        await _database.customStatement('DROP TABLE IF EXISTS "$pivot"');
+      }
+
+      final defs = _pivotColumns.entries
+          .map((entry) => '${entry.key} ${entry.value}')
+          .join(', ');
 
       await _database.customStatement(
-        'CREATE TABLE IF NOT EXISTS "$pivot" ('
-        '_workspace CHAR, parent_id INTEGER, target_id INTEGER, '
-        'PRIMARY KEY (_workspace, parent_id, target_id))',
+        'CREATE TABLE IF NOT EXISTS "$pivot" '
+        '($defs, PRIMARY KEY (${_pivotColumns.keys.join(', ')}))',
       );
       await _database.customStatement(
         'CREATE INDEX IF NOT EXISTS "idx_${pivot}_target" '
@@ -545,17 +589,9 @@ class ReplicaStore {
     };
   }
 
-  Future<String?> _storedFingerprint(String model) async {
-    final rows = await _database
-        .customSelect(
-          'SELECT fingerprint FROM $_metaTable WHERE model = ?',
-          variables: [Variable<String>(model)],
-        )
-        .get();
-
-    return rows.isEmpty ? null : rows.single.read<String>('fingerprint');
-  }
-
+  // The fingerprint is stored for diagnostics only ([_metaTable] is also the
+  // model registry [clearAll] relies on); table health is always established
+  // by diffing the physical columns, never by reading it back.
   Future<void> _saveFingerprint(LocalModelSchema model) {
     return _database.customStatement(
       'INSERT OR REPLACE INTO $_metaTable (model, fingerprint) VALUES (?, ?)',

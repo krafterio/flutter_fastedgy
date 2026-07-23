@@ -27,6 +27,7 @@ import 'offline/offline_api_model_engine.dart';
 import 'offline/filesystem_local_image_store.dart';
 import 'offline/drift_local_store.dart';
 import 'offline/conflict_store.dart';
+import 'offline/offline_context_params.dart';
 import 'offline/local_image_store.dart';
 import 'offline/local_store.dart';
 import 'offline/offline_database.dart';
@@ -227,6 +228,13 @@ Future<void> initializeFastEdgy({
   OfflineDatabase? offlineDb;
   OfflineDatabase sharedDb() =>
       offlineDb ??= OfflineDatabase.open(offlineDbName ?? 'data.db');
+
+  // Offline context registry: apps register resolvers providing the values
+  // of the params their resource paths declare (replica scoping, buffered
+  // writes).
+  if (offline && !hasService<OfflineContextParams>()) {
+    container.registerSingleton<OfflineContextParams>(OfflineContextParams());
+  }
 
   // LocalStore (opt-in): opened eagerly so offline reads work from the first
   // frame; cached records are purged on logout.

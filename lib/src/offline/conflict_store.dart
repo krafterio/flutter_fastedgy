@@ -18,6 +18,11 @@ import 'outbox.dart';
 /// equivalent write.
 class ConflictEntry {
   final String basePath;
+
+  /// Path param values of the originating operation (see
+  /// [PendingOperation.context]).
+  final Map<String, String> context;
+
   final Object recordId;
   final Map<String, dynamic> mine;
   final Map<String, dynamic>? base;
@@ -38,14 +43,21 @@ class ConflictEntry {
     required this.fields,
     required this.createdAt,
     required this.cache,
+    this.context = const {},
   });
 
   /// Stable per-record key: a fresh conflict on the same record replaces the
-  /// previous one rather than stacking.
+  /// previous one rather than stacking (record ids are server-global, so no
+  /// context is needed to disambiguate).
   String get key => '$basePath#$recordId';
 
   factory ConflictEntry.fromJson(Map<String, dynamic> json) => ConflictEntry(
     basePath: json['base_path'] as String,
+    context:
+        (json['context'] as Map?)?.map(
+          (key, value) => MapEntry('$key', '$value'),
+        ) ??
+        const {},
     recordId: json['record_id'] as Object,
     mine: (json['mine'] as Map).cast<String, dynamic>(),
     base: (json['base'] as Map?)?.cast<String, dynamic>(),
@@ -59,6 +71,7 @@ class ConflictEntry {
 
   Map<String, dynamic> toJson() => {
     'base_path': basePath,
+    'context': context,
     'record_id': recordId,
     'mine': mine,
     'base': base,

@@ -13,6 +13,7 @@ import '../logging/logger.dart';
 import '../storage/storage_downloader.dart';
 import 'image_mirror.dart';
 import 'local_image_store.dart';
+import 'offline_context_params.dart';
 import 'local_schema.dart';
 import 'local_store.dart';
 import 'offline_error.dart';
@@ -28,7 +29,20 @@ import 'sync_engine.dart';
 class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
   OfflineApiModelEngine(super.owner);
 
+  // Models whose replica is currently unusable (ensure failed), to log the
+  // network-only degradation once instead of on every call.
+  final Set<String> _replicaFailed = {};
+
   OfflineStores? get _stores => owner.offlineBindings as OfflineStores?;
+
+  // A replica read/write failing mid-session degrades the single operation
+  // (fallback cache or network result kept) instead of failing the caller -
+  // a broken local database must never take the app down.
+  void _warnReplicaFailure(String operation, Object error) {
+    getLogger(
+      'OfflineApiModelEngine',
+    ).warning('Replica $operation failed for "$cacheModel" - degraded: $error');
+  }
 
   LocalStore? get localStore =>
       _stores?.localStore ??
@@ -71,7 +85,10 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
 
   String get cacheModel => owner.cacheModel;
 
-  String get outboxBasePath => owner.outboxBasePath;
+  /// Context values captured when an operation is buffered.
+  Map<String, String> get outboxContext => hasService<OfflineContextParams>()
+      ? getService<OfflineContextParams>().contextFor(owner.basePath)
+      : const {};
 
   // syncFields override, else the model's own fields minus to-many relations.
   Future<List<String>?> _resolveSyncFields() async {
@@ -175,7 +192,8 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
         (id, createdAt) => PendingOperation(
           id: id,
           method: 'POST',
-          basePath: outboxBasePath,
+          basePath: owner.resolvedBasePath,
+          context: outboxContext,
           recordId: tempId,
           payload: payload.toJson(),
           createdAt: createdAt,
@@ -227,7 +245,8 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
         (opId, createdAt) => PendingOperation(
           id: opId,
           method: 'PATCH',
-          basePath: outboxBasePath,
+          basePath: owner.resolvedBasePath,
+          context: outboxContext,
           recordId: id,
           payload: payload.toJson(),
           createdAt: createdAt,
@@ -246,7 +265,7 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
   @override
   Future<void> delete(Object id, {ApiParams? params}) async {
     // Resolve the effective path up front: the temp-id branch below reads
-    // [outboxBasePath] without going through the network or _replicaContext.
+    // [resolvedBasePath] without going through the network or _replicaContext.
     await owner.resolvePath();
 
     // A temporary id never existed server-side: cancel locally without any
@@ -256,14 +275,19 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
     final temp = id is int && id < 0;
 
     if (temp && outbox != null) {
-      if (!await outbox!.cancelCreateFor(outboxBasePath, id)) {
+      if (!await outbox!.cancelCreateFor(
+        owner.resolvedBasePath,
+        id,
+        context: outboxContext,
+      )) {
         final cache = await _cacheContext();
 
         await outbox!.enqueue(
           (opId, createdAt) => PendingOperation(
             id: opId,
             method: 'DELETE',
-            basePath: outboxBasePath,
+            basePath: owner.resolvedBasePath,
+            context: outboxContext,
             recordId: id,
             createdAt: createdAt,
             cache: cache,
@@ -288,7 +312,11 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
 
       // Deleting a record that only exists as a pending offline create cancels
       // both operations.
-      if (!await outbox.cancelCreateFor(outboxBasePath, id)) {
+      if (!await outbox.cancelCreateFor(
+        owner.resolvedBasePath,
+        id,
+        context: outboxContext,
+      )) {
         final cache = await _cacheContext();
         final base = (await cachedGet(id))?.toJson();
 
@@ -296,7 +324,8 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
           (opId, createdAt) => PendingOperation(
             id: opId,
             method: 'DELETE',
-            basePath: outboxBasePath,
+            basePath: owner.resolvedBasePath,
+            context: outboxContext,
             recordId: id,
             createdAt: createdAt,
             base: base,
@@ -339,7 +368,9 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
     final pendingByRecord = <String, List<PendingOperation>>{};
 
     for (final operation in await outbox?.all() ?? const <PendingOperation>[]) {
-      if (operation.basePath == outboxBasePath && operation.recordId != null) {
+      if (operation.basePath == owner.resolvedBasePath &&
+          sameContext(operation.context, outboxContext) &&
+          operation.recordId != null) {
         pendingByRecord
             .putIfAbsent('${operation.recordId}', () => [])
             .add(operation);
@@ -527,9 +558,16 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
     final ctx = await _replicaContext();
 
     if (ctx != null) {
-      final records = await ctx.replica.store.getAll(ctx.model.name, ctx.scope);
+      try {
+        final records = await ctx.replica.store.getAll(
+          ctx.model.name,
+          ctx.scope,
+        );
 
-      return records.map(owner.fromJson).toList();
+        return records.map(owner.fromJson).toList();
+      } catch (error) {
+        _warnReplicaFailure('cached list read', error);
+      }
     }
 
     final store = localStore;
@@ -548,24 +586,28 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
     final limit = query?.limit ?? query?.size;
 
     if (ctx != null) {
-      final result = await ctx.replica.store.query(
-        ctx.schema,
-        ctx.model.name,
-        scope: ctx.scope,
-        scopeOf: owner.replicaScopeFor,
-        filter: query?.filter,
-        orderBy: query?.orderBy,
-        limit: limit,
-        offset: offset > 0 ? offset : null,
-      );
+      try {
+        final result = await ctx.replica.store.query(
+          ctx.schema,
+          ctx.model.name,
+          scope: ctx.scope,
+          scopeOf: (_) => ctx.scope,
+          filter: query?.filter,
+          orderBy: query?.orderBy,
+          limit: limit,
+          offset: offset > 0 ? offset : null,
+        );
 
-      return PaginationResult<T>(
-        items: result.records.map(owner.fromJson).toList(),
-        total: result.total,
-        limit: limit ?? result.total,
-        offset: offset,
-        totalPages: _totalPages(result.total, limit),
-      );
+        return PaginationResult<T>(
+          items: result.records.map(owner.fromJson).toList(),
+          total: result.total,
+          limit: limit ?? result.total,
+          offset: offset,
+          totalPages: _totalPages(result.total, limit),
+        );
+      } catch (error) {
+        _warnReplicaFailure('cached query', error);
+      }
     }
 
     final all = _applyOrderBy(await cachedList(), query?.orderBy);
@@ -588,13 +630,17 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
     final ctx = await _replicaContext();
 
     if (ctx != null) {
-      final record = await ctx.replica.store.getById(
-        ctx.model.name,
-        ctx.scope,
-        id,
-      );
+      try {
+        final record = await ctx.replica.store.getById(
+          ctx.model.name,
+          ctx.scope,
+          id,
+        );
 
-      return record == null ? null : owner.fromJson(record);
+        return record == null ? null : owner.fromJson(record);
+      } catch (error) {
+        _warnReplicaFailure('cached get', error);
+      }
     }
 
     final record = await localStore?.get(cacheModel, id);
@@ -696,38 +742,42 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
       final ctx = await _replicaContext();
 
       if (ctx != null) {
-        final merged = <Map<String, dynamic>>[];
+        try {
+          final merged = <Map<String, dynamic>>[];
 
-        for (final item in result.items) {
-          if (item.id == null) {
-            continue;
+          for (final item in result.items) {
+            if (item.id == null) {
+              continue;
+            }
+
+            final existing = await ctx.replica.store.getById(
+              ctx.model.name,
+              ctx.scope,
+              item.id!,
+            );
+            final record = {...?existing, ...item.toJson()};
+            merged.add(record);
+
+            if (mirror != null) {
+              changed.addAll(
+                mirror.changedPaths(existing, record, owner.syncImageFields),
+              );
+            }
           }
 
-          final existing = await ctx.replica.store.getById(
-            ctx.model.name,
-            ctx.scope,
-            item.id!,
-          );
-          final record = {...?existing, ...item.toJson()};
-          merged.add(record);
+          await ctx.replica.ensure(ctx.model.name);
+          await ctx.replica.store.upsertAll(ctx.model, ctx.scope, merged);
 
           if (mirror != null) {
-            changed.addAll(
-              mirror.changedPaths(existing, record, owner.syncImageFields),
+            await mirror.refresh(
+              ctx.imageNamespace,
+              await ctx.replica.store.getAll(ctx.model.name, ctx.scope),
+              owner.syncImageFields,
+              prefetchPaths: changed,
             );
           }
-        }
-
-        await ctx.replica.ensure(ctx.model.name);
-        await ctx.replica.store.upsertAll(ctx.model, ctx.scope, merged);
-
-        if (mirror != null) {
-          await mirror.refresh(
-            ctx.imageNamespace,
-            await ctx.replica.store.getAll(ctx.model.name, ctx.scope),
-            owner.syncImageFields,
-            prefetchPaths: changed,
-          );
+        } catch (error) {
+          _warnReplicaFailure('list mirroring', error);
         }
       } else if (localStore != null) {
         final store = localStore!;
@@ -789,27 +839,31 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
     final ctx = await _replicaContext();
 
     if (ctx != null) {
-      final existing = await ctx.replica.store.getById(
-        ctx.model.name,
-        ctx.scope,
-        id,
-      );
-      final merged = {...?existing, ...json};
-
-      await ctx.replica.ensure(ctx.model.name);
-      await ctx.replica.store.upsertAll(ctx.model, ctx.scope, [merged]);
-
-      if (mirror != null) {
-        await mirror.refresh(
-          ctx.imageNamespace,
-          await ctx.replica.store.getAll(ctx.model.name, ctx.scope),
-          owner.syncImageFields,
-          prefetchPaths: mirror.changedPaths(
-            existing,
-            merged,
-            owner.syncImageFields,
-          ),
+      try {
+        final existing = await ctx.replica.store.getById(
+          ctx.model.name,
+          ctx.scope,
+          id,
         );
+        final merged = {...?existing, ...json};
+
+        await ctx.replica.ensure(ctx.model.name);
+        await ctx.replica.store.upsertAll(ctx.model, ctx.scope, [merged]);
+
+        if (mirror != null) {
+          await mirror.refresh(
+            ctx.imageNamespace,
+            await ctx.replica.store.getAll(ctx.model.name, ctx.scope),
+            owner.syncImageFields,
+            prefetchPaths: mirror.changedPaths(
+              existing,
+              merged,
+              owner.syncImageFields,
+            ),
+          );
+        }
+      } catch (error) {
+        _warnReplicaFailure('record mirroring', error);
       }
 
       return;
@@ -857,12 +911,17 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
     final ctx = await _replicaContext();
 
     if (ctx != null) {
-      await ctx.replica.store.deleteById(ctx.model.name, ctx.scope, id);
-      await imageMirror?.refresh(
-        ctx.imageNamespace,
-        await ctx.replica.store.getAll(ctx.model.name, ctx.scope),
-        owner.syncImageFields,
-      );
+      try {
+        await ctx.replica.store.deleteById(ctx.model.name, ctx.scope, id);
+        await imageMirror?.refresh(
+          ctx.imageNamespace,
+          await ctx.replica.store.getAll(ctx.model.name, ctx.scope),
+          owner.syncImageFields,
+        );
+      } catch (error) {
+        _warnReplicaFailure('record removal', error);
+      }
+
       return;
     }
 
@@ -872,7 +931,7 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
 
   Future<_ReplicaContext?> _replicaContext() async {
     // Resolve the effective path once up front: every offline entry point
-    // funnels through here, so [outboxBasePath]/[resolvedBasePath] are correct
+    // funnels through here, so [resolvedBasePath] is correct
     // before any downstream read (enqueue, flush comparison, cache keys).
     await owner.resolvePath();
 
@@ -893,16 +952,38 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
     // The table must exist before any read: a never-synced model (fresh
     // install, dropped database) would otherwise crash the cached reads.
     // Memoized per model, so this is a one-time cost.
-    await replica.ensure(model);
+    //
+    // A local database failure must never take the app down: the engine
+    // degrades to network-only (as if the model was not replicated) and
+    // retries on later calls — the failure may be transient, and ensureModel
+    // self-repairs whatever a schema diff can detect.
+    try {
+      await replica.ensure(model);
+      _replicaFailed.remove(model);
+    } catch (error) {
+      if (_replicaFailed.add(model)) {
+        getLogger('OfflineApiModelEngine').severe(
+          'Replica unusable for "$model" - degrading to network-only: $error',
+        );
+      }
+
+      return null;
+    }
+
+    final scope = _replicaScope;
 
     return _ReplicaContext(
       replica: replica,
       schema: schema,
       model: modelSchema,
-      scope: owner.replicaScope,
-      imageNamespace: '$cacheModel@${owner.replicaScope}',
+      scope: scope,
+      imageNamespace: '$cacheModel@$scope',
     );
   }
+
+  String get _replicaScope => hasService<OfflineContextParams>()
+      ? getService<OfflineContextParams>().scopeOf(owner.basePath)
+      : '';
 
   Set<String> _imagePaths(Iterable<Map<String, dynamic>> records) => {
     for (final record in records)

@@ -72,16 +72,6 @@ abstract class ApiModel<T extends BaseModel<T>> {
 
   String get cacheModel => modelName ?? basePath;
 
-  /// Resolved path with `{workspace}` substituted by [replicaScope] — the base
-  /// path a buffered offline write replays against.
-  String get outboxBasePath => replicaScope.isEmpty
-      ? resolvedBasePath
-      : resolvedBasePath.replaceAll('{workspace}', replicaScope);
-
-  String get replicaScope => '';
-
-  String replicaScopeFor(String model) => replicaScope;
-
   /// X-Fields to mirror; null derives them from the metadata.
   List<String>? get syncFields => null;
 

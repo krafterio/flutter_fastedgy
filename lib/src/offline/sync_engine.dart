@@ -8,6 +8,7 @@ import 'dart:async';
 import '../api/api_model_engine.dart';
 import '../bus/bus.dart';
 import '../fetcher/client.dart';
+import 'offline_context_params.dart';
 import '../logging/logger.dart';
 import 'local_store.dart';
 import 'offline_error.dart';
@@ -195,7 +196,8 @@ class SyncEngine {
         while (cursor < operations.length &&
             segment.length < batchSize &&
             operations[cursor].method != 'POST' &&
-            operations[cursor].basePath == operation.basePath) {
+            operations[cursor].basePath == operation.basePath &&
+            sameContext(operations[cursor].context, operation.context)) {
           segment.add(operations[cursor]);
           cursor++;
         }
@@ -250,7 +252,10 @@ class SyncEngine {
   ) async {
     try {
       final response = await _fetcher.post(
-        operation.basePath,
+        OfflineContextParams.substituteWith(
+          operation.basePath,
+          operation.context,
+        ),
         _remapTempIds(operation.payload ?? const {}, idMap) as Map,
       );
       final record = (response.data as Map).cast<String, dynamic>();
@@ -311,7 +316,11 @@ class SyncEngine {
     late final List<dynamic> results;
 
     try {
-      final response = await _fetcher.post('$basePath/sync', {
+      final path = OfflineContextParams.substituteWith(
+        basePath,
+        segment.first.context,
+      );
+      final response = await _fetcher.post('$path/sync', {
         'operations': [
           for (final operation in segment)
             {
@@ -401,6 +410,7 @@ class SyncEngine {
               record != null) {
             final entry = ConflictEntry(
               basePath: basePath,
+              context: operation.context,
               recordId: idMap['${operation.recordId}'] ?? operation.recordId!,
               mine: operation.payload!,
               base: operation.base,
@@ -456,6 +466,7 @@ class SyncEngine {
           id: id,
           method: 'PATCH',
           basePath: entry.basePath,
+          context: entry.context,
           recordId: entry.recordId,
           payload: entry.mine,
           base: entry.server,
@@ -489,6 +500,7 @@ class SyncEngine {
         id: id,
         method: 'DELETE',
         basePath: operation.basePath,
+        context: operation.context,
         recordId: serverId,
         createdAt: createdAt,
         cache: operation.cache,

@@ -5,6 +5,7 @@
 
 import '../container/container.dart';
 import '../fetcher/client.dart';
+import '../logging/logger.dart';
 import '../metadata/metadata_provider.dart';
 import 'offline_error.dart';
 import 'replica.dart';
@@ -50,12 +51,20 @@ class ReferenceResolver {
     final replica = _replica;
 
     if (synchronizable && replica != null) {
-      await replica.ensure(model);
+      try {
+        await replica.ensure(model);
 
-      final local = await replica.store.getById(model, scope, id);
+        final local = await replica.store.getById(model, scope, id);
 
-      if (local != null) {
-        return local;
+        if (local != null) {
+          return local;
+        }
+      } catch (error) {
+        // A broken replica must not fail the resolution: fall through to the
+        // server fetch below.
+        getLogger('ReferenceResolver').warning(
+          'Replica lookup failed for "$model" - fetching from server: $error',
+        );
       }
     }
 

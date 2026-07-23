@@ -244,4 +244,116 @@ void main() {
       expect(await store.getAll('user', 'acme'), isEmpty);
     });
   });
+
+  group('ReplicaStore self-repair', () {
+    late OfflineDatabase db;
+    late ReplicaStore repairStore;
+
+    LocalModelSchema projectSchema() => const LocalModelSchema(
+      name: 'project',
+      apiName: 'projects',
+      fields: {
+        'id': LocalFieldSchema(name: 'id', type: 'integer'),
+        'name': LocalFieldSchema(name: 'name', type: 'char'),
+        'tags': LocalFieldSchema(
+          name: 'tags',
+          type: 'many2many',
+          target: 'tag',
+        ),
+      },
+    );
+
+    setUp(() async {
+      db = OfflineDatabase(NativeDatabase.memory());
+      repairStore = ReplicaStore(databaseOpener: () => db);
+      await repairStore.open();
+    });
+
+    tearDown(() => repairStore.close());
+
+    test('repairs an older system-column layout even when the fingerprint '
+        'matches', () async {
+      final schema = _userSchema();
+      // A database written by an older storage layout: ws_scope/data system
+      // columns, and a stored fingerprint that matches anyway (it only
+      // covers the model's fields).
+      await db.customStatement(
+        'CREATE TABLE "user" (ws_scope CHAR, data JSON, "id" INTEGER, '
+        '"name" TEXT, "active" INTEGER, "workspace" INTEGER, '
+        'PRIMARY KEY (ws_scope, id))',
+      );
+      await db.customStatement(
+        'INSERT INTO _replica_models (model, fingerprint) VALUES (?, ?)',
+        ['user', schema.fingerprint],
+      );
+
+      final migration = await repairStore.ensureModel(schema);
+
+      expect(migration.rebuilt, isTrue);
+      expect(migration.needsSync, isTrue);
+
+      await repairStore.upsertAll(schema, 'acme', [
+        {'id': 1, 'name': 'Ada', 'active': true},
+      ]);
+      expect(await repairStore.getAll('user', 'acme'), hasLength(1));
+    });
+
+    test('bridges old r_-prefixed tables and repairs their layout', () async {
+      final schema = _userSchema();
+      await db.customStatement(
+        'CREATE TABLE "r_user" (ws_scope CHAR, data JSON, "id" INTEGER, '
+        '"name" TEXT, "active" INTEGER, "workspace" INTEGER, '
+        'PRIMARY KEY (ws_scope, id))',
+      );
+      await db.customStatement(
+        'INSERT INTO _replica_models (model, fingerprint) VALUES (?, ?)',
+        ['user', schema.fingerprint],
+      );
+
+      final migration = await repairStore.ensureModel(schema);
+
+      expect(migration.rebuilt, isTrue);
+
+      final tables =
+          (await db
+                  .customSelect(
+                    "SELECT name FROM sqlite_master WHERE type = 'table' "
+                    "AND name IN ('user', 'r_user')",
+                  )
+                  .get())
+              .map((row) => row.read<String>('name'))
+              .toList();
+      expect(tables, ['user']);
+    });
+
+    test('repairs pivot tables from an older layout', () async {
+      final schema = projectSchema();
+      await db.customStatement(
+        'CREATE TABLE "project__tags" (ws_scope CHAR, parent_id INTEGER, '
+        'target_id INTEGER, PRIMARY KEY (ws_scope, parent_id, target_id))',
+      );
+
+      await repairStore.ensureModel(schema);
+
+      final columns =
+          (await db.customSelect('PRAGMA table_info("project__tags")').get())
+              .map((row) => row.read<String>('name'))
+              .toList();
+      expect(columns, ['_workspace', 'parent_id', 'target_id']);
+
+      await repairStore.upsertAll(schema, 'acme', [
+        {
+          'id': 1,
+          'name': 'Blum',
+          'tags': [
+            {'id': 5},
+          ],
+        },
+      ]);
+      expect(
+        (await repairStore.getById('project', 'acme', 1))?['name'],
+        'Blum',
+      );
+    });
+  });
 }

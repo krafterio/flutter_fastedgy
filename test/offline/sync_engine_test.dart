@@ -277,6 +277,63 @@ void main() {
       expect(synced?.getBool('_offline_pending'), isNull);
     });
 
+    test('replays against the context captured at enqueue time', () async {
+      adapter.routes['POST /acme/items'] = (options) => {
+        'id': 7,
+        'name': 'Draft',
+      };
+
+      // Buffered under acme; by flush time the current context could point
+      // anywhere else - the stored context must win.
+      await outbox.enqueue(
+        (id, createdAt) => PendingOperation(
+          id: id,
+          method: 'POST',
+          basePath: '/{workspace}/items',
+          context: {'workspace': 'acme'},
+          recordId: -1,
+          payload: {'name': 'Draft'},
+          createdAt: createdAt,
+          cache: const OutboxCacheContext(kind: 'json', namespace: '/items'),
+        ),
+      );
+
+      await engine.flush();
+
+      expect(adapter.calls, contains('POST /acme/items'));
+      expect(await outbox.all(), isEmpty);
+    });
+
+    test('never batches operations of different contexts together', () async {
+      for (final slug in ['acme', 'globex']) {
+        adapter.routes['POST /$slug/items/sync'] = (options) => {
+          'results': [
+            {'status': 'applied'},
+          ],
+        };
+        await outbox.enqueue(
+          (id, createdAt) => PendingOperation(
+            id: id,
+            method: 'PATCH',
+            basePath: '/{workspace}/items',
+            context: {'workspace': slug},
+            recordId: 1,
+            payload: {'name': slug},
+            createdAt: createdAt,
+            cache: const OutboxCacheContext(kind: 'json', namespace: '/items'),
+          ),
+        );
+      }
+
+      await engine.flush();
+
+      expect(
+        adapter.calls,
+        containsAll(['POST /acme/items/sync', 'POST /globex/items/sync']),
+      );
+      expect(await outbox.all(), isEmpty);
+    });
+
     test('remaps batched operations targeting the temporary id', () async {
       adapter.offline = true;
       final created = await api.create(_Item({'name': 'Draft'}));

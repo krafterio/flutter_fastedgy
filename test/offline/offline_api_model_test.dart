@@ -52,8 +52,9 @@ class _ItemApi extends ApiModel<_Item> {
     required Fetcher fetcher,
     required LocalStore localStore,
     Outbox? outbox,
+    String basePath = '/items',
   }) : super(
-         '/items',
+         basePath,
          fetcher: fetcher,
          offlineBindings: OfflineStores(localStore: localStore, outbox: outbox),
        );
@@ -66,20 +67,6 @@ class _ItemApi extends ApiModel<_Item> {
 
   @override
   _Item fromJson(Map<String, dynamic> json) => _Item(json);
-}
-
-class _ScopedItemApi extends _ItemApi {
-  final String scope;
-
-  _ScopedItemApi({
-    required super.fetcher,
-    required super.localStore,
-    required this.scope,
-    super.outbox,
-  });
-
-  @override
-  String get outboxBasePath => '/$scope/items';
 }
 
 class _ScriptedAdapter implements HttpClientAdapter {
@@ -289,46 +276,63 @@ void main() {
       expect((await bufferedApi.cachedGet(2))?.name, 'Kept');
     });
 
-    test(
-      'operations are enqueued with the resolved outbox base path',
-      () async {
-        final scoped = _ScopedItemApi(
-          fetcher: fetcher,
-          localStore: store,
-          outbox: outbox,
-          scope: 'ws-a',
+    test('operations are enqueued with the unresolved path and the captured '
+        'context', () async {
+      final tenant = _TenantResolver()..slug = 'ws-a';
+      if (!hasService<OfflineContextParams>()) {
+        container.registerSingleton<OfflineContextParams>(
+          OfflineContextParams(),
         );
+      }
+      getService<OfflineContextParams>().register(tenant);
+      addTearDown(() => getService<OfflineContextParams>().unregister(tenant));
 
-        adapter.offline = true;
-        await store.put('/items', 1, {'id': 1, 'name': 'One'});
-        await scoped.update(1, _Item({'name': 'Mine'}));
-
-        expect((await outbox.all()).single.basePath, '/ws-a/items');
-      },
-    );
-
-    test('sync only considers pending writes of its own scope', () async {
-      final scopeA = _ScopedItemApi(
+      final scoped = _ItemApi(
         fetcher: fetcher,
         localStore: store,
         outbox: outbox,
-        scope: 'ws-a',
+        basePath: '/{workspace}/items',
       );
 
-      // A pending delete buffered in ws-a for record 9.
       adapter.offline = true;
-      await store.put('/items', 9, {'id': 9, 'name': 'Nine'});
-      await scopeA.delete(9);
+      await scoped.update(1, _Item({'name': 'Mine'}));
 
-      // Record 9 also exists in the plain namespace: syncing it must NOT
-      // replay ws-a's pending delete.
+      final operation = (await outbox.all()).single;
+      expect(operation.basePath, '/{workspace}/items');
+      expect(operation.context, {'workspace': 'ws-a'});
+    });
+
+    test('sync only considers pending writes of its own context', () async {
+      final tenant = _TenantResolver()..slug = 'ws-a';
+      if (!hasService<OfflineContextParams>()) {
+        container.registerSingleton<OfflineContextParams>(
+          OfflineContextParams(),
+        );
+      }
+      getService<OfflineContextParams>().register(tenant);
+      addTearDown(() => getService<OfflineContextParams>().unregister(tenant));
+
+      final scoped = _ItemApi(
+        fetcher: fetcher,
+        localStore: store,
+        outbox: outbox,
+        basePath: '/{workspace}/items',
+      );
+
+      // A pending delete buffered under ws-a for record 9.
+      adapter.offline = true;
+      await scoped.delete(9);
+
+      // The same record pulled while ws-b is current: ws-a's pending delete
+      // must NOT be replayed over it.
+      tenant.slug = 'ws-b';
       adapter.offline = false;
-      adapter.routes['GET /items'] = _paginated([
+      adapter.routes['GET /{workspace}/items'] = _paginated([
         {'id': 9, 'name': 'Nine', 'updated_at': 't2'},
       ]);
-      await bufferedApi.sync();
+      await scoped.sync();
 
-      expect((await bufferedApi.cachedGet(9))?.name, 'Nine');
+      expect((await scoped.cachedGet(9))?.name, 'Nine');
       expect(await outbox.all(), hasLength(1));
     });
 
@@ -634,16 +638,39 @@ void main() {
   group('ApiModel replicated mode', replicatedModeTests);
 }
 
-class _ReplicatedItemApi extends ApiModel<_Item> {
-  final String scope;
+class _TenantResolver implements OfflineContextParamsResolver {
+  String? slug = 'acme';
 
+  @override
+  Map<String, Object?> resolve() => {'workspace': slug};
+}
+
+/// Test double of the app-side prefix interceptor: request substitution is
+/// the app's job, the framework only carries the offline context.
+class _TenantPrefixInterceptor extends Interceptor {
+  final _TenantResolver tenant;
+
+  _TenantPrefixInterceptor(this.tenant);
+
+  @override
+  void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
+    final slug = tenant.slug;
+
+    if (slug != null && options.path.contains('/{workspace}')) {
+      options.path = options.path.replaceAll('/{workspace}', '/$slug');
+    }
+
+    handler.next(options);
+  }
+}
+
+class _ReplicatedItemApi extends ApiModel<_Item> {
   _ReplicatedItemApi({
     required Fetcher fetcher,
     required Replica replica,
     required LocalStore localStore,
-    this.scope = 'acme',
   }) : super(
-         '',
+         '/{workspace}',
          modelName: 'item',
          fetcher: fetcher,
          offlineBindings: OfflineStores(
@@ -651,9 +678,6 @@ class _ReplicatedItemApi extends ApiModel<_Item> {
            replica: replica,
          ),
        );
-
-  @override
-  String get replicaScope => scope;
 
   @override
   List<String>? get syncFields => const ['id', 'name', 'tag', 'qty'];
@@ -684,11 +708,15 @@ void replicatedModeTests() {
   late ReplicaStore replicaStore;
   late Replica replica;
   late _ReplicatedItemApi api;
+  late _TenantResolver tenant;
 
   Fetcher fetcher() => Fetcher.create(
     dio: Dio(BaseOptions(baseUrl: 'http://localhost'))
       ..httpClientAdapter = adapter,
     bus: getService<Bus>(),
+    customInterceptors: [
+      InterceptorConfig(_TenantPrefixInterceptor(tenant), priority: 100),
+    ],
     enableAuth: false,
     enableTimezone: false,
     enableRefreshToken: false,
@@ -709,6 +737,11 @@ void replicatedModeTests() {
     await store.open();
     await replicaStore.open();
     replica = Replica.withSchema(replicaStore, _itemSchema);
+    tenant = _TenantResolver();
+    if (!hasService<OfflineContextParams>()) {
+      container.registerSingleton<OfflineContextParams>(OfflineContextParams());
+    }
+    getService<OfflineContextParams>().register(tenant);
     api = _ReplicatedItemApi(
       fetcher: fetcher(),
       replica: replica,
@@ -717,6 +750,7 @@ void replicatedModeTests() {
   });
 
   tearDown(() async {
+    getService<OfflineContextParams>().unregister(tenant);
     await store.close();
     await replicaStore.close();
   });
@@ -728,8 +762,30 @@ void replicatedModeTests() {
     expect(await api.cachedGet(1), isNull);
   });
 
+  test('a broken replica database degrades instead of crashing', () async {
+    adapter.routes['GET /acme/items'] = _paginated([
+      {'id': 1, 'name': 'One', 'qty': 3},
+    ]);
+    await api.sync();
+    expect(await api.cachedList(), hasLength(1));
+
+    // Kill the replica database mid-session: every replica access throws
+    // from now on.
+    await replicaStore.close();
+
+    // Cached reads degrade to the fallback cache (empty here) instead of
+    // throwing…
+    expect(await api.cachedList(), isEmpty);
+    expect(await api.cachedGet(1), isNull);
+
+    // …and network reads still succeed, skipping the broken mirroring.
+    final result = await api.list();
+    expect(result.items, hasLength(1));
+    expect(result.items.single.name, 'One');
+  });
+
   test('sync mirrors the collection into the scoped replica table', () async {
-    adapter.routes['GET /items'] = _paginated([
+    adapter.routes['GET /acme/items'] = _paginated([
       {'id': 1, 'name': 'One', 'qty': 3},
       {'id': 2, 'name': 'Two', 'qty': 8},
       {'id': 3, 'name': 'Three', 'qty': 12},
@@ -742,28 +798,24 @@ void replicatedModeTests() {
   });
 
   test('scopes are isolated per workspace', () async {
-    adapter.routes['GET /items'] = _paginated([
+    adapter.routes['GET /acme/items'] = _paginated([
       {'id': 1, 'name': 'Acme item', 'qty': 1},
     ]);
     await api.sync();
 
-    final globexApi = _ReplicatedItemApi(
-      fetcher: fetcher(),
-      replica: replica,
-      localStore: store,
-      scope: 'globex',
-    );
-    adapter.routes['GET /items'] = _paginated([
+    tenant.slug = 'globex';
+    adapter.routes['GET /globex/items'] = _paginated([
       {'id': 9, 'name': 'Globex item', 'qty': 2},
     ]);
-    await globexApi.sync();
+    await api.sync();
 
+    expect((await api.cachedList()).single.name, 'Globex item');
+    tenant.slug = 'acme';
     expect((await api.cachedList()).single.name, 'Acme item');
-    expect((await globexApi.cachedList()).single.name, 'Globex item');
   });
 
   test('offline queries evaluate filters with server parity', () async {
-    adapter.routes['GET /items'] = _paginated([
+    adapter.routes['GET /acme/items'] = _paginated([
       {'id': 1, 'name': 'Bravo', 'qty': 3},
       {'id': 2, 'name': 'Alpha', 'qty': 8},
       {'id': 3, 'name': 'Charlie', 'qty': 12},
@@ -786,7 +838,7 @@ void replicatedModeTests() {
   test(
     'a filtered empty result does not rethrow once the scope is synced',
     () async {
-      adapter.routes['GET /items'] = _paginated([
+      adapter.routes['GET /acme/items'] = _paginated([
         {'id': 1, 'name': 'One', 'qty': 3},
       ]);
       await api.sync();
@@ -802,31 +854,25 @@ void replicatedModeTests() {
   );
 
   test('an unsynced scope rethrows offline errors', () async {
-    adapter.routes['GET /items'] = _paginated([
+    adapter.routes['GET /acme/items'] = _paginated([
       {'id': 1, 'name': 'One', 'qty': 3},
     ]);
     await api.sync();
 
-    final globexApi = _ReplicatedItemApi(
-      fetcher: fetcher(),
-      replica: replica,
-      localStore: store,
-      scope: 'globex',
-    );
-
+    tenant.slug = 'globex';
     adapter.offline = true;
 
-    await expectLater(globexApi.list(), throwsA(isA<NetworkError>()));
+    await expectLater(api.list(), throwsA(isA<NetworkError>()));
   });
 
   test('list deep-merges records without pruning the scope', () async {
-    adapter.routes['GET /items'] = _paginated([
+    adapter.routes['GET /acme/items'] = _paginated([
       {'id': 1, 'name': 'One', 'tag': 'keep', 'qty': 3},
       {'id': 2, 'name': 'Two', 'qty': 8},
     ]);
     await api.sync();
 
-    adapter.routes['GET /items'] = (options) => _page([
+    adapter.routes['GET /acme/items'] = (options) => _page([
       {'id': 1, 'name': 'Renamed'},
     ]);
     await api.list(query: const ListQuery(limit: 1));
@@ -838,19 +884,19 @@ void replicatedModeTests() {
   });
 
   test('update and delete are routed to the replica scope', () async {
-    adapter.routes['GET /items'] = _paginated([
+    adapter.routes['GET /acme/items'] = _paginated([
       {'id': 1, 'name': 'One', 'qty': 3},
     ]);
     await api.sync();
 
-    adapter.routes['PATCH /items/1'] = (options) => {
+    adapter.routes['PATCH /acme/items/1'] = (options) => {
       'id': 1,
       'name': 'Patched',
     };
     await api.update(1, _Item({'name': 'Patched'}));
     expect((await api.cachedGet(1))?.name, 'Patched');
 
-    adapter.routes['DELETE /items/1'] = (options) => {};
+    adapter.routes['DELETE /acme/items/1'] = (options) => {};
     await api.delete(1);
     expect(await api.cachedGet(1), isNull);
   });
