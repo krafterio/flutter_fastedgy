@@ -275,7 +275,7 @@ Future<void> initializeFastEdgy({
     );
     container.registerSingleton<ReferenceResolver>(ReferenceResolver());
     getService<Bus>().on<AuthLogoutEvent>().listen(
-      (_) => replicaStore.clearAll(),
+      (_) => getService<Replica>().clearAll(),
     );
   }
 

@@ -57,4 +57,13 @@ class Replica {
 
     return migration.needsSync;
   }
+
+  /// Purge every replicated model (logout): drops the tables and forgets the
+  /// ensured models and the materialized schema in one move — a purge
+  /// without the forget would leave [ensure] answering for dropped tables.
+  Future<void> clearAll() async {
+    await store.clearAll();
+    _ensured.clear();
+    _schema = null;
+  }
 }

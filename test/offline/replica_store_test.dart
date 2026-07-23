@@ -243,6 +243,28 @@ void main() {
       expect(migration.created, isTrue);
       expect(await store.getAll('user', 'acme'), isEmpty);
     });
+
+    test('a reset replica recreates the tables after a logout purge', () async {
+      final replica = Replica.withSchema(
+        store,
+        LocalSchema({'user': _userSchema()}),
+      );
+
+      expect(await replica.ensure('user'), isTrue);
+      await store.upsertAll(_userSchema(), 'acme', [
+        {'id': 1, 'name': 'Ada'},
+      ]);
+
+      // Logout: drops the tables and forgets the ensured models together -
+      // a partial purge leaves ensure() answering for dropped tables.
+      await replica.clearAll();
+
+      expect(await replica.ensure('user'), isTrue);
+      await store.upsertAll(_userSchema(), 'acme', [
+        {'id': 2, 'name': 'Grace'},
+      ]);
+      expect(await store.getAll('user', 'acme'), hasLength(1));
+    });
   });
 
   group('ReplicaStore self-repair', () {
