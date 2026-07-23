@@ -21,6 +21,7 @@ export 'outbox.dart';
 export 'reference_resolver.dart';
 export 'replica.dart';
 export 'replica_query.dart';
+export 'replica_search.dart';
 export 'replica_store.dart';
 export 'sync_engine.dart';
 export 'sync_status.dart';

@@ -11,6 +11,7 @@ import 'filter_ast.dart';
 import 'local_schema.dart';
 import 'offline_database.dart';
 import 'replica_query.dart';
+import 'replica_search.dart';
 
 /// Outcome of [ReplicaStore.ensureModel].
 class ReplicaMigration {
@@ -68,12 +69,28 @@ class ReplicaStore {
     }
 
     final db = _databaseOpener();
+    // The internal DELETE of INSERT OR REPLACE only fires the FTS delete
+    // triggers under recursive_triggers — without it the index drifts.
+    await db.customStatement('PRAGMA recursive_triggers = ON');
     await renameTableIfNeeded(db, 'replica_models', _metaTable);
     await db.customStatement(
       'CREATE TABLE IF NOT EXISTS $_metaTable ('
       'model TEXT NOT NULL PRIMARY KEY, '
-      'fingerprint TEXT NOT NULL)',
+      'fingerprint TEXT NOT NULL, '
+      'search_config TEXT)',
     );
+    final metaColumns = await db
+        .customSelect('PRAGMA table_info($_metaTable)')
+        .get();
+
+    if (!metaColumns.any(
+      (row) => row.read<String>('name') == 'search_config',
+    )) {
+      await db.customStatement(
+        'ALTER TABLE $_metaTable ADD COLUMN search_config TEXT',
+      );
+    }
+
     _db = db;
   }
 
@@ -106,6 +123,16 @@ class ReplicaStore {
     }
 
     final table = _tableName(model.name);
+    final migration = await _ensureTable(model, table);
+    await _ensureSearch(model, table, fresh: migration.needsSync);
+
+    return migration;
+  }
+
+  Future<ReplicaMigration> _ensureTable(
+    LocalModelSchema model,
+    String table,
+  ) async {
     await renameTableIfNeeded(_database, 'r_$table', table);
     final expected = _expectedColumns(model);
     final existing = await _tableInfo(table);
@@ -386,7 +413,11 @@ class ReplicaStore {
     await _database.transaction(() async {
       for (final table in tables) {
         if (models.contains(table) ||
-            models.any((model) => table.startsWith('${model}__'))) {
+            models.any(
+              (model) =>
+                  table.startsWith('${model}__') ||
+                  table == ftsTableName(model),
+            )) {
           await _database.customStatement('DROP TABLE IF EXISTS "$table"');
         }
       }
@@ -405,6 +436,9 @@ class ReplicaStore {
 
     final columns = model.columns.toList();
     final references = model.references.toList();
+    final search = model.searchable
+        ? computeSearchValues(model, record)
+        : const <String, String>{};
     final names = [
       '_workspace',
       '_raw',
@@ -413,6 +447,7 @@ class ReplicaStore {
         '"${field.referenceModelColumn}"',
         '"${field.referenceIdColumn}"',
       ],
+      ...search.keys.map((column) => '"$column"'),
     ];
     final values = <Object?>[
       scope,
@@ -422,6 +457,7 @@ class ReplicaStore {
         (record[field.name] as Map?)?[r'$model'],
         (record[field.name] as Map?)?['id'],
       ],
+      ...search.values,
     ];
     final placeholders = List.filled(names.length, '?').join(', ');
 
@@ -561,6 +597,169 @@ class ReplicaStore {
     }
   }
 
+  /// Create or self-repair the fulltext machinery of [model]: the FTS5 index
+  /// table, its sync triggers and the derived `search_value_fts_*` columns.
+  ///
+  /// Same philosophy as [ensureModel], applied to derived data (never a
+  /// resync): the physical DDL (fts table + triggers, read back verbatim
+  /// from `sqlite_master`) is diffed against the expected one, the stored
+  /// search configuration decides a local recompute of the derived columns
+  /// from `_raw`, and an FTS5 `integrity-check` (index versus content)
+  /// catches drift left by older layouts — any anomaly ends in the same
+  /// idempotent repair: recompute if needed, then reindex with `rebuild`.
+  ///
+  /// [fresh] skips the recompute and the integrity check when the table was
+  /// just created or rebuilt (it is empty).
+  Future<void> _ensureSearch(
+    LocalModelSchema model,
+    String table, {
+    required bool fresh,
+  }) async {
+    final fts = ftsTableName(table);
+    final existingSql = await _masterSql('table', fts);
+    final existingTriggers = await _ftsTriggerInfo(table);
+
+    if (!model.searchable) {
+      for (final name in existingTriggers.keys) {
+        await _database.customStatement('DROP TRIGGER IF EXISTS "$name"');
+      }
+
+      if (existingSql != null) {
+        await _database.customStatement('DROP TABLE IF EXISTS "$fts"');
+      }
+
+      await _saveSearchConfig(model.name, null);
+      return;
+    }
+
+    final expectedSql = ftsCreateSql(table);
+    final expectedTriggers = ftsTriggerSqls(table);
+    final structureOk =
+        existingSql == expectedSql &&
+        existingTriggers.length == expectedTriggers.length &&
+        expectedTriggers.entries.every(
+          (entry) => existingTriggers[entry.key] == entry.value,
+        );
+    final configOk =
+        await _loadSearchConfig(model.name) == model.searchFingerprint;
+
+    if (structureOk && configOk) {
+      if (fresh) {
+        return;
+      }
+
+      try {
+        await _database.customStatement(
+          'INSERT INTO "$fts"("$fts", rank) VALUES (\'integrity-check\', 1)',
+        );
+        return;
+      } catch (_) {
+        // The check IS the observation: it only throws when the index does
+        // not match the content (or on a pre-3.42 SQLite, where the harmless
+        // fallback is to reindex). Repairing here never destroys data — the
+        // whole index derives from columns that stay in place.
+      }
+    }
+
+    for (final name in existingTriggers.keys) {
+      await _database.customStatement('DROP TRIGGER IF EXISTS "$name"');
+    }
+
+    if (existingSql != null) {
+      await _database.customStatement('DROP TABLE IF EXISTS "$fts"');
+    }
+
+    if (!configOk && !fresh) {
+      await _recomputeSearchColumns(model, table);
+    }
+
+    await _database.customStatement(expectedSql);
+
+    for (final sql in expectedTriggers.values) {
+      await _database.customStatement(sql);
+    }
+
+    await _database.customStatement(
+      'INSERT INTO "$fts"("$fts") VALUES (\'rebuild\')',
+    );
+    await _saveSearchConfig(model.name, model.searchFingerprint);
+  }
+
+  /// Recompute the derived search columns of every row from its `_raw`
+  /// payload — the local, lossless repair when the search configuration
+  /// changed. Only called with the FTS triggers dropped.
+  Future<void> _recomputeSearchColumns(
+    LocalModelSchema model,
+    String table,
+  ) async {
+    final rows = await _database
+        .customSelect('SELECT rowid AS rid, _raw FROM "$table"')
+        .get();
+
+    await _database.transaction(() async {
+      for (final row in rows) {
+        final values = computeSearchValues(
+          model,
+          _decode(row.read<String>('_raw')),
+        );
+
+        await _database.customStatement(
+          'UPDATE "$table" SET '
+          '${values.keys.map((column) => '"$column" = ?').join(', ')} '
+          'WHERE rowid = ?',
+          [...values.values, row.read<int>('rid')],
+        );
+      }
+    });
+  }
+
+  Future<String?> _masterSql(String type, String name) async {
+    final rows = await _database
+        .customSelect(
+          'SELECT sql FROM sqlite_master WHERE type = ? AND name = ?',
+          variables: [Variable<String>(type), Variable<String>(name)],
+        )
+        .get();
+
+    return rows.isEmpty ? null : rows.single.read<String?>('sql');
+  }
+
+  /// The FTS sync triggers existing on [table], name → verbatim DDL.
+  Future<Map<String, String>> _ftsTriggerInfo(String table) async {
+    final rows = await _database
+        .customSelect(
+          'SELECT name, sql FROM sqlite_master '
+          "WHERE type = 'trigger' AND tbl_name = ?",
+          variables: [Variable<String>(table)],
+        )
+        .get();
+    final prefix = '${ftsTableName(table)}_';
+
+    return {
+      for (final row in rows)
+        if (row.read<String>('name').startsWith(prefix))
+          row.read<String>('name'): row.read<String?>('sql') ?? '',
+    };
+  }
+
+  Future<String?> _loadSearchConfig(String model) async {
+    final rows = await _database
+        .customSelect(
+          'SELECT search_config FROM $_metaTable WHERE model = ?',
+          variables: [Variable<String>(model)],
+        )
+        .get();
+
+    return rows.isEmpty ? null : rows.single.read<String?>('search_config');
+  }
+
+  Future<void> _saveSearchConfig(String model, String? config) {
+    return _database.customStatement(
+      'UPDATE $_metaTable SET search_config = ? WHERE model = ?',
+      [config, model],
+    );
+  }
+
   Map<String, String> _expectedColumns(LocalModelSchema model) => {
     '_workspace': 'CHAR',
     '_raw': 'JSON',
@@ -569,6 +768,8 @@ class ReplicaStore {
       field.referenceModelColumn: 'TEXT',
       field.referenceIdColumn: 'INTEGER',
     },
+    if (model.searchable)
+      for (final column in searchColumns) column: 'TEXT',
   };
 
   /// Pivot table persisting the pairs of a direct m2m [field] of [model].
@@ -594,7 +795,8 @@ class ReplicaStore {
   // by diffing the physical columns, never by reading it back.
   Future<void> _saveFingerprint(LocalModelSchema model) {
     return _database.customStatement(
-      'INSERT OR REPLACE INTO $_metaTable (model, fingerprint) VALUES (?, ?)',
+      'INSERT INTO $_metaTable (model, fingerprint) VALUES (?, ?) '
+      'ON CONFLICT(model) DO UPDATE SET fingerprint = excluded.fingerprint',
       [model.name, model.fingerprint],
     );
   }

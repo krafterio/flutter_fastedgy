@@ -86,6 +86,12 @@ class MetadataModel {
   final String label;
   final String labelPlural;
   final bool searchable;
+
+  /// Source fields aggregated into the fulltext search field (server-driven).
+  final List<String> searchableFields;
+
+  /// Name of the fulltext search field (e.g. `search_value`), when searchable.
+  final String? searchField;
   final bool sortable;
   final String? sortableField;
 
@@ -101,6 +107,8 @@ class MetadataModel {
     required this.searchable,
     required this.sortable,
     required this.fields,
+    this.searchableFields = const [],
+    this.searchField,
     this.sortableField,
     this.synchronizable = false,
   });
@@ -119,6 +127,9 @@ class MetadataModel {
       label: json['label'] as String,
       labelPlural: json['label_plural'] as String,
       searchable: json['searchable'] as bool,
+      searchableFields:
+          (json['searchable_fields'] as List?)?.cast<String>() ?? const [],
+      searchField: json['search_field'] as String?,
       sortable: json['sortable'] as bool,
       sortableField: json['sortable_field'] as String?,
       synchronizable: json['synchronizable'] as bool? ?? false,
@@ -134,6 +145,8 @@ class MetadataModel {
       'label': label,
       'label_plural': labelPlural,
       'searchable': searchable,
+      'searchable_fields': searchableFields,
+      'search_field': searchField,
       'sortable': sortable,
       'sortable_field': sortableField,
       'synchronizable': synchronizable,

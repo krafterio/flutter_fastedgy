@@ -45,10 +45,13 @@ class LocalFieldSchema {
   };
 
   /// Whether this field materializes as a table column (scalars and m2o ids;
-  /// inverse and generic relations are resolved through other tables).
+  /// inverse and generic relations are resolved through other tables). The
+  /// server fulltext field is metadata-only (excluded from API payloads):
+  /// locally it materializes as the derived `search_value_fts_*` columns.
   bool get isColumn =>
-      relationKind == LocalRelationKind.none ||
-      relationKind == LocalRelationKind.many2one;
+      type != 'fulltext' &&
+      (relationKind == LocalRelationKind.none ||
+          relationKind == LocalRelationKind.many2one);
 
   /// SQLite column affinity of this field.
   String get sqlAffinity => switch (type) {
@@ -64,6 +67,21 @@ class LocalFieldSchema {
   };
 }
 
+/// Search weight of a source field, mirroring the server's
+/// `SEARCH_WEIGHT_FIELD_MAP` (`fastedgy/orm/fields/field_fulltext.py`) keyed
+/// by metadata type name. Explicit per-field weight overrides
+/// (`searchable="A"`) are not exposed by the metadata — such fields fall back
+/// to their type weight, which only shifts local ranking, never matching.
+String searchWeightForType(String type) => switch (type) {
+  'char' => 'a',
+  'text' => 'b',
+  // 'h_t_m_l' is what the server's snake_case fallback currently emits for
+  // HTMLField; 'html' is the curated name once FILTER_FIELD_TYPE_NAME_MAP
+  // gains an entry for it.
+  'html' || 'h_t_m_l' => 'c',
+  _ => 'd',
+};
+
 /// Local mirror of a server model schema, derived from the Metadata
 /// Generator.
 class LocalModelSchema {
@@ -71,11 +89,37 @@ class LocalModelSchema {
   final String apiName;
   final Map<String, LocalFieldSchema> fields;
 
+  /// Name of the server fulltext field (e.g. `search_value`). The field is
+  /// excluded from API payloads and metadata fields: locally it materializes
+  /// as the `search_value_fts_*` derived columns and their FTS5 index.
+  final String? searchField;
+
+  /// Fulltext source fields → search weight (`a`–`d`).
+  final Map<String, String> searchWeights;
+
   const LocalModelSchema({
     required this.name,
     required this.apiName,
     required this.fields,
+    this.searchField,
+    this.searchWeights = const {},
   });
+
+  bool get searchable => searchField != null && searchWeights.isNotEmpty;
+
+  /// Fingerprint of the fulltext configuration: any change triggers a local
+  /// recompute of the derived search columns from `_raw` (never a resync).
+  String get searchFingerprint {
+    if (!searchable) {
+      return '';
+    }
+
+    final sources =
+        searchWeights.entries.map((e) => '${e.key}=${e.value}').toList()
+          ..sort();
+
+    return '$searchField:${sources.join(',')}';
+  }
 
   Iterable<LocalFieldSchema> get columns =>
       fields.values.where((field) => field.isColumn);
@@ -148,6 +192,12 @@ class LocalSchema {
             ),
           ),
         ),
+        searchField: metadata.searchField,
+        searchWeights: {
+          for (final fieldName in metadata.searchableFields)
+            if (metadata.fields[fieldName] != null)
+              fieldName: searchWeightForType(metadata.fields[fieldName]!.type),
+        },
       );
     }
 

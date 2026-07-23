@@ -6,6 +6,7 @@
 import '../api/api_helpers.dart';
 import 'filter_ast.dart';
 import 'local_schema.dart';
+import 'replica_search.dart';
 
 /// A filter/order/pagination query compiled to SQL over the replica tables.
 class CompiledReplicaQuery {
@@ -36,9 +37,15 @@ class CompiledReplicaQuery {
 ///   compile to `GLOB`, insensitive ones to SQLite `LIKE` (ASCII folding);
 /// - nested `order_by` follows m2o paths through `LEFT JOIN`s with the
 ///   PostgreSQL null ordering (ASC → NULLS LAST, DESC → NULLS FIRST);
+/// - `search`/`search_fuzzy` on the fulltext field compile to FTS5 MATCH
+///   subqueries over the `<table>_fts` index (see `replica_search.dart`);
+///   `search_fuzzy` degrades to `search` (no pg_trgm equivalent), and
+///   ordering on the fulltext field maps the server's `ts_rank` to a
+///   weighted `bm25()` (only meaningful alongside a search rule on the root
+///   model — skipped otherwise, like the server's rank extra select);
 /// - every table access is confined to its replica scope (`_workspace`).
 ///
-/// Unsupported offline (throws [UnsupportedError]): `match`/full-text,
+/// Unsupported offline (throws [UnsupportedError]): `match`,
 /// vector and spatial operators, filters ending on a to-many field, paths
 /// through m2m or generic relations, and o2m hops with an ambiguous reverse
 /// FK (declare/replicate the pivot instead).
@@ -68,7 +75,8 @@ class ReplicaQueryCompiler {
         : _compileCondition(ctx, root, 't0', filter, filterArgs);
 
     final joinArgs = <Object?>[];
-    final order = _compileOrderBy(ctx, root, orderBy, joinArgs);
+    final tailArgs = <Object?>[];
+    final order = _compileOrderBy(ctx, root, orderBy, joinArgs, tailArgs);
 
     final where =
         't0._workspace = ?${filterSql == null ? '' : ' AND ($filterSql)'}';
@@ -76,7 +84,12 @@ class ReplicaQueryCompiler {
     var sql =
         'SELECT t0._raw FROM "${_table(root)}" t0'
         '${order.joins} WHERE $where${order.orderBy}';
-    final args = <Object?>[...joinArgs, scopeOf(model), ...filterArgs];
+    final args = <Object?>[
+      ...joinArgs,
+      scopeOf(model),
+      ...filterArgs,
+      ...tailArgs,
+    ];
 
     if (limit != null || offset != null) {
       sql += ' LIMIT ?';
@@ -207,6 +220,7 @@ class ReplicaQueryCompiler {
       if (_allMany2one(rest)) {
         parts.add(
           _predicate(
+            ctx,
             _scalarChain(ctx, alias, rest, entry.$1.leaf, args),
             entry.$1.leaf,
             entry.$2,
@@ -246,6 +260,7 @@ class ReplicaQueryCompiler {
     List<Object?> args,
   ) {
     return _predicate(
+      ctx,
       _scalarChain(ctx, alias, path.hops, path.leaf, args),
       path.leaf,
       rule,
@@ -278,11 +293,23 @@ class ReplicaQueryCompiler {
   }
 
   String _predicate(
+    _Context ctx,
     String column,
     LocalFieldSchema leaf,
     FilterRule rule,
     List<Object?> args,
   ) {
+    if (leaf.type == 'fulltext') {
+      return _fulltextPredicate(ctx, column, leaf, rule, args);
+    }
+
+    if (rule.operator == 'search' || rule.operator == 'search_fuzzy') {
+      throw UnsupportedError(
+        'Operator "${rule.operator}" is only supported on the fulltext '
+        'search field',
+      );
+    }
+
     final value = _coerce(leaf, rule.value);
 
     switch (rule.operator) {
@@ -370,6 +397,56 @@ class ReplicaQueryCompiler {
     }
   }
 
+  /// `search`/`search_fuzzy` on a fulltext pseudo-leaf: [column] resolves to
+  /// the rowid of the searchable model's row (root alias, EXISTS alias or
+  /// m2o scalar chain), matched against its FTS5 index. `search_fuzzy`
+  /// intentionally compiles like `search` (no pg_trgm equivalent offline).
+  String _fulltextPredicate(
+    _Context ctx,
+    String column,
+    LocalFieldSchema leaf,
+    FilterRule rule,
+    List<Object?> args,
+  ) {
+    if (rule.operator != 'search' && rule.operator != 'search_fuzzy') {
+      throw UnsupportedError(
+        'Operator "${rule.operator}" is not supported on the fulltext '
+        'search field offline',
+      );
+    }
+
+    final value = rule.value;
+
+    if (value == null || '$value'.trim().isEmpty) {
+      return '1 = 1';
+    }
+
+    final query = parseFtsSearch('$value');
+
+    if (query.isEmpty) {
+      return '1 = 1';
+    }
+
+    if (column == 't0."rowid"' && query.positive != null) {
+      ctx.rootFtsMatch ??= query.positive;
+    }
+
+    final fts = '"${ftsTableName(leaf.target!)}"';
+    final parts = <String>[];
+
+    if (query.positive != null) {
+      args.add(query.positive);
+      parts.add('$column IN (SELECT rowid FROM $fts WHERE $fts MATCH ?)');
+    }
+
+    if (query.excluded != null) {
+      args.add(query.excluded);
+      parts.add('$column NOT IN (SELECT rowid FROM $fts WHERE $fts MATCH ?)');
+    }
+
+    return parts.length == 1 ? parts.single : '(${parts.join(' AND ')})';
+  }
+
   Object? _coerce(LocalFieldSchema leaf, dynamic value) {
     if (value == null) {
       return null;
@@ -391,6 +468,7 @@ class ReplicaQueryCompiler {
     LocalModelSchema root,
     dynamic orderBy,
     List<Object?> args,
+    List<Object?> tailArgs,
   ) {
     final encoded = ApiHelpers.encodeOrderBy(orderBy);
 
@@ -412,6 +490,32 @@ class ReplicaQueryCompiler {
 
       final descending = parts.length > 1 && parts[1].trim() == 'desc';
       final path = _resolvePath(ctx, root, fieldPath);
+
+      if (path.leaf.type == 'fulltext') {
+        if (path.hops.isNotEmpty) {
+          throw UnsupportedError(
+            'order_by on a related fulltext field is not supported offline',
+          );
+        }
+
+        // The rank only exists alongside a search rule on the root model —
+        // the offline counterpart of the server's ts_rank extra select.
+        // ts_rank grows with relevance while bm25 decreases: the direction
+        // is inverted.
+        final match = ctx.rootFtsMatch;
+
+        if (match == null) {
+          continue;
+        }
+
+        tailArgs.add(match);
+        terms.add(
+          '${ftsRankSql(_table(root), 't0')} '
+          '${descending ? 'ASC NULLS LAST' : 'DESC NULLS FIRST'}',
+        );
+        continue;
+      }
+
       var alias = 't0';
       var prefix = '';
 
@@ -471,6 +575,22 @@ class ReplicaQueryCompiler {
       final field = current.fields[segments[i]];
 
       if (field == null) {
+        // The fulltext field never appears in the metadata fields: it
+        // resolves to a pseudo-leaf matched through the FTS5 index of its
+        // owner model (carried by `target`), addressed by rowid.
+        if (i == segments.length - 1 &&
+            current.searchable &&
+            segments[i] == current.searchField) {
+          return _Path(
+            hops: hops,
+            leaf: LocalFieldSchema(
+              name: 'rowid',
+              type: 'fulltext',
+              target: current.name,
+            ),
+          );
+        }
+
         throw InvalidFilterException(
           'Unknown field "${segments[i]}" on model "${current.name}"',
         );
@@ -495,6 +615,27 @@ class ReplicaQueryCompiler {
       }
 
       if (i == segments.length - 1) {
+        // The fulltext field carries no data (excluded from API payloads):
+        // it resolves to a pseudo-leaf matched through the FTS5 index of its
+        // owner model (carried by `target`), addressed by rowid.
+        if (field.type == 'fulltext') {
+          if (!current.searchable) {
+            throw UnsupportedError(
+              'Model "${current.name}" has no searchable source fields '
+              '(path "$fieldPath")',
+            );
+          }
+
+          return _Path(
+            hops: hops,
+            leaf: LocalFieldSchema(
+              name: 'rowid',
+              type: 'fulltext',
+              target: current.name,
+            ),
+          );
+        }
+
         if (!field.isColumn) {
           throw UnsupportedError(
             'Filtering on the to-many field "$fieldPath" is not supported '
@@ -599,6 +740,10 @@ class _Context {
   final LocalSchema schema;
   final String Function(String model) scopeOf;
   var _counter = 0;
+
+  /// Positive FTS5 MATCH expression of the first search rule on the root
+  /// model — reused by the bm25 rank when ordering on the fulltext field.
+  String? rootFtsMatch;
 
   _Context(this.schema, this.scopeOf);
 
