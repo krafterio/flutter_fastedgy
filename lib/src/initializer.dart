@@ -29,6 +29,7 @@ import 'offline/local_image_store.dart';
 import 'offline/local_store.dart';
 import 'offline/offline_database.dart';
 import 'offline/outbox.dart';
+import 'offline/reference_resolver.dart';
 import 'offline/replica.dart';
 import 'offline/replica_store.dart';
 import 'offline/sync_engine.dart';
@@ -258,6 +259,7 @@ Future<void> initializeFastEdgy({
     container.registerSingleton<Replica>(
       Replica(replicaStore, getService<MetadataProvider>()),
     );
+    container.registerSingleton<ReferenceResolver>(ReferenceResolver());
     getService<Bus>().on<AuthLogoutEvent>().listen(
       (_) => replicaStore.clearAll(),
     );

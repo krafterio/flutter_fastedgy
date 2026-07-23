@@ -16,6 +16,7 @@ export 'offline_api_resource.dart';
 export 'offline_database.dart';
 export 'offline_error.dart';
 export 'outbox.dart';
+export 'reference_resolver.dart';
 export 'replica.dart';
 export 'replica_query.dart';
 export 'replica_store.dart';
