@@ -47,6 +47,12 @@ class LocalFieldSchema {
   /// Column persisting the latitude of a point field.
   String get pointLatColumn => '${name}_lat';
 
+  /// Whether this field is an embedding vector (server `VectorField`, pgvector
+  /// `VECTOR(dimensions)`, payload `[float, …]`): locally it materializes as a
+  /// plain TEXT column holding the JSON array, queried through JSON1
+  /// (`json_each`) by the distance operators.
+  bool get isVector => type == 'vector';
+
   LocalRelationKind get relationKind => switch (type) {
     'many2one' || 'many2one_ref' || 'one2one' => LocalRelationKind.many2one,
     'one2many' => LocalRelationKind.one2many,

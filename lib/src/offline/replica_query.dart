@@ -3,6 +3,7 @@
  * MIT License (see LICENSE file).
  */
 
+import 'dart:convert';
 import 'dart:math' as math;
 
 import '../api/api_helpers.dart';
@@ -54,14 +55,19 @@ class CompiledReplicaQuery {
 ///   Point type only binds 2-coordinate points): contains/within/
 ///   intersects/equals are point equality, disjoint its negation and
 ///   touches/crosses/overlaps never match;
+/// - vector operators on vector fields compile over the JSON array stored in
+///   their column, the distances evaluated with JSON1 (`json_each`) — the
+///   SQLite counterpart of the pgvector operators, including the negated
+///   inner product of `<#>` (see [_vectorDistanceSql]); there is no ANN
+///   index offline, so they always scan the scope;
 /// - every table access is confined to its replica scope (`_workspace`).
 ///
-/// Unsupported offline (throws [UnsupportedError]): `match`,
-/// vector operators, the bare `spatial distance` (not a boolean predicate,
-/// rejected by PostgreSQL server-side too), order_by on a point field,
-/// filters ending on a to-many field, paths through m2m or generic
-/// relations, and o2m hops with an ambiguous reverse FK (declare/replicate
-/// the pivot instead).
+/// Unsupported offline (throws [UnsupportedError]): `match`, the bare
+/// `spatial distance`/`l2 distance`-family operators (not boolean
+/// predicates, rejected by PostgreSQL server-side too), order_by on a point
+/// or vector field, filters ending on a to-many field, paths through m2m or
+/// generic relations, and o2m hops with an ambiguous reverse FK
+/// (declare/replicate the pivot instead).
 class ReplicaQueryCompiler {
   final LocalSchema schema;
 
@@ -279,6 +285,10 @@ class ReplicaQueryCompiler {
   ) {
     if (leaf.isPoint) {
       return _spatialPredicate(ctx, alias, hops, leaf, rule, args);
+    }
+
+    if (leaf.isVector) {
+      return _vectorPredicate(ctx, alias, hops, leaf, rule, args);
     }
 
     return _predicate(
@@ -673,6 +683,186 @@ class ReplicaQueryCompiler {
     return (_pointValue(rule), (value[1] as num).toDouble());
   }
 
+  /// Vector operators on a vector field, compiled over the JSON array held by
+  /// its column (`fastedgy/orm/fields/field_vector.py`, doc "Query Builder →
+  /// Vector field operators"). The bare distance operators are projections,
+  /// not predicates — like `spatial distance` they are rejected rather than
+  /// silently coerced to a boolean. The server exposes no other operator on a
+  /// vector field (not even `is empty`): everything else is rejected too.
+  String _vectorPredicate(
+    _Context ctx,
+    String alias,
+    List<_Hop> hops,
+    LocalFieldSchema leaf,
+    FilterRule rule,
+    List<Object?> args,
+  ) {
+    final metric = _vectorMetric(rule.operator);
+
+    if (metric == null) {
+      throw UnsupportedError(
+        'Operator "${rule.operator}" is not supported on a vector field '
+        'offline',
+      );
+    }
+
+    if (metric.comparison == null) {
+      throw UnsupportedError(
+        'The bare "${rule.operator}" operator is not a boolean predicate '
+        '(use "${rule.operator} <", "${rule.operator} >="…)',
+      );
+    }
+
+    return _chainExpr(
+      ctx,
+      alias,
+      hops,
+      (a) => _vectorSql(a, leaf, metric, rule, args),
+      args,
+    );
+  }
+
+  /// The metric and comparison of a vector operator, e.g. `cosine distance <`
+  /// → (`cosine`, `<`). A null comparison marks the bare (projection) form.
+  ({String metric, String? comparison})? _vectorMetric(String operator) {
+    for (final metric in const [
+      'l1 distance',
+      'l2 distance',
+      'cosine distance',
+      'inner product',
+    ]) {
+      if (operator == metric) {
+        return (metric: metric, comparison: null);
+      }
+
+      if (operator.startsWith('$metric ')) {
+        final comparison = operator.substring(metric.length + 1);
+
+        if (const ['<', '<=', '>', '>='].contains(comparison)) {
+          return (metric: metric, comparison: comparison);
+        }
+      }
+    }
+
+    return null;
+  }
+
+  String _vectorSql(
+    String alias,
+    LocalFieldSchema leaf,
+    ({String metric, String? comparison}) metric,
+    FilterRule rule,
+    List<Object?> args,
+  ) {
+    final (vector, threshold) = _vectorValue(rule);
+    final column = '$alias."${leaf.name}"';
+
+    // pgvector raises on a dimension mismatch; the json_each join would
+    // instead silently score the common prefix, so the arity is checked up
+    // front and a mismatching row simply never matches.
+    args.add(vector.length);
+
+    final distance = _vectorDistanceSql(column, metric.metric, vector, args);
+    args.add(threshold);
+
+    return '(json_array_length($column) = ? '
+        'AND $distance ${metric.comparison} ?)';
+  }
+
+  /// Distance between the row vector and the bound query vector, mirroring
+  /// the pgvector operators the server maps to: `<+>` (L1), `<->` (L2),
+  /// `<=>` (cosine) and `<#>` (inner product).
+  ///
+  /// `<#>` returns the *negated* inner product (pgvector only index-scans
+  /// ascending), so the sign is kept here — a filter written against the
+  /// server semantics keeps its meaning offline.
+  ///
+  /// A NULL or non-array column yields no `json_each` row, hence a NULL
+  /// distance that never matches — the vector counterpart of a NULL geometry.
+  /// A zero-norm vector divides by zero under `cosine`, which SQLite resolves
+  /// to NULL where pgvector yields NaN: such a row never matches offline,
+  /// while server-side NaN still satisfies the `>`/`>=` forms.
+  String _vectorDistanceSql(
+    String column,
+    String metric,
+    List<double> vector,
+    List<Object?> args,
+  ) {
+    final pairs =
+        'FROM json_each($column) a JOIN json_each(?) b ON b.key = a.key';
+    final query = jsonEncode(vector);
+
+    switch (metric) {
+      case 'l1 distance':
+        args.add(query);
+        return '(SELECT sum(abs(a.value - b.value)) $pairs)';
+      case 'l2 distance':
+        args.add(query);
+        return 'sqrt((SELECT sum((a.value - b.value) * (a.value - b.value)) '
+            '$pairs))';
+      case 'inner product':
+        args.add(query);
+        return '(SELECT -sum(a.value * b.value) $pairs)';
+      case 'cosine distance':
+        // 1 - cos(a, b); the query norm is constant, so only the row norm is
+        // summed in SQL (exact because the arity guard forces a full join).
+        var norm = 0.0;
+
+        for (final value in vector) {
+          norm += value * value;
+        }
+
+        args.add(math.sqrt(norm));
+        args.add(query);
+
+        return '(SELECT 1.0 - sum(a.value * b.value) '
+            '/ (sqrt(sum(a.value * a.value)) * ?) $pairs)';
+      default:
+        throw StateError('Unexpected vector metric "$metric"');
+    }
+  }
+
+  /// A `[vector, threshold]` filter value. The documented example orders it
+  /// the other way around (`[0.1, [0.2, 0.3, 0.4]]`) while the comparator
+  /// signature and the spatial operators put the operand first: both orders
+  /// are accepted since the shapes are disjoint — exactly one element is the
+  /// array.
+  (List<double>, double) _vectorValue(FilterRule rule) {
+    final value = rule.value;
+
+    if (value is List && value.length == 2) {
+      final (vector, threshold) = switch (value) {
+        [final List v, final num t] => (v, t),
+        [final num t, final List v] => (v, t),
+        _ => (null, null),
+      };
+
+      if (vector != null && threshold != null) {
+        if (vector.isEmpty || vector.any((item) => item is! num)) {
+          throw InvalidFilterException(
+            'Operator "${rule.operator}" expects a non-empty vector of numbers',
+          );
+        }
+
+        final coordinates = vector
+            .map((item) => (item as num).toDouble())
+            .toList();
+
+        if (coordinates.any((item) => !item.isFinite)) {
+          throw InvalidFilterException(
+            'Operator "${rule.operator}" expects a finite vector',
+          );
+        }
+
+        return (coordinates, threshold.toDouble());
+      }
+    }
+
+    throw InvalidFilterException(
+      'Operator "${rule.operator}" expects [vector, threshold]',
+    );
+  }
+
   Object? _coerce(LocalFieldSchema leaf, dynamic value) {
     if (value == null) {
       return null;
@@ -720,6 +910,14 @@ class ReplicaQueryCompiler {
       if (path.leaf.isPoint) {
         throw UnsupportedError(
           'order_by on the point field "$fieldPath" is not supported offline',
+        );
+      }
+
+      // Sorting by similarity would need the query vector, which order_by
+      // cannot carry; the stored JSON would otherwise sort as text.
+      if (path.leaf.isVector) {
+        throw UnsupportedError(
+          'order_by on the vector field "$fieldPath" is not supported offline',
         );
       }
 
