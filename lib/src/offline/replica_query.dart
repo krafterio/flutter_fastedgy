@@ -950,20 +950,29 @@ class ReplicaQueryCompiler {
       var prefix = '';
 
       for (final hop in path.hops) {
-        if (hop.reverseField != null) {
-          throw UnsupportedError(
-            'order_by through a to-many relation is not supported offline',
-          );
-        }
-
         prefix = prefix.isEmpty ? hop.field.name : '$prefix.${hop.field.name}';
         final existing = joinAliases[prefix];
 
         if (existing == null) {
           final joinAlias = ctx.nextAlias('j');
+          final String on;
+
+          switch (hop.kind) {
+            case _HopKind.many2one:
+              on = '$alias."${hop.field.name}" = $joinAlias.id';
+            case _HopKind.one2many:
+              // Reverse hop: the related row's FK points back to the parent
+              // (mirrors the filter's one2many join).
+              on = '$joinAlias."${hop.reverseField}" = $alias.id';
+            default:
+              throw UnsupportedError(
+                'order_by through a ${hop.kind.name} relation is not supported offline',
+              );
+          }
+
           joins.write(
             ' LEFT JOIN "${_table(hop.target)}" $joinAlias '
-            'ON $alias."${hop.field.name}" = $joinAlias.id '
+            'ON $on '
             'AND $joinAlias._workspace = ?',
           );
           args.add(ctx.scopeOf(hop.target.name));
