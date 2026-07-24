@@ -119,6 +119,14 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier {
 
   Future<bool> reload() => _fetch(1, append: false);
 
+  /// Applies a new item order in place (optimistic reorder) — no fetch, no
+  /// loading state. Pair it with a server resequence; the follow-up refresh
+  /// returns the same order, so the list does not flicker or jump back.
+  void reorder(List<T> ordered) {
+    _items = ordered;
+    _safeNotify();
+  }
+
   Future<void> _onResourceChanged(ResourceChangedEvent event) async {
     if (!_loaded || _disposed || event.basePath != api.resolvedBasePath) return;
     if (event.type == ResourceChangeType.deleted) {
