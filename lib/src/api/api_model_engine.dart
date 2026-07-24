@@ -17,7 +17,45 @@ class ResourceChangedEvent {
   final String basePath;
   final ResourceChangeType? type;
   final Object? id;
-  const ResourceChangedEvent(this.basePath, {this.type, this.id});
+
+  /// True when the cross-instance relay re-fired this event from another
+  /// process. The relay only rebroadcasts local (non-relayed) events, so this
+  /// flag is what breaks the echo loop between instances.
+  final bool relayed;
+
+  const ResourceChangedEvent(
+    this.basePath, {
+    this.type,
+    this.id,
+    this.relayed = false,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'basePath': basePath,
+    if (type != null) 'type': type!.name,
+    if (id != null) 'id': id,
+  };
+
+  factory ResourceChangedEvent.fromJson(
+    Map<String, dynamic> json, {
+    bool relayed = false,
+  }) {
+    final typeName = json['type'] as String?;
+    ResourceChangeType? type;
+    for (final value in ResourceChangeType.values) {
+      if (value.name == typeName) {
+        type = value;
+        break;
+      }
+    }
+
+    return ResourceChangedEvent(
+      json['basePath'] as String,
+      type: type,
+      id: json['id'],
+      relayed: relayed,
+    );
+  }
 }
 
 enum ApiAction {

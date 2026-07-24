@@ -56,6 +56,9 @@ export 'src/metadata/metadata.dart';
 // Offline
 export 'src/offline/offline.dart';
 
+// Realtime relay (cross-instance live sync)
+export 'src/realtime/resource_relay.dart';
+
 // Image
 export 'src/image/image.dart';
 
