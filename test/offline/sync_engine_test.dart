@@ -938,4 +938,76 @@ void main() {
       expect((await outbox.all()).first.attempts, 1);
     });
   });
+
+  group('cross-process lock', () {
+    test('holds the replay back while another process owns the lock', () async {
+      final lock = _FakeSyncLock(available: false);
+      final lockedEngine = SyncEngine(
+        outbox,
+        fetcher,
+        getService<Bus>(),
+        localStore: store,
+        lock: lock,
+      );
+
+      adapter.offline = true;
+      await api.create(_Item({'name': 'Draft'}));
+
+      adapter.offline = false;
+      adapter.routes['POST /items'] = (options) => {'id': 42, 'name': 'Draft'};
+      adapter.calls.clear();
+      await lockedEngine.flush();
+
+      // Nothing sent, nothing lost: the other process replays these.
+      expect(adapter.calls, isEmpty);
+      expect(await outbox.all(), hasLength(1));
+    });
+
+    test('replays and releases the lock once it is free', () async {
+      final lock = _FakeSyncLock(available: true);
+      final lockedEngine = SyncEngine(
+        outbox,
+        fetcher,
+        getService<Bus>(),
+        localStore: store,
+        lock: lock,
+      );
+
+      adapter.offline = true;
+      await api.create(_Item({'name': 'Draft'}));
+
+      adapter.offline = false;
+      adapter.routes['POST /items'] = (options) => {'id': 42, 'name': 'Draft'};
+      await lockedEngine.flush();
+
+      expect(await outbox.all(), isEmpty);
+      expect(lock.held, isFalse);
+      expect(lock.acquisitions, 1);
+    });
+  });
+}
+
+class _FakeSyncLock implements SyncLock {
+  _FakeSyncLock({required this.available});
+
+  final bool available;
+  int acquisitions = 0;
+  bool held = false;
+
+  @override
+  Future<bool> tryAcquire() async {
+    if (!available) {
+      return false;
+    }
+
+    acquisitions++;
+    held = true;
+
+    return true;
+  }
+
+  @override
+  Future<void> release() async {
+    held = false;
+  }
 }

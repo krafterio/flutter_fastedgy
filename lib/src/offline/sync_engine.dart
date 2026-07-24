@@ -15,6 +15,7 @@ import 'offline_error.dart';
 import 'conflict_store.dart';
 import 'outbox.dart';
 import 'replica.dart';
+import 'sync_lock.dart';
 import 'sync_status.dart';
 
 /// Replays the [Outbox] against the server when connectivity comes back.
@@ -47,6 +48,7 @@ class SyncEngine {
   final Stream<bool>? _online;
   final SyncStatus? _status;
   final ConflictStore? _conflicts;
+  final SyncLock? _lock;
   final _logger = getLogger('SyncEngine');
 
   /// Maximum operations per sync batch (matches the server-side cap).
@@ -81,6 +83,7 @@ class SyncEngine {
     Stream<bool>? online,
     SyncStatus? status,
     ConflictStore? conflicts,
+    SyncLock? lock,
     this.batchSize = 500,
     this.maxAttempts = 25,
     this.retryBaseDelay = const Duration(seconds: 5),
@@ -89,7 +92,8 @@ class SyncEngine {
        _replica = replica,
        _online = online,
        _status = status,
-       _conflicts = conflicts;
+       _conflicts = conflicts,
+       _lock = lock;
 
   /// Start listening to connectivity: every regain triggers a flush.
   void start() {
@@ -149,12 +153,24 @@ class SyncEngine {
       return;
     }
 
+    // Another instance is draining the shared outbox: replaying in parallel
+    // would send its operations a second time. Retry rather than drop them —
+    // the operations enqueued here would otherwise wait for a connectivity
+    // event that may never come.
+    if (!(await _lock?.tryAcquire() ?? true)) {
+      _logger.fine('Outbox replay held by another process, deferring');
+      _scheduleRetry(1);
+
+      return;
+    }
+
     _status?.setSyncing(true);
 
     try {
       await _drain(operations);
     } finally {
       _status?.setSyncing(false);
+      await _lock?.release();
     }
   }
 

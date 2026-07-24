@@ -33,6 +33,7 @@ import 'offline/local_store.dart';
 import 'offline/offline_database.dart';
 import 'offline/outbox.dart';
 import 'offline/reference_resolver.dart';
+import 'offline/sync_lock.dart';
 import 'offline/replica.dart';
 import 'offline/replica_store.dart';
 import 'offline/sync_engine.dart';
@@ -97,6 +98,10 @@ Future<void> initializeFastEdgy({
   LocalStore Function()? localStoreFactory,
   LocalImageStore Function()? localImageStoreFactory,
   ReplicaStore Function()? replicaStoreFactory,
+
+  // Guards the outbox replay across processes: required only when several
+  // instances of the app can run against the same offline database.
+  SyncLock? syncLock,
 
   // Core services factories (overridable)
   Bus Function()? busFactory,
@@ -310,6 +315,7 @@ Future<void> initializeFastEdgy({
       replica: hasService<Replica>() ? getService<Replica>() : null,
       status: status,
       conflicts: conflicts,
+      lock: syncLock,
       online: Connectivity().onConnectivityChanged.map(
         (results) => results.any((result) => result != ConnectivityResult.none),
       ),

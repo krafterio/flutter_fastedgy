@@ -24,4 +24,5 @@ export 'replica_query.dart';
 export 'replica_search.dart';
 export 'replica_store.dart';
 export 'sync_engine.dart';
+export 'sync_lock.dart';
 export 'sync_status.dart';
