@@ -120,7 +120,7 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier {
   Future<bool> reload() => _fetch(1, append: false);
 
   Future<void> _onResourceChanged(ResourceChangedEvent event) async {
-    if (!_loaded || _disposed || event.basePath != api.basePath) return;
+    if (!_loaded || _disposed || event.basePath != api.resolvedBasePath) return;
     if (event.type == ResourceChangeType.deleted) {
       final before = _items.length;
       _items = _items.where((e) => e.id != event.id).toList();

@@ -87,7 +87,7 @@ class ApiRecord<T extends BaseModel<T>> extends ChangeNotifier {
 
   Future<void> _onResourceChanged(ResourceChangedEvent event) async {
     if (!_loaded || _disposed || _id == null) return;
-    if (event.basePath != api.basePath || event.id != _id) return;
+    if (event.basePath != api.resolvedBasePath || event.id != _id) return;
     if (event.type == ResourceChangeType.deleted) {
       _deleted = true;
       _value = null;
