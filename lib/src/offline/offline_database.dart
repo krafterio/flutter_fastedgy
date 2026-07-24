@@ -5,6 +5,7 @@
 
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
+import 'package:sqlite3/common.dart';
 
 /// Schema-less drift database driven at runtime.
 ///
@@ -19,7 +20,13 @@ class OfflineDatabase extends GeneratedDatabase {
   OfflineDatabase(super.executor);
 
   /// Open the platform database [name].
-  OfflineDatabase.open(String name) : super(driftDatabase(name: name));
+  OfflineDatabase.open(String name)
+    : super(
+        driftDatabase(
+          name: name,
+          native: const DriftNativeOptions(setup: applyOfflineDatabasePragmas),
+        ),
+      );
 
   /// Silence drift's multiple-database warning: tests open several in-memory
   /// databases of this class (production shares a single one).
@@ -32,6 +39,23 @@ class OfflineDatabase extends GeneratedDatabase {
 
   @override
   int get schemaVersion => 1;
+}
+
+/// Pragmas applied to every native connection to the offline database.
+///
+/// Drift runs the connection on a background isolate and sends this function
+/// there, so it must stay top-level and capture nothing.
+///
+/// `journal_mode = WAL` (persisted in the file) is what makes the database
+/// safe to open several times at once: the default rollback journal lets a
+/// writer block every reader and tolerates a single writer, which breaks as
+/// soon as a second app instance — or a second Flutter engine, each engine
+/// opening its own connection — touches the file. `busy_timeout` completes it:
+/// sqlite3 installs no busy handler by default, so a lock held elsewhere fails
+/// immediately with `database is locked` instead of waiting for its release.
+void applyOfflineDatabasePragmas(CommonDatabase db) {
+  db.execute('pragma journal_mode = WAL');
+  db.execute('pragma busy_timeout = 5000');
 }
 
 /// Rename table [from] to [to] when [from] exists and [to] does not — a
