@@ -79,6 +79,8 @@ const _metadatasPayload = {
     'searchable': false,
     'sortable': false,
     'sortable_field': null,
+    'synchronizable': true,
+    'synchronizable_mode': 'partial',
     'fields': {
       'role': {
         'name': 'role',
@@ -92,6 +94,20 @@ const _metadatasPayload = {
         'target': null,
         'targets': null,
         'choices': {'ADMIN': 'Admin', 'MEMBER': 'Member'},
+      },
+      'reference': {
+        'name': 'reference',
+        'label': 'Reference',
+        'type': 'char',
+        'readonly': true,
+        'required': false,
+        'searchable': false,
+        'extra': false,
+        'filter_operators': <String>[],
+        'target': null,
+        'targets': null,
+        'choices': null,
+        'local_placeholder': 'DRAFT-{seq}',
       },
     },
   },
@@ -157,6 +173,41 @@ void main() {
 
       expect(metadatas?['workspace_user']?.apiName, 'workspace_users');
       expect(await store.get('/dataset/metadatas', 'metadatas'), isNotNull);
+    });
+
+    test('parses the replication regime and the placeholders', () async {
+      adapter.routes['GET /dataset/metadatas'] = (options) => _metadatasPayload;
+
+      final model = (await provider.getMetadatas())?['workspace_user'];
+
+      expect(model?.synchronizable, isTrue);
+      expect(model?.synchronizableMode, 'partial');
+      expect(model?.isPartiallySynchronizable, isTrue);
+      expect(model?.fields['reference']?.localPlaceholder, 'DRAFT-{seq}');
+      expect(model?.fields['role']?.localPlaceholder, isNull);
+      expect(model?.placeholderFields.map((field) => field.name), [
+        'reference',
+      ]);
+    });
+
+    test('a model announcing no regime is not replicated', () async {
+      adapter.routes['GET /dataset/metadatas'] = (options) => {
+        'thing': {
+          'name': 'thing',
+          'api_name': 'things',
+          'label': 'Thing',
+          'label_plural': 'Things',
+          'searchable': false,
+          'sortable': false,
+          'fields': <String, dynamic>{},
+        },
+      };
+
+      final model = (await provider.getMetadatas())?['thing'];
+
+      expect(model?.synchronizable, isFalse);
+      expect(model?.synchronizableMode, 'none');
+      expect(model?.isPartiallySynchronizable, isFalse);
     });
 
     test('serves the mirrored metadata when offline', () async {

@@ -24,7 +24,44 @@ class _MockMetadataProvider implements MetadataProvider {
     searchable: false,
     sortable: false,
     synchronizable: true,
-    fields: {},
+    synchronizableMode: 'full',
+    fields: {
+      // Self relation: the target is what scopes a temporary id substituted in
+      // a payload.
+      'parent': MetadataField(
+        name: 'parent',
+        label: 'Parent',
+        type: 'many2one',
+        readonly: false,
+        required: false,
+        searchable: false,
+        extra: false,
+        filterOperators: [],
+        target: 'item',
+      ),
+      // Polymorphic: the target travels in the value itself.
+      'subject': MetadataField(
+        name: 'subject',
+        label: 'Subject',
+        type: 'reference',
+        readonly: false,
+        required: false,
+        searchable: false,
+        extra: false,
+        filterOperators: [],
+        targets: ['item', 'other'],
+      ),
+      'details': MetadataField(
+        name: 'details',
+        label: 'Details',
+        type: 'json',
+        readonly: false,
+        required: false,
+        searchable: false,
+        extra: false,
+        filterOperators: [],
+      ),
+    },
   );
 
   @override
@@ -211,7 +248,13 @@ void main() {
     await store.open();
     outbox = Outbox(store);
     api = _ItemApi(fetcher: fetcher, localStore: store, outbox: outbox);
-    engine = SyncEngine(outbox, fetcher, getService<Bus>(), localStore: store);
+    engine = SyncEngine(
+      outbox,
+      fetcher,
+      getService<Bus>(),
+      localStore: store,
+      metadatas: getService<MetadataProvider>(),
+    );
     discarded = [];
     merged = [];
     getService<Bus>().on<OutboxOperationDiscardedEvent>().listen(discarded.add);

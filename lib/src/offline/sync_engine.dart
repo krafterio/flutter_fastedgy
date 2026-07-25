@@ -4,19 +4,27 @@
  */
 
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:dio/dio.dart';
 
 import '../api/api_model_engine.dart';
 import '../bus/bus.dart';
 import '../fetcher/client.dart';
+import '../metadata/metadata_provider.dart';
+import '../metadata/models.dart';
 import 'offline_context_params.dart';
 import '../logging/logger.dart';
 import 'local_store.dart';
 import 'offline_error.dart';
 import 'conflict_store.dart';
 import 'outbox.dart';
+import 'pending_upload_store.dart';
 import 'replica.dart';
 import 'sync_lock.dart';
 import 'sync_status.dart';
+import 'temp_id_map.dart';
 
 /// Replays the [Outbox] against the server when connectivity comes back.
 ///
@@ -49,6 +57,8 @@ class SyncEngine {
   final SyncStatus? _status;
   final ConflictStore? _conflicts;
   final SyncLock? _lock;
+  final MetadataProvider? _metadatas;
+  final PendingUploadStore? _uploads;
   final _logger = getLogger('SyncEngine');
 
   /// Maximum operations per sync batch (matches the server-side cap).
@@ -84,6 +94,8 @@ class SyncEngine {
     SyncStatus? status,
     ConflictStore? conflicts,
     SyncLock? lock,
+    MetadataProvider? metadatas,
+    PendingUploadStore? uploads,
     this.batchSize = 500,
     this.maxAttempts = 25,
     this.retryBaseDelay = const Duration(seconds: 5),
@@ -93,7 +105,9 @@ class SyncEngine {
        _online = online,
        _status = status,
        _conflicts = conflicts,
-       _lock = lock;
+       _lock = lock,
+       _metadatas = metadatas,
+       _uploads = uploads;
 
   /// Start listening to connectivity: every regain triggers a flush.
   void start() {
@@ -175,7 +189,8 @@ class SyncEngine {
   }
 
   Future<void> _drain(List<PendingOperation> operations) async {
-    final idMap = <String, Object>{};
+    final idMap = TempIdMap();
+    final metadatas = await _resolveMetadatas();
 
     // Temp→server mappings persisted by earlier flushes (an operation may
     // reference a temporary id swapped before an app restart).
@@ -183,9 +198,10 @@ class SyncEngine {
       for (final entry in await _localStore.getAll(_idMapNamespace)) {
         final temp = entry['temp'];
         final server = entry['server'];
+        final scope = entry['scope'];
 
-        if (temp != null && server != null) {
-          idMap['$temp'] = server as Object;
+        if (temp != null && server != null && scope != null) {
+          idMap.register('$scope', temp as Object, server as Object);
         }
       }
     }
@@ -197,8 +213,14 @@ class SyncEngine {
       while (index < operations.length) {
         final operation = operations[index];
 
+        if (operation.isUpload) {
+          await _replayUpload(operation, idMap, metadatas, counters);
+          index++;
+          continue;
+        }
+
         if (operation.method == 'POST') {
-          await _replayCreate(operation, idMap, counters);
+          await _replayCreate(operation, idMap, metadatas, counters);
           index++;
           continue;
         }
@@ -212,13 +234,20 @@ class SyncEngine {
         while (cursor < operations.length &&
             segment.length < batchSize &&
             operations[cursor].method != 'POST' &&
+            !operations[cursor].isUpload &&
             operations[cursor].basePath == operation.basePath &&
             sameContext(operations[cursor].context, operation.context)) {
           segment.add(operations[cursor]);
           cursor++;
         }
 
-        await _replayBatch(operation.basePath, segment, idMap, counters);
+        await _replayBatch(
+          operation.basePath,
+          segment,
+          idMap,
+          metadatas,
+          counters,
+        );
         index = cursor;
       }
     } on Object catch (error) {
@@ -263,7 +292,8 @@ class SyncEngine {
 
   Future<void> _replayCreate(
     PendingOperation operation,
-    Map<String, Object> idMap,
+    TempIdMap idMap,
+    Map<String, MetadataModel>? metadatas,
     _Counters counters,
   ) async {
     try {
@@ -272,17 +302,24 @@ class SyncEngine {
           operation.basePath,
           operation.context,
         ),
-        _remapTempIds(operation.payload ?? const {}, idMap) as Map,
+        idMap.remap(
+              operation.payload ?? const {},
+              _modelNameOf(operation, metadatas),
+              metadatas,
+            )
+            as Map,
       );
       final record = (response.data as Map).cast<String, dynamic>();
       final stillQueued = await _outbox.remove(operation.id);
 
       if (operation.recordId != null) {
-        idMap['${operation.recordId}'] = record['id'] as Object;
-        await _localStore?.put(_idMapNamespace, '${operation.recordId}', {
-          'temp': operation.recordId,
-          'server': record['id'],
-        });
+        final scope = _scopeOf(operation, metadatas);
+        idMap.register(scope, operation.recordId!, record['id'] as Object);
+        await _localStore?.put(
+          _idMapNamespace,
+          TempIdMap.key(scope, operation.recordId!),
+          {'scope': scope, 'temp': operation.recordId, 'server': record['id']},
+        );
         await _cacheDelete(operation.cache, operation.recordId!);
       }
 
@@ -323,10 +360,180 @@ class SyncEngine {
     }
   }
 
+  /// Send a file buffered while offline, then heal the record that referenced
+  /// it locally.
+  ///
+  /// The buffered blob is only dropped once the server holds the file (or the
+  /// operation is definitively rejected): a connectivity failure must leave the
+  /// user's file exactly where it was.
+  Future<void> _replayUpload(
+    PendingOperation operation,
+    TempIdMap idMap,
+    Map<String, MetadataModel>? metadatas,
+    _Counters counters,
+  ) async {
+    final request = operation.upload;
+    final store = _uploads;
+
+    if (request == null || store == null) {
+      _logger.warning(
+        'Operation ${operation.id} carries no upload, dropping it',
+      );
+      await _discard(operation, 'rejected');
+      await _outbox.remove(operation.id);
+      counters.discarded++;
+
+      return;
+    }
+
+    final bytes = await store.bytes(request.uploadId);
+
+    if (bytes == null) {
+      // The blob is gone (cache cleared, file removed out of band): there is
+      // nothing left to send and retrying would never succeed.
+      _logger.warning(
+        'Buffered file ${request.uploadId} is missing, dropping its upload',
+      );
+      await _discard(operation, 'rejected');
+      await _outbox.remove(operation.id);
+      counters.discarded++;
+
+      return;
+    }
+
+    try {
+      final scope = _scopeOf(operation, metadatas);
+      final record = await _sendUpload(
+        operation,
+        request,
+        bytes,
+        idMap,
+        metadatas,
+      );
+
+      await _outbox.remove(operation.id);
+
+      if (record != null) {
+        if (operation.recordId != null && record['id'] != null) {
+          idMap.register(scope, operation.recordId!, record['id'] as Object);
+          await _localStore?.put(
+            _idMapNamespace,
+            TempIdMap.key(scope, operation.recordId!),
+            {
+              'scope': scope,
+              'temp': operation.recordId,
+              'server': record['id'],
+            },
+          );
+          await _cacheDelete(operation.cache, operation.recordId!);
+        }
+
+        await _cacheUpsert(operation.cache, record);
+      }
+
+      // The server holds the file now, and its rendition is the reference: drop
+      // the local copy.
+      await store.remove(request.uploadId);
+
+      _bus.fire(
+        ResourceChangedEvent(
+          operation.basePath,
+          type: operation.recordId != null && record?['id'] != null
+              ? ResourceChangeType.created
+              : ResourceChangeType.updated,
+          id: record?['id'] ?? _serverId(operation, idMap, metadatas),
+        ),
+      );
+      counters.replayed++;
+    } on Object catch (error) {
+      if (isOfflineError(error) || isRetryableServerError(error)) {
+        rethrow;
+      }
+
+      _logger.warning('Upload ${operation.id} rejected: $error');
+      await _discard(operation, 'rejected', error);
+      await _outbox.remove(operation.id);
+      await store.remove(request.uploadId);
+      counters.discarded++;
+    }
+  }
+
+  /// POST the multipart body and return the record to heal the cache with.
+  Future<Map<String, dynamic>?> _sendUpload(
+    PendingOperation operation,
+    PendingUploadRequest request,
+    Uint8List bytes,
+    TempIdMap idMap,
+    Map<String, MetadataModel>? metadatas,
+  ) async {
+    final file = MultipartFile.fromBytes(
+      bytes,
+      filename: request.fileName,
+      contentType: request.mimeType == null
+          ? null
+          : DioMediaType.parse(request.mimeType!),
+    );
+
+    if (request.kind == PendingUploadRequest.kindAttachment) {
+      final formData = FormData();
+      formData.files.add(MapEntry(request.fileName, file));
+
+      // The owner may be a record created offline, so its id is resolved here
+      // rather than when the upload was buffered. Generic references are also
+      // resolved by shape: the attachment schema may not be mirrored, and a
+      // reference names the model it points at, so nothing has to be guessed.
+      final meta = idMap.remapReferences(
+        idMap.remap(
+          request.meta,
+          _modelNameOf(operation, metadatas),
+          metadatas,
+        ),
+      );
+
+      if (meta is Map && meta.isNotEmpty) {
+        formData.fields.add(MapEntry('meta', jsonEncode(meta)));
+      }
+
+      final response = await _fetcher.post(
+        '${request.prefix}/storage/upload/attachments',
+        formData,
+        headers: {'Content-Type': 'multipart/form-data'},
+      );
+      final attachments =
+          (response.data as Map)['attachments'] as List<dynamic>?;
+
+      if (attachments == null || attachments.isEmpty) {
+        return null;
+      }
+
+      return (attachments.first as Map).cast<String, dynamic>();
+    }
+
+    final model = operation.model;
+    final id = _serverId(operation, idMap, metadatas);
+
+    if (model == null || id == null || request.field == null) {
+      throw StateError(
+        'A model field upload needs a model, a record id and a field',
+      );
+    }
+
+    final response = await _fetcher.post(
+      '${request.prefix}/storage/upload/$model/$id/${request.field}',
+      FormData.fromMap({'file': file}),
+      headers: {'Content-Type': 'multipart/form-data'},
+    );
+    final path = (response.data as Map)['path'];
+
+    // Heal the field that held the local reference with the stored path.
+    return path == null ? null : {'id': id, request.field!: path};
+  }
+
   Future<void> _replayBatch(
     String basePath,
     List<PendingOperation> segment,
-    Map<String, Object> idMap,
+    TempIdMap idMap,
+    Map<String, MetadataModel>? metadatas,
     _Counters counters,
   ) async {
     late final List<dynamic> results;
@@ -341,10 +548,14 @@ class SyncEngine {
           for (final operation in segment)
             {
               'op': operation.method == 'DELETE' ? 'delete' : 'update',
-              'id': idMap['${operation.recordId}'] ?? operation.recordId,
+              'id': _serverId(operation, idMap, metadatas),
               'payload': operation.payload == null
                   ? null
-                  : _remapTempIds(operation.payload!, idMap),
+                  : idMap.remap(
+                      operation.payload!,
+                      _modelNameOf(operation, metadatas),
+                      metadatas,
+                    ),
               'base': operation.base,
               'created_at': operation.createdAt,
             },
@@ -408,7 +619,7 @@ class SyncEngine {
               type: operation.method == 'DELETE'
                   ? ResourceChangeType.deleted
                   : ResourceChangeType.updated,
-              id: idMap['${operation.recordId}'] ?? operation.recordId,
+              id: _serverId(operation, idMap, metadatas),
             ),
           );
           counters.replayed++;
@@ -427,7 +638,8 @@ class SyncEngine {
             final entry = ConflictEntry(
               basePath: basePath,
               context: operation.context,
-              recordId: idMap['${operation.recordId}'] ?? operation.recordId!,
+              recordId:
+                  _serverId(operation, idMap, metadatas) ?? operation.recordId!,
               mine: operation.payload!,
               base: operation.base,
               server: record,
@@ -484,6 +696,7 @@ class SyncEngine {
           basePath: entry.basePath,
           context: entry.context,
           recordId: entry.recordId,
+          model: entry.cache.model,
           payload: entry.mine,
           base: entry.server,
           createdAt: createdAt,
@@ -518,6 +731,7 @@ class SyncEngine {
         basePath: operation.basePath,
         context: operation.context,
         recordId: serverId,
+        model: operation.model,
         createdAt: createdAt,
         cache: operation.cache,
       ),
@@ -560,6 +774,59 @@ class SyncEngine {
     await _localStore?.put(cache.namespace, record['id'] as Object, record);
   }
 
+  // Metadata resolve the target model of each payload field, so a temporary id
+  // is only substituted within the model it was allocated for. Absent provider
+  // (or metadata not fetched yet): no field can be resolved, so no substitution
+  // happens rather than a wrong one.
+  Future<Map<String, MetadataModel>?> _resolveMetadatas() async {
+    final provider = _metadatas;
+
+    if (provider == null) {
+      return null;
+    }
+
+    try {
+      return await provider.getMetadatas();
+    } on Object catch (error) {
+      _logger.fine('Metadata unavailable for the id remapping: $error');
+
+      return null;
+    }
+  }
+
+  /// The id an operation targets server-side: its temporary id swapped for the
+  /// real one once its create was replayed.
+  Object? _serverId(
+    PendingOperation operation,
+    TempIdMap idMap,
+    Map<String, MetadataModel>? metadatas,
+  ) {
+    final recordId = operation.recordId;
+
+    if (recordId == null) {
+      return null;
+    }
+
+    return idMap.resolve(_scopeOf(operation, metadatas), recordId) ?? recordId;
+  }
+
+  String _scopeOf(
+    PendingOperation operation,
+    Map<String, MetadataModel>? metadatas,
+  ) => TempIdMap.scopeOf(
+    operation.model,
+    operation.basePath,
+    metadatas,
+    fallback: operation.cache.namespace,
+  );
+
+  String? _modelNameOf(
+    PendingOperation operation,
+    Map<String, MetadataModel>? metadatas,
+  ) =>
+      operation.model ??
+      (metadatas == null ? null : _scopeOf(operation, metadatas));
+
   Future<void> _cacheDelete(OutboxCacheContext cache, Object id) async {
     if (cache.kind == 'replica') {
       if (cache.model != null) {
@@ -580,25 +847,3 @@ class _Counters {
 
 /// The sync endpoint broke the one-result-per-operation contract.
 class BatchProtocolException implements Exception {}
-
-/// Replace offline temporary ids (large negative ints) with their server ids
-/// anywhere they appear in a payload: as direct values, inside `{"id": ...}`
-/// objects or in lists.
-Object? _remapTempIds(Object? value, Map<String, Object> idMap) {
-  if (value is int && value < 0) {
-    return idMap['$value'] ?? value;
-  }
-
-  if (value is Map) {
-    return {
-      for (final entry in value.entries)
-        entry.key: _remapTempIds(entry.value, idMap),
-    };
-  }
-
-  if (value is List) {
-    return [for (final item in value) _remapTempIds(item, idMap)];
-  }
-
-  return value;
-}

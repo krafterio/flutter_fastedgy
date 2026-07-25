@@ -29,9 +29,11 @@ import 'offline/drift_local_store.dart';
 import 'offline/conflict_store.dart';
 import 'offline/offline_context_params.dart';
 import 'offline/local_image_store.dart';
+import 'offline/local_sequence.dart';
 import 'offline/local_store.dart';
 import 'offline/offline_database.dart';
 import 'offline/outbox.dart';
+import 'offline/pending_upload_store.dart';
 import 'offline/reference_resolver.dart';
 import 'offline/sync_lock.dart';
 import 'offline/replica.dart';
@@ -218,14 +220,6 @@ Future<void> initializeFastEdgy({
     );
   }
 
-  // StorageUploader
-  if (!hasService<StorageUploader>()) {
-    container.registerSingleton<StorageUploader>(
-      storageUploaderFactory?.call() ??
-          StorageUploader(getService<Fetcher>(), prefix: storagePrefix ?? ''),
-    );
-  }
-
   // Single SQLite database for all offline data — records/outbox/conflicts,
   // replica tables (`r_<model>`) and the image index — in one file. A replica
   // rebuild only DROPs its own tables, so it never touches the outbox, and
@@ -250,6 +244,30 @@ Future<void> initializeFastEdgy({
     container.registerSingleton<LocalStore>(localStore);
     getService<Bus>().on<AuthLogoutEvent>().listen(
       (_) => localStore.clearAll(),
+    );
+  }
+
+  // LocalSequence (opt-in, alongside LocalStore): the temporary ids of
+  // optimistic offline creates and the counters of the placeholder templates;
+  // reset on logout with the records they numbered.
+  if (offline && !hasService<LocalSequence>()) {
+    final localSequence = LocalSequence(databaseOpener: sharedDb);
+    await localSequence.open();
+    container.registerSingleton<LocalSequence>(localSequence);
+    getService<Bus>().on<AuthLogoutEvent>().listen(
+      (_) => localSequence.clearAll(),
+    );
+  }
+
+  // PendingUploadStore (opt-in, alongside LocalStore): files produced offline,
+  // waiting for their upload. Owned by the outbox, so only a replay (or a
+  // logout) reclaims them.
+  if (offline && !hasService<PendingUploadStore>()) {
+    final pendingUploads = PendingUploadStore(databaseOpener: sharedDb);
+    await pendingUploads.open();
+    container.registerSingleton<PendingUploadStore>(pendingUploads);
+    getService<Bus>().on<AuthLogoutEvent>().listen(
+      (_) => pendingUploads.clearAll(),
     );
   }
 
@@ -316,6 +334,12 @@ Future<void> initializeFastEdgy({
       status: status,
       conflicts: conflicts,
       lock: syncLock,
+      // Resolves the target model of each payload field, so a temporary id is
+      // only substituted within the model it was allocated for.
+      metadatas: getService<MetadataProvider>(),
+      uploads: hasService<PendingUploadStore>()
+          ? getService<PendingUploadStore>()
+          : null,
       online: Connectivity().onConnectivityChanged.map(
         (results) => results.any((result) => result != ConnectivityResult.none),
       ),
@@ -327,6 +351,27 @@ Future<void> initializeFastEdgy({
   if (offline && !hasService<ApiModelEngineProvider>()) {
     container.registerSingleton<ApiModelEngineProvider>(
       const OfflineApiModelEngineProvider(),
+    );
+  }
+
+  // StorageUploader: registered after the offline stores so it can buffer an
+  // upload the server cannot receive, instead of failing.
+  if (!hasService<StorageUploader>()) {
+    container.registerSingleton<StorageUploader>(
+      storageUploaderFactory?.call() ??
+          StorageUploader(
+            getService<Fetcher>(),
+            prefix: storagePrefix ?? '',
+            outbox: hasService<Outbox>() ? getService<Outbox>() : null,
+            uploads: hasService<PendingUploadStore>()
+                ? getService<PendingUploadStore>()
+                : null,
+            sequence: hasService<LocalSequence>()
+                ? getService<LocalSequence>()
+                : null,
+            // Resolves a model's api_name for the buffered operation's path.
+            metadatas: getService<MetadataProvider>(),
+          ),
     );
   }
 }

@@ -17,6 +17,13 @@ class MetadataField {
   final List<String>? targets;
   final Map<String, String>? choices;
 
+  /// Template to interpolate as a provisional value while the server-generated
+  /// one is missing (e.g. `DRAFT-{seq}` on a business reference).
+  ///
+  /// Set on a `readonly` field the server fills in on save: a record created
+  /// offline has nothing to display for it until its create is replayed.
+  final String? localPlaceholder;
+
   const MetadataField({
     required this.name,
     required this.label,
@@ -29,6 +36,7 @@ class MetadataField {
     this.target,
     this.targets,
     this.choices,
+    this.localPlaceholder,
   });
 
   /// Resolve the human-readable label of a choice value (returns the raw value
@@ -58,6 +66,7 @@ class MetadataField {
       choices: (json['choices'] as Map<String, dynamic>?)?.map(
         (key, value) => MapEntry(key, value as String),
       ),
+      localPlaceholder: json['local_placeholder'] as String?,
     );
   }
 
@@ -75,6 +84,7 @@ class MetadataField {
       'target': target,
       'targets': targets,
       'choices': choices,
+      'local_placeholder': localPlaceholder,
     };
   }
 }
@@ -97,6 +107,13 @@ class MetadataModel {
 
   /// Whether the client may replicate/sync this model offline (server-driven).
   final bool synchronizable;
+
+  /// How much of the model to mirror (server-driven): `full` pulls a manifest
+  /// of every record then the delta, `partial` pre-downloads nothing and keeps
+  /// whatever the reads returned, `none` does not replicate.
+  ///
+  /// Writes buffer in both replicated modes — this governs reads only.
+  final String synchronizableMode;
   final Map<String, MetadataField> fields;
 
   const MetadataModel({
@@ -111,7 +128,16 @@ class MetadataModel {
     this.searchField,
     this.sortableField,
     this.synchronizable = false,
+    this.synchronizableMode = 'none',
   });
+
+  /// Whether the mirror is filled opportunistically by the reads instead of a
+  /// full manifest pull.
+  bool get isPartiallySynchronizable => synchronizableMode == 'partial';
+
+  /// Fields declaring a provisional value for an offline create.
+  Iterable<MetadataField> get placeholderFields =>
+      fields.values.where((field) => field.localPlaceholder != null);
 
   /// Create a MetadataModel from JSON
   factory MetadataModel.fromJson(Map<String, dynamic> json) {
@@ -133,6 +159,7 @@ class MetadataModel {
       sortable: json['sortable'] as bool,
       sortableField: json['sortable_field'] as String?,
       synchronizable: json['synchronizable'] as bool? ?? false,
+      synchronizableMode: json['synchronizable_mode'] as String? ?? 'none',
       fields: fields,
     );
   }
@@ -150,6 +177,7 @@ class MetadataModel {
       'sortable': sortable,
       'sortable_field': sortableField,
       'synchronizable': synchronizable,
+      'synchronizable_mode': synchronizableMode,
       'fields': fields.map((key, value) => MapEntry(key, value.toJson())),
     };
   }

@@ -15,6 +15,7 @@ import 'image_mirror.dart';
 import 'local_image_store.dart';
 import 'offline_context_params.dart';
 import 'local_schema.dart';
+import 'local_sequence.dart';
 import 'local_store.dart';
 import 'offline_error.dart';
 import 'outbox.dart';
@@ -84,6 +85,57 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
       _stores?.outbox ?? (hasService<Outbox>() ? getService<Outbox>() : null);
 
   String get cacheModel => owner.cacheModel;
+
+  LocalSequence? get sequence =>
+      _stores?.sequence ??
+      (hasService<LocalSequence>() ? getService<LocalSequence>() : null);
+
+  /// Temporary id of an optimistic offline create: negative, allocated from the
+  /// model's own sequence.
+  ///
+  /// Without a [LocalSequence] there is nowhere to keep a counter, so the
+  /// microsecond clock stands in: still negative and still unique, only less
+  /// readable.
+  Future<int> _nextTempId() async {
+    final sequence = this.sequence;
+
+    if (sequence == null) {
+      return -DateTime.now().microsecondsSinceEpoch;
+    }
+
+    return sequence.nextTempId(cacheModel);
+  }
+
+  /// Provisional values for the fields the server fills in on save, so a record
+  /// created offline has something to display until its create is replayed
+  /// (`DRAFT-{seq}` on a generated reference).
+  ///
+  /// These live in the local record only — never in the buffered payload, which
+  /// stays what the caller asked for. The replay overwrites the record with the
+  /// server one, real values included.
+  Future<Map<String, dynamic>> _placeholders() async {
+    final sequence = this.sequence;
+
+    if (sequence == null) {
+      return const {};
+    }
+
+    final meta = await owner.metadata();
+    final fields = meta?.placeholderFields;
+
+    if (fields == null || fields.isEmpty) {
+      return const {};
+    }
+
+    final values = <String, dynamic>{};
+
+    for (final field in fields) {
+      final seq = await sequence.nextPlaceholder(cacheModel, field.name);
+      values[field.name] = field.localPlaceholder!.replaceAll('{seq}', '$seq');
+    }
+
+    return values;
+  }
 
   /// Context values captured when an operation is buffered.
   Map<String, String> get outboxContext => hasService<OfflineContextParams>()
@@ -179,9 +231,10 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
 
       // Optimistic offline create: a negative temporary id marks the record as
       // pending until the outbox replay assigns the real one.
-      final tempId = -DateTime.now().microsecondsSinceEpoch;
+      final tempId = await _nextTempId();
       final record = {
         ...payload.toJson(),
+        ...await _placeholders(),
         'id': tempId,
         '_offline_pending': true,
       };
@@ -194,6 +247,7 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
           method: 'POST',
           basePath: owner.resolvedBasePath,
           context: outboxContext,
+          model: owner.modelName,
           recordId: tempId,
           payload: payload.toJson(),
           createdAt: createdAt,
@@ -247,6 +301,7 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
           method: 'PATCH',
           basePath: owner.resolvedBasePath,
           context: outboxContext,
+          model: owner.modelName,
           recordId: id,
           payload: payload.toJson(),
           createdAt: createdAt,
@@ -288,6 +343,7 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
             method: 'DELETE',
             basePath: owner.resolvedBasePath,
             context: outboxContext,
+            model: owner.modelName,
             recordId: id,
             createdAt: createdAt,
             cache: cache,
@@ -326,6 +382,7 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
             method: 'DELETE',
             basePath: owner.resolvedBasePath,
             context: outboxContext,
+            model: owner.modelName,
             recordId: id,
             createdAt: createdAt,
             base: base,
@@ -363,6 +420,17 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
           'OfflineApiModelEngine',
         ).warning('Outbox flush failed', error);
       }
+    }
+
+    // A partially replicated model pre-downloads nothing: the mirror holds
+    // whatever the reads happened to return (_listRemote/_getRemote merge each
+    // record they receive), so there is no manifest to pull and nothing to
+    // prune — a record absent server-side may simply never have been read.
+    // Flushing the outbox above is the whole of its sync.
+    if ((await owner.metadata())?.isPartiallySynchronizable ?? false) {
+      await _refreshMirroredImages(ctx);
+
+      return;
     }
 
     final pendingByRecord = <String, List<PendingOperation>>{};
@@ -503,6 +571,28 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
     }
   }
 
+  /// Refresh the image mirror against the records already held locally, without
+  /// pulling anything new — the image side of a partial sync.
+  Future<void> _refreshMirroredImages(_ReplicaContext? ctx) async {
+    final mirror = imageMirror;
+
+    if (mirror == null) {
+      return;
+    }
+
+    if (ctx != null) {
+      await mirror.refresh(
+        ctx.imageNamespace,
+        await ctx.replica.store.getAll(ctx.model.name, ctx.scope),
+        owner.syncImageFields,
+      );
+
+      return;
+    }
+
+    await mirror.refreshNamespace(cacheModel, owner.syncImageFields);
+  }
+
   /// Re-apply the optimistic effect of the still-buffered operations on top of
   /// the freshly pulled records, so a sync never visually reverts an offline
   /// write.
@@ -604,6 +694,7 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
           limit: limit ?? result.total,
           offset: offset,
           totalPages: _totalPages(result.total, limit),
+          fromCache: true,
         );
       } catch (error) {
         _warnReplicaFailure('cached query', error);
@@ -622,6 +713,7 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
       limit: limit ?? all.length,
       offset: offset,
       totalPages: _totalPages(all.length, limit),
+      fromCache: true,
     );
   }
 
@@ -1105,12 +1197,14 @@ class OfflineStores implements OfflineBindings {
   final ImageMirror? imageMirror;
   final Replica? replica;
   final Outbox? outbox;
+  final LocalSequence? sequence;
 
   const OfflineStores({
     this.localStore,
     this.imageMirror,
     this.replica,
     this.outbox,
+    this.sequence,
   });
 }
 

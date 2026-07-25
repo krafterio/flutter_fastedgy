@@ -49,11 +49,74 @@ bool sameContext(Map<String, String> a, Map<String, String> b) =>
     a.length == b.length &&
     a.entries.every((entry) => b[entry.key] == entry.value);
 
+/// The multipart upload of a [PendingOperation] whose method is `UPLOAD`.
+///
+/// The bytes themselves live in the `PendingUploadStore` under [uploadId]; this
+/// only describes where to send them.
+class PendingUploadRequest {
+  /// `attachment` — one file becoming an Attachment record through
+  /// `/storage/upload/attachments`, its values (owner included) carried by
+  /// [meta] so the record is created already associated;
+  /// `modelField` — one file written to a model's field through
+  /// `/storage/upload/{model}/{id}/{field}`.
+  final String kind;
+
+  /// Handle of the buffered bytes in the `PendingUploadStore`.
+  final String uploadId;
+
+  final String fileName;
+  final String? mimeType;
+
+  /// Attachment values applied server-side (`kind` `attachment`); ids inside are
+  /// remapped on replay, so it may reference a record created offline.
+  final Map<String, dynamic>? meta;
+
+  /// Target field (`kind` `modelField`).
+  final String? field;
+
+  /// Storage route prefix captured when the upload was buffered.
+  final String prefix;
+
+  static const kindAttachment = 'attachment';
+  static const kindModelField = 'modelField';
+
+  const PendingUploadRequest({
+    required this.kind,
+    required this.uploadId,
+    required this.fileName,
+    this.mimeType,
+    this.meta,
+    this.field,
+    this.prefix = '',
+  });
+
+  factory PendingUploadRequest.fromJson(Map<String, dynamic> json) =>
+      PendingUploadRequest(
+        kind: json['kind'] as String,
+        uploadId: json['upload_id'] as String,
+        fileName: json['file_name'] as String,
+        mimeType: json['mime_type'] as String?,
+        meta: (json['meta'] as Map?)?.cast<String, dynamic>(),
+        field: json['field'] as String?,
+        prefix: json['prefix'] as String? ?? '',
+      );
+
+  Map<String, dynamic> toJson() => {
+    'kind': kind,
+    'upload_id': uploadId,
+    'file_name': fileName,
+    'mime_type': mimeType,
+    'meta': meta,
+    'field': field,
+    'prefix': prefix,
+  };
+}
+
 /// A buffered offline write, replayed in order by the sync engine.
 class PendingOperation {
   final String id;
 
-  /// 'POST', 'PATCH' or 'DELETE'.
+  /// 'POST', 'PATCH', 'DELETE' or 'UPLOAD'.
   final String method;
 
   /// Base path of the resource, unresolved (e.g. '/{workspace}/users').
@@ -66,6 +129,14 @@ class PendingOperation {
 
   /// Target record id (the optimistic temporary id for creates).
   final Object? recordId;
+
+  /// Metadata name of the model this operation targets, when known.
+  ///
+  /// Temporary ids are allocated per model, so two models legitimately hand out
+  /// the same values: resolving one back to its server id needs the model it
+  /// belongs to, not only its value. Falls back to the cache namespace, unique
+  /// per resource, for a model whose name is unknown.
+  final String? model;
 
   final Map<String, dynamic>? payload;
 
@@ -81,6 +152,9 @@ class PendingOperation {
   final int attempts;
   final OutboxCacheContext cache;
 
+  /// The multipart upload to replay, when [method] is `UPLOAD`.
+  final PendingUploadRequest? upload;
+
   const PendingOperation({
     required this.id,
     required this.method,
@@ -89,10 +163,16 @@ class PendingOperation {
     required this.createdAt,
     this.context = const {},
     this.recordId,
+    this.model,
     this.payload,
     this.base,
     this.attempts = 0,
+    this.upload,
   });
+
+  static const methodUpload = 'UPLOAD';
+
+  bool get isUpload => method == methodUpload;
 
   factory PendingOperation.fromJson(Map<String, dynamic> json) =>
       PendingOperation(
@@ -105,6 +185,7 @@ class PendingOperation {
             ) ??
             const {},
         recordId: json['record_id'],
+        model: json['model'] as String?,
         payload: (json['payload'] as Map?)?.cast<String, dynamic>(),
         createdAt: json['created_at'] as String,
         base: (json['base'] as Map?)?.cast<String, dynamic>(),
@@ -112,6 +193,11 @@ class PendingOperation {
         cache: OutboxCacheContext.fromJson(
           (json['cache'] as Map).cast<String, dynamic>(),
         ),
+        upload: json['upload'] == null
+            ? null
+            : PendingUploadRequest.fromJson(
+                (json['upload'] as Map).cast<String, dynamic>(),
+              ),
       );
 
   Map<String, dynamic> toJson() => {
@@ -120,11 +206,13 @@ class PendingOperation {
     'base_path': basePath,
     'context': context,
     'record_id': recordId,
+    'model': model,
     'payload': payload,
     'created_at': createdAt,
     'base': base,
     'attempts': attempts,
     'cache': cache.toJson(),
+    'upload': upload?.toJson(),
   };
 
   PendingOperation withAttempts(int attempts) => PendingOperation(
@@ -133,11 +221,13 @@ class PendingOperation {
     basePath: basePath,
     context: context,
     recordId: recordId,
+    model: model,
     payload: payload,
     createdAt: createdAt,
     base: base,
     attempts: attempts,
     cache: cache,
+    upload: upload,
   );
 }
 

@@ -22,13 +22,33 @@ class PaginationResult<T> {
   /// Total number of pages
   final int totalPages;
 
+  /// Whether this page was served from the local mirror instead of the server.
+  ///
+  /// True when the server could not be reached and the offline engine fell back
+  /// to the cache, or when the cache was queried directly: the data is as fresh
+  /// as the last successful read, which a UI may want to signal.
+  final bool fromCache;
+
   const PaginationResult({
     required this.items,
     required this.total,
     required this.limit,
     required this.offset,
     required this.totalPages,
+    this.fromCache = false,
   });
+
+  /// Same page, marked as coming from the local mirror.
+  PaginationResult<T> asCached() => fromCache
+      ? this
+      : PaginationResult<T>(
+          items: items,
+          total: total,
+          limit: limit,
+          offset: offset,
+          totalPages: totalPages,
+          fromCache: true,
+        );
 
   /// Create from JSON response
   ///

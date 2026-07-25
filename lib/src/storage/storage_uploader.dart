@@ -3,23 +3,65 @@
  * MIT License (see LICENSE file).
  */
 
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as path;
 import '../fetcher/client.dart';
+import '../fetcher/http_error.dart';
 import '../logging/logger.dart';
+import '../metadata/metadata_provider.dart';
 import '../api/base/attachment_api.dart';
+import '../offline/local_sequence.dart';
+import '../offline/outbox.dart';
+import '../offline/pending_upload_store.dart';
 import 'models.dart';
 
 /// Service for uploading files to FastEdgy storage
+///
+/// When the offline services are wired ([outbox] + [uploads]), an upload that
+/// cannot reach the server is buffered instead of failing: the bytes are kept
+/// locally (images already optimized) and the request is replayed by the
+/// `SyncEngine` on reconnect — the same contract as a buffered create.
 class StorageUploader {
+  /// Metadata name of the Attachment model: the scope of a buffered
+  /// attachment's temporary id, and the model a replayed upload belongs to.
+  static const _attachmentModel = 'attachment';
+
   final Fetcher _fetcher;
   final String? prefix;
+  final Outbox? outbox;
+  final PendingUploadStore? uploads;
+  final LocalSequence? sequence;
+  final MetadataProvider? metadatas;
   final _logger = getLogger('StorageUploader');
 
-  StorageUploader(this._fetcher, {this.prefix});
+  StorageUploader(
+    this._fetcher, {
+    this.prefix,
+    this.outbox,
+    this.uploads,
+    this.sequence,
+    this.metadatas,
+  });
+
+  /// Resource path of a model, resolved through its `api_name` like
+  /// [ApiModel.resolvePath] does — never guessed from the model name.
+  ///
+  /// Keys the buffered operation's base path, which is how a consumer (the
+  /// pending-operations view) resolves the model back from it.
+  Future<String> _resourcePath(String model) async {
+    final apiName = (await metadatas?.getMetadata(model))?.apiName;
+
+    return '/${apiName ?? model}';
+  }
+
+  /// Whether a failed upload can be buffered for a later replay.
+  bool get canBuffer => outbox != null && uploads != null;
+
+  bool _shouldBuffer(Object error) => canBuffer && isServerUnavailable(error);
 
   /// Upload a file to a model field
   ///
@@ -49,6 +91,7 @@ class StorageUploader {
     required File file,
     CompressionOptions? compression,
     void Function(int sent, int total)? onProgress,
+    OutboxCacheContext? cache,
   }) async {
     _logger.fine('Uploading file to $model/$modelId/$field');
 
@@ -84,17 +127,59 @@ class StorageUploader {
     final url = '${prefix ?? ''}/storage/upload/$model/$modelId/$field';
     _logger.fine('Uploading to $url (${fileBytes.length} bytes)');
 
-    final response = await _fetcher.post(
-      url,
-      formData,
-      headers: {'Content-Type': 'multipart/form-data'},
-      onSendProgress: onProgress,
-    );
+    try {
+      final response = await _fetcher.post(
+        url,
+        formData,
+        headers: {'Content-Type': 'multipart/form-data'},
+        onSendProgress: onProgress,
+      );
 
-    final result = StorageUploadResult(response.data);
-    _logger.fine('Upload successful: ${result.path}');
+      final result = StorageUploadResult(response.data);
+      _logger.fine('Upload successful: ${result.path}');
 
-    return result;
+      return result;
+    } on Object catch (error) {
+      if (!_shouldBuffer(error)) {
+        rethrow;
+      }
+
+      // The bytes buffered here are the ones that would have been sent
+      // (compressed included), so the replay re-sends exactly this.
+      final buffered = await uploads!.put(
+        fileBytes,
+        fileName: fileName,
+        mimeType: mimeType,
+      );
+      final basePath = await _resourcePath(model);
+
+      await outbox!.enqueue(
+        (id, createdAt) => PendingOperation(
+          id: id,
+          method: PendingOperation.methodUpload,
+          basePath: basePath,
+          recordId: modelId,
+          model: model,
+          // Not sent; gives a pending-operations view a name to display.
+          payload: {'name': fileName},
+          createdAt: createdAt,
+          cache: cache ?? OutboxCacheContext(kind: 'json', namespace: model),
+          upload: PendingUploadRequest(
+            kind: PendingUploadRequest.kindModelField,
+            uploadId: buffered.id,
+            fileName: fileName,
+            mimeType: mimeType,
+            field: field,
+            prefix: prefix ?? '',
+          ),
+        ),
+      );
+      _logger.fine('Server unreachable, buffered the upload of $fileName');
+
+      // The local reference stands in for the storage path until the replay
+      // returns the real one.
+      return StorageUploadResult({'path': buffered.ref});
+    }
   }
 
   /// Delete a file from a model field
@@ -229,47 +314,47 @@ class StorageUploader {
   Future<List<Attachment>> uploadAttachments(
     Map<String, File> files, {
     void Function(int sent, int total)? onProgress,
+    Map<String, dynamic>? meta,
+    CompressionOptions? compression,
+    OutboxCacheContext? cache,
   }) async {
     _logger.fine('Uploading ${files.length} attachments');
 
-    // Create form data with all files
-    final formData = FormData();
+    // Read (and optionally optimize) up front: the same bytes are sent now or
+    // buffered below, so a compressed image is never uploaded uncompressed.
+    final prepared = <String, _CompressedFile>{};
 
     for (final entry in files.entries) {
-      final file = entry.value;
-      final fileName = path.basename(file.path);
-      final mimeType = _getMimeType(file.path);
-
-      final multipartFile = await MultipartFile.fromFile(
-        file.path,
-        filename: fileName,
-        contentType: mimeType != null ? DioMediaType.parse(mimeType) : null,
-      );
-
-      formData.files.add(MapEntry(entry.key, multipartFile));
+      prepared[entry.key] = await _prepare(entry.value, compression);
     }
 
-    // Upload all files
-    final url = '${prefix ?? ''}/storage/upload/attachments';
-    _logger.fine('Uploading to $url');
-
-    final response = await _fetcher.post(
-      url,
-      formData,
-      headers: {'Content-Type': 'multipart/form-data'},
-      onSendProgress: onProgress,
+    return uploadAttachmentsFromBytes(
+      {for (final entry in prepared.entries) entry.key: entry.value.bytes},
+      filenames: {
+        for (final entry in prepared.entries) entry.key: entry.value.fileName,
+      },
+      onProgress: onProgress,
+      meta: meta,
+      cache: cache,
     );
+  }
 
-    final responseData = response.data as Map<String, dynamic>;
-    final attachmentsList = responseData['attachments'] as List;
+  /// Read a file, applying [compression] when it is an image.
+  Future<_CompressedFile> _prepare(
+    File file,
+    CompressionOptions? compression,
+  ) async {
+    if (compression != null && _isImage(file.path)) {
+      _logger.finer('Compressing image with options: $compression');
 
-    final attachments = attachmentsList
-        .map((item) => Attachment(item))
-        .toList();
+      return _compressImage(file, compression);
+    }
 
-    _logger.fine('Uploaded ${attachments.length} attachments successfully');
-
-    return attachments;
+    return _CompressedFile(
+      bytes: await file.readAsBytes(),
+      fileName: path.basename(file.path),
+      mimeType: _getMimeType(file.path) ?? 'application/octet-stream',
+    );
   }
 
   /// Upload multiple attachments from bytes
@@ -292,6 +377,8 @@ class StorageUploader {
     Map<String, Uint8List> filesBytes, {
     required Map<String, String> filenames,
     void Function(int sent, int total)? onProgress,
+    Map<String, dynamic>? meta,
+    OutboxCacheContext? cache,
   }) async {
     _logger.fine('Uploading ${filesBytes.length} attachments from bytes');
 
@@ -311,16 +398,37 @@ class StorageUploader {
       formData.files.add(MapEntry(entry.key, multipartFile));
     }
 
+    // Attachment values applied server-side: the owner travels with the upload
+    // so the record is created already associated, in a single request.
+    if (meta != null && meta.isNotEmpty) {
+      formData.fields.add(MapEntry('meta', jsonEncode(meta)));
+    }
+
     // Upload all files
     final url = '${prefix ?? ''}/storage/upload/attachments';
     _logger.fine('Uploading to $url');
 
-    final response = await _fetcher.post(
-      url,
-      formData,
-      headers: {'Content-Type': 'multipart/form-data'},
-      onSendProgress: onProgress,
-    );
+    final Response response;
+
+    try {
+      response = await _fetcher.post(
+        url,
+        formData,
+        headers: {'Content-Type': 'multipart/form-data'},
+        onSendProgress: onProgress,
+      );
+    } on Object catch (error) {
+      if (!_shouldBuffer(error)) {
+        rethrow;
+      }
+
+      return _bufferAttachments(
+        filesBytes,
+        filenames: filenames,
+        meta: meta,
+        cache: cache,
+      );
+    }
 
     final responseData = response.data as Map<String, dynamic>;
     final attachmentsList = responseData['attachments'] as List;
@@ -332,6 +440,112 @@ class StorageUploader {
     _logger.fine('Uploaded ${attachments.length} attachments successfully');
 
     return attachments;
+  }
+
+  /// Buffer attachments the server could not receive, and return the optimistic
+  /// local records standing in for them.
+  ///
+  /// Each file becomes one `UPLOAD` operation, so it is replayed — and counted
+  /// in the pending badge — on its own. The returned records carry a negative
+  /// temporary id and the local reference of their bytes, both swapped for the
+  /// server values once replayed.
+  Future<List<Attachment>> _bufferAttachments(
+    Map<String, Uint8List> filesBytes, {
+    required Map<String, String> filenames,
+    Map<String, dynamic>? meta,
+    OutboxCacheContext? cache,
+  }) async {
+    final store = uploads!;
+    final queue = outbox!;
+    final results = <Attachment>[];
+    final attachmentPath = await _resourcePath(_attachmentModel);
+    final context =
+        cache ??
+        const OutboxCacheContext(kind: 'json', namespace: 'attachment');
+
+    for (final entry in filesBytes.entries) {
+      final fileName = filenames[entry.key] ?? '${entry.key}.bin';
+      final mimeType = _getMimeTypeFromFilename(fileName);
+      final values = _attachmentMetaFor(meta, entry.key);
+      final buffered = await store.put(
+        entry.value,
+        fileName: fileName,
+        mimeType: mimeType,
+      );
+      final tempId = await _nextAttachmentId();
+
+      await queue.enqueue(
+        (id, createdAt) => PendingOperation(
+          id: id,
+          method: PendingOperation.methodUpload,
+          basePath: attachmentPath,
+          recordId: tempId,
+          model: _attachmentModel,
+          // Not sent (the multipart is built from `upload`); carried so a
+          // pending-operations view has something better to show than an id.
+          payload: {'name': fileName},
+          createdAt: createdAt,
+          cache: context,
+          upload: PendingUploadRequest(
+            kind: PendingUploadRequest.kindAttachment,
+            uploadId: buffered.id,
+            fileName: fileName,
+            mimeType: mimeType,
+            meta: values,
+            prefix: prefix ?? '',
+          ),
+        ),
+      );
+
+      results.add(
+        Attachment({
+          'id': tempId,
+          'name': path.basenameWithoutExtension(fileName),
+          'extension': path.extension(fileName).replaceFirst('.', ''),
+          'mime_type': mimeType,
+          'size_bytes': entry.value.length,
+          ...?values,
+          // Where the bytes are until the upload goes through.
+          '_local_path': buffered.ref,
+          '_offline_pending': true,
+        }),
+      );
+    }
+
+    _logger.fine(
+      'Server unreachable, buffered ${results.length} attachment uploads',
+    );
+
+    return results;
+  }
+
+  /// The attachment values for one file: the flat form applies to every file,
+  /// the keyed form only to its own (mirrors what the endpoint accepts).
+  Map<String, dynamic>? _attachmentMetaFor(
+    Map<String, dynamic>? meta,
+    String fileKey,
+  ) {
+    if (meta == null || meta.isEmpty) {
+      return null;
+    }
+
+    final own = meta[fileKey];
+
+    if (own is Map<String, dynamic>) {
+      return own;
+    }
+
+    return meta;
+  }
+
+  Future<int> _nextAttachmentId() async {
+    final sequence = this.sequence;
+
+    if (sequence == null) {
+      return -DateTime.now().microsecondsSinceEpoch;
+    }
+
+    return sequence.nextTempId(_attachmentModel);
   }
 
   /// Get MIME type from filename
