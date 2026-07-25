@@ -7,8 +7,10 @@ import 'dart:convert';
 
 import 'package:drift/drift.dart';
 
+import '../logging/logger.dart';
 import 'filter_ast.dart';
 import 'local_schema.dart';
+import 'replica_filter_diagnostic.dart';
 import 'offline_database.dart';
 import 'replica_query.dart';
 import 'replica_search.dart';
@@ -43,6 +45,7 @@ class ReplicaStore {
 
   final String dbName;
   final OfflineDatabase Function() _databaseOpener;
+  final _logger = getLogger('ReplicaStore');
   OfflineDatabase? _db;
 
   /// Create a store persisted in [dbName].
@@ -375,10 +378,82 @@ class ReplicaStore {
         )
         .get();
 
+    final total = count.single.read<int>('total');
+
+    if (total == 0) {
+      await _warnUnmirroredQueryFields(schema, model, scope, filter, orderBy);
+    }
+
     return (
       records: rows.map((row) => _decode(row.read<String>('_raw'))).toList(),
-      total: count.single.read<int>('total'),
+      total: total,
     );
+  }
+
+  /// Explain an empty result caused by a field the reads never brought back.
+  ///
+  /// A filter or an order_by on a column no response ever populated matches
+  /// nothing, while the same query answers perfectly online — the server holds
+  /// the value, the mirror does not. Silent otherwise, so it is worth naming.
+  ///
+  /// Only runs on an empty result, and says nothing when the scope holds no row
+  /// at all (there is simply nothing mirrored yet).
+  Future<void> _warnUnmirroredQueryFields(
+    LocalSchema schema,
+    String model,
+    String scope,
+    dynamic filter,
+    dynamic orderBy,
+  ) async {
+    try {
+      final paths = <String>{
+        ...filterFieldPaths(parseFilter(filter)),
+        ...orderByFieldPaths(orderBy),
+      };
+
+      if (paths.isEmpty) {
+        return;
+      }
+
+      final unmirrored = <UnmirroredQueryField>[];
+
+      for (final path in paths) {
+        final target = resolveQueryColumn(schema, model, path);
+
+        if (target == null) {
+          continue;
+        }
+
+        final table = _tableName(target.model);
+        final rows = await _database
+            .customSelect(
+              'SELECT COUNT(*) AS total, COUNT("${target.column}") AS filled '
+              'FROM "$table"',
+            )
+            .get();
+        final counts = rows.single;
+
+        if (counts.read<int>('total') > 0 && counts.read<int>('filled') == 0) {
+          unmirrored.add(
+            UnmirroredQueryField(
+              path: path,
+              model: target.model,
+              column: target.column,
+            ),
+          );
+        }
+      }
+
+      if (unmirrored.isNotEmpty) {
+        _logger.warning(
+          'Offline query on "$model" (scope "$scope") matched nothing because '
+          '${unmirrored.join(', ')} was never mirrored: add it to the X-Fields '
+          'of the reads, or to syncFields, so the column gets populated',
+        );
+      }
+    } on Object catch (error) {
+      _logger.fine('Could not diagnose the empty offline result: $error');
+    }
   }
 
   Variable _variable(Object? value) => switch (value) {
