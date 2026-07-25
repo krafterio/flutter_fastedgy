@@ -13,8 +13,8 @@ import 'package:drift/native.dart';
 import 'package:flutter_fastedgy/flutter_fastedgy.dart';
 
 /// Marks `items` synchronizable so the `/items` API mirrors offline.
-class _FakeMetadataProvider implements MetadataProvider {
-  const _FakeMetadataProvider();
+class _MockMetadataProvider implements MetadataProvider {
+  const _MockMetadataProvider();
 
   static const _item = MetadataModel(
     name: 'item',
@@ -176,7 +176,7 @@ void main() {
 
     if (!hasService<MetadataProvider>()) {
       container.registerSingleton<MetadataProvider>(
-        const _FakeMetadataProvider(),
+        const _MockMetadataProvider(),
       );
     }
   });

@@ -13,8 +13,8 @@ import 'package:drift/native.dart';
 import 'package:flutter_fastedgy/flutter_fastedgy.dart';
 
 /// Marks `items` synchronizable so the `/items` API mirrors offline.
-class _FakeMetadataProvider implements MetadataProvider {
-  const _FakeMetadataProvider();
+class _MockMetadataProvider implements MetadataProvider {
+  const _MockMetadataProvider();
 
   static const _item = MetadataModel(
     name: 'item',
@@ -182,7 +182,7 @@ void main() {
 
     if (!hasService<MetadataProvider>()) {
       container.registerSingleton<MetadataProvider>(
-        const _FakeMetadataProvider(),
+        const _MockMetadataProvider(),
       );
     }
   });
@@ -941,7 +941,7 @@ void main() {
 
   group('cross-process lock', () {
     test('holds the replay back while another process owns the lock', () async {
-      final lock = _FakeSyncLock(available: false);
+      final lock = _MockSyncLock(available: false);
       final lockedEngine = SyncEngine(
         outbox,
         fetcher,
@@ -964,7 +964,7 @@ void main() {
     });
 
     test('replays and releases the lock once it is free', () async {
-      final lock = _FakeSyncLock(available: true);
+      final lock = _MockSyncLock(available: true);
       final lockedEngine = SyncEngine(
         outbox,
         fetcher,
@@ -987,8 +987,8 @@ void main() {
   });
 }
 
-class _FakeSyncLock implements SyncLock {
-  _FakeSyncLock({required this.available});
+class _MockSyncLock implements SyncLock {
+  _MockSyncLock({required this.available});
 
   final bool available;
   int acquisitions = 0;

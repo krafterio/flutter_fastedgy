@@ -14,10 +14,10 @@ import 'package:flutter_fastedgy/flutter_fastedgy.dart';
 
 /// Minimal metadata provider so `modelName`-based APIs resolve their path
 /// (`item` → api_name `items`).
-class _FakeMetadataProvider implements MetadataProvider {
+class _MockMetadataProvider implements MetadataProvider {
   final Map<String, MetadataModel> _map;
 
-  _FakeMetadataProvider(this._map);
+  _MockMetadataProvider(this._map);
 
   @override
   Future<Map<String, MetadataModel>?> getMetadatas() async => _map;
@@ -185,7 +185,7 @@ void main() {
 
     if (!hasService<MetadataProvider>()) {
       container.registerSingleton<MetadataProvider>(
-        _FakeMetadataProvider({
+        _MockMetadataProvider({
           'item': const MetadataModel(
             name: 'item',
             apiName: 'items',

@@ -8,10 +8,10 @@ import 'package:dio/dio.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_fastedgy/flutter_fastedgy.dart';
 
-class _FakeMetadataProvider implements MetadataProvider {
+class _MockMetadataProvider implements MetadataProvider {
   final Map<String, MetadataModel> _map;
 
-  _FakeMetadataProvider(this._map);
+  _MockMetadataProvider(this._map);
 
   @override
   Future<Map<String, MetadataModel>?> getMetadatas() async => _map;
@@ -73,7 +73,7 @@ void main() {
 
     if (!hasService<MetadataProvider>()) {
       container.registerSingleton<MetadataProvider>(
-        _FakeMetadataProvider({'thing': _meta('thing', 'things')}),
+        _MockMetadataProvider({'thing': _meta('thing', 'things')}),
       );
     }
   });

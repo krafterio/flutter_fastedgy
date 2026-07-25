@@ -12,10 +12,10 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_fastedgy/flutter_fastedgy.dart';
 
-class _FakeMetadataProvider implements MetadataProvider {
+class _MockMetadataProvider implements MetadataProvider {
   final Map<String, MetadataModel> _map;
 
-  _FakeMetadataProvider(this._map);
+  _MockMetadataProvider(this._map);
 
   @override
   Future<Map<String, MetadataModel>?> getMetadatas() async => _map;
@@ -139,7 +139,7 @@ void main() {
     await replicaStore.open();
     replica = Replica.withSchema(replicaStore, _schema);
     resolver = ReferenceResolver(
-      metadata: _FakeMetadataProvider({
+      metadata: _MockMetadataProvider({
         'thing': _meta('thing', 'things', synchronizable: true),
         'live': _meta('live', 'lives', synchronizable: false),
         'parent': const MetadataModel(

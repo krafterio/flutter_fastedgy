@@ -25,10 +25,10 @@ class _UnknownApi extends ApiModel<_Membership> {
     : super('/unknown_things', fetcher: fetcher);
 }
 
-class _FakeMetadataProvider implements MetadataProvider {
+class _MockMetadataProvider implements MetadataProvider {
   final Map<String, MetadataModel> metadatas;
 
-  _FakeMetadataProvider(this.metadatas);
+  _MockMetadataProvider(this.metadatas);
 
   @override
   Future<void> fetchMetadatas() async {}
@@ -78,7 +78,7 @@ void main() {
     );
 
     container.registerSingleton<MetadataProvider>(
-      _FakeMetadataProvider({
+      _MockMetadataProvider({
         'workspace_user': const MetadataModel(
           name: 'workspace_user',
           apiName: 'workspace_users',
