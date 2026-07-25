@@ -17,6 +17,13 @@ class Replica {
   LocalSchema? _schema;
   final Set<String> _ensured = {};
 
+  /// Materialization and per-model migrations in flight, shared by their
+  /// concurrent callers. The tenant data syncs several models at once, so
+  /// caching the result alone would let each of them load the schema — and
+  /// migrate the same table — on its own.
+  Future<LocalSchema?>? _loadingSchema;
+  final Map<String, Future<bool>> _ensuring = {};
+
   Replica(ReplicaStore store, MetadataProvider metadata)
     : this._(store, () async {
         final metadatas = await metadata.getMetadatas();
@@ -32,11 +39,21 @@ class Replica {
 
   /// The materialized schema, or null while the metadata are unavailable
   /// (never fetched and no offline mirror yet).
-  Future<LocalSchema?> schema() async => _schema ??= await _schemaLoader();
+  ///
+  /// The loader is cleared on completion, so a materialization that found no
+  /// metadata (first launch offline) is retried on the next call rather than
+  /// answering null for the rest of the session.
+  Future<LocalSchema?> schema() async =>
+      _schema ??= await (_loadingSchema ??= _schemaLoader().whenComplete(() {
+        _loadingSchema = null;
+      }));
 
   /// Ensure the table of [model] exists and matches the schema; returns true
   /// when the model has no usable local data (created or rebuilt) and must
   /// be resynced from the server.
+  ///
+  /// Concurrent callers for the same model share one migration and read the
+  /// same verdict; once it is done the model is ensured for the session.
   Future<bool> ensure(String model) async {
     final schema = await this.schema();
     final modelSchema = schema?.models[model];
@@ -52,10 +69,16 @@ class Replica {
       return false;
     }
 
-    final migration = await store.ensureModel(modelSchema);
-    _ensured.add(model);
+    return _ensuring[model] ??= store
+        .ensureModel(modelSchema)
+        .then((migration) {
+          _ensured.add(model);
 
-    return migration.needsSync;
+          return migration.needsSync;
+        })
+        .whenComplete(() {
+          _ensuring.remove(model);
+        });
   }
 
   /// Purge every replicated model (logout): drops the tables and forgets the
@@ -64,6 +87,8 @@ class Replica {
   Future<void> clearAll() async {
     await store.clearAll();
     _ensured.clear();
+    _ensuring.clear();
     _schema = null;
+    _loadingSchema = null;
   }
 }
