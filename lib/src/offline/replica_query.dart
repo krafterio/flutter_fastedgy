@@ -310,7 +310,7 @@ class ReplicaQueryCompiler {
     ctx,
     parentAlias,
     hops,
-    (alias) => '$alias."${leaf.name}"',
+    (alias) => _leafColumn(alias, leaf),
     args,
   );
 
@@ -988,7 +988,7 @@ class ReplicaQueryCompiler {
       final collate = _isTextualSort(path.leaf) ? ' COLLATE NOCASE' : '';
 
       terms.add(
-        '$alias."${path.leaf.name}"$collate '
+        '${_leafColumn(alias, path.leaf)}$collate '
         '${descending ? 'DESC NULLS FIRST' : 'ASC NULLS LAST'}',
       );
     }
@@ -998,6 +998,32 @@ class ReplicaQueryCompiler {
       orderBy: terms.isEmpty ? '' : ' ORDER BY ${terms.join(', ')}',
     );
   }
+
+  /// SQL reading [leaf] under [alias] — a plain column, or the JSON extraction
+  /// of an extra field, cast to the type the workspace declared so it compares
+  /// and sorts like the server's `(extra ->> 'name')::type` rather than as text.
+  String _leafColumn(String alias, LocalFieldSchema leaf) {
+    final extraName = leaf.extraName;
+
+    if (extraName == null) {
+      return '$alias."${leaf.name}"';
+    }
+
+    final extraction =
+        'json_extract($alias."${leaf.name}", ${_jsonPathLiteral(extraName)})';
+
+    return switch (leaf.type) {
+      'integer' ||
+      'big_integer' ||
+      'small_integer' ||
+      'boolean' => 'CAST($extraction AS INTEGER)',
+      'float' || 'decimal' => 'CAST($extraction AS REAL)',
+      _ => extraction,
+    };
+  }
+
+  String _jsonPathLiteral(String name) =>
+      "'\$.\"${name.replaceAll('"', '""')}\"'";
 
   bool _isTextualSort(LocalFieldSchema leaf) => switch (leaf.type) {
     'datetime' || 'date' || 'json' => false,
@@ -1014,6 +1040,21 @@ class ReplicaQueryCompiler {
       final field = current.fields[segments[i]];
 
       if (field == null) {
+        // A workspace extra field: no column of its own, it is read out of the
+        // shared `extra` JSON column.
+        final extraName = current.extraFieldName(segments[i]);
+
+        if (i == segments.length - 1 && extraName != null) {
+          return _Path(
+            hops: hops,
+            leaf: LocalFieldSchema(
+              name: extraFieldColumn,
+              type: current.extraFields[extraName]!,
+              extraName: extraName,
+            ),
+          );
+        }
+
         // The fulltext field never appears in the metadata fields: it
         // resolves to a pseudo-leaf matched through the FTS5 index of its
         // owner model (carried by `target`), addressed by rowid.

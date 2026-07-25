@@ -10,6 +10,13 @@ import '../metadata/models.dart';
 /// names (`many2one`, `one2many`, `many2many`, `one2one`, `reference`).
 enum LocalRelationKind { none, many2one, one2many, many2many, reference }
 
+/// Prefix the server gives a workspace extra field in the metadata and on the
+/// wire (`extra_priority`), while storing them all in one `extra` JSON column.
+const extraFieldPrefix = 'extra_';
+
+/// Name of the column holding the extra field values.
+const extraFieldColumn = 'extra';
+
 /// One field of a replicated model, derived from its [MetadataField].
 class LocalFieldSchema {
   final String name;
@@ -23,11 +30,16 @@ class LocalFieldSchema {
   /// Allowed target model names of a generic `reference` field.
   final List<String>? targets;
 
+  /// Key this leaf reads inside the `extra` JSON column, set only on the
+  /// pseudo-leaf a path like `extra_priority` resolves to.
+  final String? extraName;
+
   const LocalFieldSchema({
     required this.name,
     required this.type,
     this.target,
     this.targets,
+    this.extraName,
   });
 
   /// Column persisting the target model name of a `reference` field.
@@ -116,13 +128,33 @@ class LocalModelSchema {
   /// Fulltext source fields → search weight (`a`–`d`).
   final Map<String, String> searchWeights;
 
+  /// Workspace extra fields, by name without the `extra_` prefix → metadata
+  /// type. They share the single `extra` JSON column instead of each taking
+  /// one of their own: the set differs per workspace, and a column per field
+  /// would rebuild the table — dropping every workspace's rows — on each
+  /// switch.
+  final Map<String, String> extraFields;
+
   const LocalModelSchema({
     required this.name,
     required this.apiName,
     required this.fields,
     this.searchField,
     this.searchWeights = const {},
+    this.extraFields = const {},
   });
+
+  /// Name of the extra field [path] designates (`extra_priority` → `priority`),
+  /// or null when it designates no declared extra field.
+  String? extraFieldName(String path) {
+    if (!path.startsWith(extraFieldPrefix)) {
+      return null;
+    }
+
+    final name = path.substring(extraFieldPrefix.length);
+
+    return extraFields.containsKey(name) ? name : null;
+  }
 
   bool get searchable => searchField != null && searchWeights.isNotEmpty;
 
@@ -202,20 +234,37 @@ class LocalSchema {
         continue;
       }
 
+      final extraFields = <String, String>{};
+      final fields = <String, LocalFieldSchema>{};
+
+      metadata.fields.forEach((fieldName, field) {
+        if (field.extra && fieldName.startsWith(extraFieldPrefix)) {
+          extraFields[fieldName.substring(extraFieldPrefix.length)] =
+              field.type;
+
+          return;
+        }
+
+        fields[fieldName] = LocalFieldSchema(
+          name: fieldName,
+          type: field.type,
+          target: field.target,
+          targets: field.targets,
+        );
+      });
+
+      if (extraFields.isNotEmpty) {
+        fields[extraFieldColumn] = const LocalFieldSchema(
+          name: extraFieldColumn,
+          type: 'json',
+        );
+      }
+
       models[name] = LocalModelSchema(
         name: metadata.name,
         apiName: metadata.apiName,
-        fields: metadata.fields.map(
-          (fieldName, field) => MapEntry(
-            fieldName,
-            LocalFieldSchema(
-              name: fieldName,
-              type: field.type,
-              target: field.target,
-              targets: field.targets,
-            ),
-          ),
-        ),
+        fields: fields,
+        extraFields: extraFields,
         searchField: metadata.searchField,
         searchWeights: {
           for (final fieldName in metadata.searchableFields)

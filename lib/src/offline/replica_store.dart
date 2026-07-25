@@ -457,7 +457,11 @@ class ReplicaStore {
     final values = <Object?>[
       scope,
       jsonEncode(record),
-      ...columns.map((c) => _columnValue(c, record[c.name])),
+      ...columns.map(
+        (c) => c.name == extraFieldColumn && model.extraFields.isNotEmpty
+            ? _extraColumnValue(model, record)
+            : _columnValue(c, record[c.name]),
+      ),
       for (final field in references) ...[
         (record[field.name] as Map?)?[r'$model'],
         (record[field.name] as Map?)?['id'],
@@ -512,6 +516,26 @@ class ReplicaStore {
     }
 
     return null;
+  }
+
+  /// The `extra` column, folded from the flat `extra_<name>` keys the server
+  /// sends. Only the keys the record actually carries are stored, so a partial
+  /// payload never blanks the values it left out.
+  Object? _extraColumnValue(
+    LocalModelSchema model,
+    Map<String, dynamic> record,
+  ) {
+    final values = <String, dynamic>{};
+
+    for (final name in model.extraFields.keys) {
+      final key = '$extraFieldPrefix$name';
+
+      if (record.containsKey(key)) {
+        values[name] = record[key];
+      }
+    }
+
+    return values.isEmpty ? null : jsonEncode(values);
   }
 
   Object? _columnValue(LocalFieldSchema field, dynamic value) {
