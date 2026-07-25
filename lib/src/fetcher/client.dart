@@ -71,7 +71,11 @@ class Fetcher {
     bool logHeaders = false,
     bool logBody = true,
   }) {
-    final baseUrl = dotenv.env['API_BASE_URL'] ?? '';
+    // A caller passing its own [dio] (a test transport, a second host) has no
+    // reason to have loaded an .env: reading it must not be what fails.
+    final baseUrl = dotenv.isInitialized
+        ? dotenv.env['API_BASE_URL'] ?? ''
+        : '';
 
     final dioInstance =
         dio ??
