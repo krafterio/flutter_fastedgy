@@ -82,7 +82,9 @@ class DefaultMetadataProvider implements MetadataProvider {
       if (isServerUnavailable(e) && await _restore()) {
         _logger.fine('Metadata served from the local mirror');
       } else {
-        _logger.severe('Failed to fetch metadata: ${e.message}');
+        // Nothing mirrored yet (first launch offline): the caller is told the
+        // schema is missing. The log pipeline degrades an unanswered server.
+        _logger.severe('Failed to fetch metadata', e);
         _error = e;
       }
     } catch (e, stackTrace) {

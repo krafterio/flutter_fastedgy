@@ -962,8 +962,9 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
       _replicaFailed.remove(model);
     } catch (error) {
       if (_replicaFailed.add(model)) {
-        getLogger('OfflineApiModelEngine').severe(
-          'Replica unusable for "$model" - degrading to network-only: $error',
+        getLogger('OfflineApiModelEngine').warning(
+          'Replica unusable for "$model" - degrading to network-only',
+          error,
         );
       }
 

@@ -150,9 +150,7 @@ class ImageMirror {
           height: variant.height,
         );
       } catch (error) {
-        _logger.warning(
-          'Failed to mirror image $path (${variant.key}): $error',
-        );
+        _logger.warning('Failed to mirror image $path (${variant.key})', error);
       }
     }
   }

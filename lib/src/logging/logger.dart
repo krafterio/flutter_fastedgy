@@ -5,6 +5,7 @@
 
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:logging/logging.dart';
+import '../fetcher/http_error.dart';
 import './listeners/console_log_listener.dart';
 import './listeners/flutter_log_listener.dart';
 import './log_listener.dart';
@@ -67,9 +68,15 @@ void initializeLogger({Level? logLevel, List<LogListener>? listeners}) {
   // Setup logging
   Logger.root.onRecord.listen(
     (record) {
+      final entry = degradeUnansweredRequest(record);
+
+      if (entry == null) {
+        return;
+      }
+
       for (final listener in _listeners) {
         if (listener.isEnabled) {
-          listener.onData(record);
+          listener.onData(entry);
         }
       }
     },
@@ -88,6 +95,43 @@ void initializeLogger({Level? logLevel, List<LogListener>? listeners}) {
       }
     },
     cancelOnError: false,
+  );
+}
+
+/// Rewrites a record whose error is an unanswered request ([isServerUnavailable]:
+/// no network, timeout, server in maintenance) into a single INFO line, and
+/// returns any other record untouched. Null means the record is dropped.
+///
+/// Running on local data whenever the server is out of reach is the normal path
+/// of an offline-first app, not a defect: call sites keep reporting the failure
+/// they saw (`log.warning('Members load failed', error, stackTrace)`), and the
+/// level is settled here, where the cause is known. The error and its trace are
+/// dropped with it - they only ever restate the missing connection.
+///
+/// Demoting happens after [Logger.root.level] has filtered the record at its
+/// original level, so the demoted line is dropped rather than shown below the
+/// configured threshold.
+LogRecord? degradeUnansweredRequest(LogRecord record) {
+  final error = record.error;
+
+  if (error == null ||
+      record.level <= Level.INFO ||
+      !isServerUnavailable(error)) {
+    return record;
+  }
+
+  if (Level.INFO < Logger.root.level) {
+    return null;
+  }
+
+  return LogRecord(
+    Level.INFO,
+    '${record.message}: ${describeUnavailable(error)}',
+    record.loggerName,
+    null,
+    null,
+    record.zone,
+    record.object,
   );
 }
 

@@ -92,7 +92,7 @@ class StorageUploader {
     );
 
     final result = StorageUploadResult(response.data);
-    _logger.info('Upload successful: ${result.path}');
+    _logger.fine('Upload successful: ${result.path}');
 
     return result;
   }
@@ -108,7 +108,7 @@ class StorageUploader {
 
     await _fetcher.delete(url);
 
-    _logger.info('File deleted successfully');
+    _logger.fine('File deleted successfully');
   }
 
   /// Check if file is an image based on extension
@@ -267,7 +267,7 @@ class StorageUploader {
         .map((item) => Attachment(item))
         .toList();
 
-    _logger.info('Uploaded ${attachments.length} attachments successfully');
+    _logger.fine('Uploaded ${attachments.length} attachments successfully');
 
     return attachments;
   }
@@ -329,7 +329,7 @@ class StorageUploader {
         .map((item) => Attachment(item))
         .toList();
 
-    _logger.info('Uploaded ${attachments.length} attachments successfully');
+    _logger.fine('Uploaded ${attachments.length} attachments successfully');
 
     return attachments;
   }

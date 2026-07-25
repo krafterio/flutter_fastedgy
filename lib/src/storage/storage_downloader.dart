@@ -51,7 +51,7 @@ class StorageDownloader {
     );
 
     final bytes = response.data as Uint8List;
-    _logger.info('Downloaded attachment $attachmentId (${bytes.length} bytes)');
+    _logger.fine('Downloaded attachment $attachmentId (${bytes.length} bytes)');
 
     return bytes;
   }
@@ -81,7 +81,7 @@ class StorageDownloader {
     final file = File(localPath);
     await file.writeAsBytes(bytes);
 
-    _logger.info('Saved attachment $attachmentId to $localPath');
+    _logger.fine('Saved attachment $attachmentId to $localPath');
 
     return file;
   }
@@ -123,7 +123,7 @@ class StorageDownloader {
     );
 
     final bytes = response.data as Uint8List;
-    _logger.info('Downloaded path $path (${bytes.length} bytes)');
+    _logger.fine('Downloaded path $path (${bytes.length} bytes)');
 
     return bytes;
   }
@@ -141,7 +141,7 @@ class StorageDownloader {
     final file = File(localPath);
     await file.writeAsBytes(bytes);
 
-    _logger.info('Saved path $path to $localPath');
+    _logger.fine('Saved path $path to $localPath');
 
     return file;
   }

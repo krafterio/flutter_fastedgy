@@ -91,10 +91,13 @@ class DefaultAuthProvider<TUser> implements AuthProvider<TUser> {
         user: _currentUser,
       );
     } on HttpError catch (e) {
-      _logger.severe('Login failed: ${e.message}');
+      // The error goes to the logger rather than into the message: rejected
+      // credentials read the same, and an unanswered server is degraded to an
+      // INFO line by the log pipeline.
+      _logger.warning('Login failed', e);
       return AuthResult.failure(e.message);
     } catch (e, stackTrace) {
-      _logger.severe('Unexpected error during login', e, stackTrace);
+      _logger.warning('Unexpected error during login', e, stackTrace);
       return AuthResult.failure('An unexpected error occurred');
     }
   }
@@ -131,10 +134,10 @@ class DefaultAuthProvider<TUser> implements AuthProvider<TUser> {
         user: _currentUser,
       );
     } on HttpError catch (e) {
-      _logger.severe('Registration failed: ${e.message}');
+      _logger.warning('Registration failed', e);
       return AuthResult.failure(e.message);
     } catch (e, stackTrace) {
-      _logger.severe('Unexpected error during registration', e, stackTrace);
+      _logger.warning('Unexpected error during registration', e, stackTrace);
       return AuthResult.failure('An unexpected error occurred');
     }
   }
@@ -224,7 +227,7 @@ class DefaultAuthProvider<TUser> implements AuthProvider<TUser> {
         _currentUser = _parseUser(response.data);
         return _currentUser;
       } catch (e) {
-        _logger.warning('Failed to fetch current user: $e');
+        _logger.warning('Failed to fetch current user', e);
       }
     }
 

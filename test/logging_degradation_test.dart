@@ -10,6 +10,14 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  LogRecord record(Object? error) => LogRecord(
+    Level.SEVERE,
+    'Members load failed',
+    'WorkspaceSettingsScreen',
+    error,
+    StackTrace.current,
+  );
+
   HttpError httpError(int status) => HttpError.fromDioException(
     DioException(
       requestOptions: RequestOptions(path: '/members'),
@@ -26,6 +34,60 @@ void main() {
     type: DioExceptionType.connectionError,
     error: 'Connection refused',
   );
+
+  group('degradeUnansweredRequest', () {
+    test('degrades an unreachable server to a single INFO line', () {
+      final degraded = degradeUnansweredRequest(record(connectionError()))!;
+
+      expect(degraded.level, Level.INFO);
+      expect(degraded.message, 'Members load failed: server unreachable');
+      expect(degraded.error, isNull);
+      expect(degraded.stackTrace, isNull);
+      expect(degraded.loggerName, 'WorkspaceSettingsScreen');
+    });
+
+    test('degrades a server in maintenance, naming its status', () {
+      final degraded = degradeUnansweredRequest(record(httpError(503)))!;
+
+      expect(degraded.level, Level.INFO);
+      expect(
+        degraded.message,
+        'Members load failed: server unavailable (HTTP 503)',
+      );
+    });
+
+    test('keeps a rejection the server did answer', () {
+      for (final status in [400, 404, 422, 500]) {
+        final original = record(httpError(status));
+        final kept = degradeUnansweredRequest(original)!;
+
+        expect(kept, same(original), reason: 'HTTP $status must stay severe');
+        expect(kept.level, Level.SEVERE);
+        expect(kept.stackTrace, isNotNull);
+      }
+    });
+
+    test('keeps a record without an error, and one below INFO', () {
+      final plain = LogRecord(Level.SEVERE, 'Boom', 'Scope');
+      expect(degradeUnansweredRequest(plain), same(plain));
+
+      final fine = LogRecord(
+        Level.FINE,
+        'Retrying',
+        'Scope',
+        connectionError(),
+      );
+      expect(degradeUnansweredRequest(fine), same(fine));
+    });
+
+    test('drops the line when INFO is below the configured level', () {
+      final previous = Logger.root.level;
+      Logger.root.level = Level.WARNING;
+      addTearDown(() => Logger.root.level = previous);
+
+      expect(degradeUnansweredRequest(record(connectionError())), isNull);
+    });
+  });
 
   group('isServerUnavailable', () {
     test('covers connectivity failures and unservable statuses', () {
