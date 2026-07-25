@@ -14,14 +14,21 @@ import 'replica_store.dart';
 class Replica {
   final ReplicaStore store;
   final Future<LocalSchema?> Function() _schemaLoader;
-  LocalSchema? _schema;
+  final String Function() _scopeOf;
   final Set<String> _ensured = {};
+
+  /// Materialized schemas, keyed by the metadata scope they were built from.
+  ///
+  /// Tenant-scoped metadata (`setPrefix('/{workspace}')`) describe a different
+  /// set of extra fields per workspace, so a single slot would keep answering
+  /// with the previous workspace's schema after a switch.
+  final Map<String, LocalSchema?> _schemas = {};
 
   /// Materialization and per-model migrations in flight, shared by their
   /// concurrent callers. The tenant data syncs several models at once, so
   /// caching the result alone would let each of them load the schema — and
   /// migrate the same table — on its own.
-  Future<LocalSchema?>? _loadingSchema;
+  final Map<String, Future<LocalSchema?>> _loadingSchemas = {};
   final Map<String, Future<bool>> _ensuring = {};
 
   Replica(ReplicaStore store, MetadataProvider metadata)
@@ -29,24 +36,33 @@ class Replica {
         final metadatas = await metadata.getMetadatas();
 
         return metadatas == null ? null : LocalSchema.fromModels(metadatas);
-      });
+      }, () => metadata.scope);
 
   /// Test seam: a replica with a fixed schema.
   Replica.withSchema(ReplicaStore store, LocalSchema schema)
-    : this._(store, () async => schema);
+    : this._(store, () async => schema, () => '');
 
-  Replica._(this.store, this._schemaLoader);
+  Replica._(this.store, this._schemaLoader, this._scopeOf);
 
-  /// The materialized schema, or null while the metadata are unavailable
-  /// (never fetched and no offline mirror yet).
+  /// The materialized schema of the current metadata scope, or null while the
+  /// metadata are unavailable (never fetched and no offline mirror yet).
   ///
   /// The loader is cleared on completion, so a materialization that found no
   /// metadata (first launch offline) is retried on the next call rather than
   /// answering null for the rest of the session.
-  Future<LocalSchema?> schema() async =>
-      _schema ??= await (_loadingSchema ??= _schemaLoader().whenComplete(() {
-        _loadingSchema = null;
-      }));
+  Future<LocalSchema?> schema() async {
+    final scope = _scopeOf();
+    final loaded = _schemas[scope];
+
+    if (loaded != null) {
+      return loaded;
+    }
+
+    return _schemas[scope] = await (_loadingSchemas[scope] ??= _schemaLoader()
+        .whenComplete(() {
+          _loadingSchemas.remove(scope);
+        }));
+  }
 
   /// Ensure the table of [model] exists and matches the schema; returns true
   /// when the model has no usable local data (created or rebuilt) and must
@@ -88,7 +104,7 @@ class Replica {
     await store.clearAll();
     _ensured.clear();
     _ensuring.clear();
-    _schema = null;
-    _loadingSchema = null;
+    _schemas.clear();
+    _loadingSchemas.clear();
   }
 }

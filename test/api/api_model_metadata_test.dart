@@ -50,6 +50,9 @@ class _MockMetadataProvider implements MetadataProvider {
   String? get prefix => null;
 
   @override
+  String get scope => '';
+
+  @override
   void setPrefix(String? newPrefix) {}
 }
 

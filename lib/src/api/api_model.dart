@@ -33,12 +33,22 @@ abstract class ApiModel<T extends BaseModel<T>> {
   final Fetcher fetcher;
   final OfflineBindings? offlineBindings;
 
+  /// Resource segment to use instead of asking the metadata for the model's
+  /// `api_name`.
+  ///
+  /// Only needed by a resource that has to be reachable *before* any metadata
+  /// are: with tenant-scoped metadata (`setPrefix('/{workspace}')`), the
+  /// workspaces themselves cannot resolve their path from a payload that can
+  /// only be fetched once a workspace is known.
+  final String? apiName;
+
   String? _resolvedPath;
   ApiModelEngine<T>? _engine;
 
   ApiModel(
     this.basePath, {
     this.modelName,
+    this.apiName,
     Fetcher? fetcher,
     this.offlineBindings,
   }) : fetcher = fetcher ?? getService<Fetcher>();
@@ -109,8 +119,9 @@ abstract class ApiModel<T extends BaseModel<T>> {
     return null;
   }
 
-  /// Resource path: [basePath] + the model `api_name` from the metadata (when
-  /// [modelName] is set), memoized once resolvable.
+  /// Resource path: [basePath] + the model `api_name`, taken from the declared
+  /// [apiName] when there is one and read from the metadata otherwise,
+  /// memoized once resolvable.
   Future<String> resolvePath() async {
     if (modelName == null) {
       return basePath;
@@ -122,13 +133,19 @@ abstract class ApiModel<T extends BaseModel<T>> {
       return cached;
     }
 
-    final apiName = (await metadata())?.apiName;
+    final declared = apiName;
 
-    if (apiName == null) {
+    if (declared != null) {
+      return _resolvedPath = _joinPath(basePath, declared);
+    }
+
+    final resolved = (await metadata())?.apiName;
+
+    if (resolved == null) {
       return _joinPath(basePath, modelName!);
     }
 
-    return _resolvedPath = _joinPath(basePath, apiName);
+    return _resolvedPath = _joinPath(basePath, resolved);
   }
 
   String get resolvedBasePath => _resolvedPath ?? basePath;

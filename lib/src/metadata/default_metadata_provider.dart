@@ -53,29 +53,38 @@ class DefaultMetadataProvider implements MetadataProvider {
     });
   }
 
-  /// Cache bucket of the current prefix, the tenant it resolves to included.
+  /// The prefix with its context params substituted, or null while any of them
+  /// is unresolved — there is no tenant to ask the metadata of yet, and asking
+  /// under the raw placeholder would only reach a route that does not exist.
   ///
-  /// Empty when no prefix is set (the common case: metadata are global). A
-  /// prefix carrying a `{param}` is substituted from the offline context —
-  /// the same registry the resource base paths resolve through — so the
-  /// entries of two workspaces never share a slot. An unresolved param keeps
-  /// its placeholder and simply buckets apart from the resolved ones.
-  String get _scope {
+  /// A resource needing to be reachable before that point declares its own
+  /// `apiName` rather than reading it here.
+  String? get _resolvedPrefix {
     final prefix = _prefix;
 
     if (prefix == null || prefix.isEmpty) {
       return '';
     }
 
-    if (!prefix.contains('{') || !hasService<OfflineContextParams>()) {
+    if (!prefix.contains('{')) {
       return prefix;
     }
 
-    return OfflineContextParams.substituteWith(
+    if (!hasService<OfflineContextParams>()) {
+      return null;
+    }
+
+    final resolved = OfflineContextParams.substituteWith(
       prefix,
       getService<OfflineContextParams>().resolve(),
     );
+
+    return resolved.contains('{') ? null : resolved;
   }
+
+  /// Cache bucket the metadata belong to: two workspaces never share a slot.
+  @override
+  String get scope => _resolvedPrefix ?? '';
 
   @override
   bool get loading => _loading;
@@ -98,7 +107,13 @@ class DefaultMetadataProvider implements MetadataProvider {
   /// before the future removes it.
   @override
   Future<void> fetchMetadatas() {
-    final scope = _scope;
+    final scope = _resolvedPrefix;
+
+    if (scope == null) {
+      _logger.fine('No tenant resolved yet, skipping metadata fetch');
+
+      return Future.value();
+    }
 
     return _fetching[scope] ??= _fetch(scope).whenComplete(() {
       _fetching.remove(scope);
@@ -116,7 +131,7 @@ class DefaultMetadataProvider implements MetadataProvider {
     _error = null;
 
     try {
-      final url = '${_prefix ?? ''}/dataset/metadatas';
+      final url = '$scope/dataset/metadatas';
       _logger.finer('Fetching metadata from $url');
 
       final response = await _fetcher.get(url);
@@ -185,7 +200,11 @@ class DefaultMetadataProvider implements MetadataProvider {
 
   @override
   Future<Map<String, MetadataModel>?> getMetadatas() async {
-    final scope = _scope;
+    final scope = _resolvedPrefix;
+
+    if (scope == null) {
+      return null;
+    }
 
     if (!_metadatas.containsKey(scope)) {
       await fetchMetadatas();

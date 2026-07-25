@@ -21,6 +21,11 @@ class _MockAuthProvider implements AuthProvider {
       throw UnimplementedError('${invocation.memberName}');
 }
 
+class _AcmeWorkspace implements OfflineContextParamsResolver {
+  @override
+  Map<String, Object?> resolve() => const {'workspace': 'acme'};
+}
+
 class _ScriptedAdapter implements HttpClientAdapter {
   bool offline = false;
   final Map<String, Map<String, dynamic> Function(RequestOptions options)>
@@ -202,6 +207,42 @@ void main() {
       for (final metadatas in results) {
         expect(metadatas?['workspace_user']?.apiName, 'workspace_users');
       }
+    });
+
+    test('stays silent while the tenant is unresolved', () async {
+      var calls = 0;
+      adapter.routes['GET /dataset/metadatas'] = (options) {
+        calls++;
+
+        return _metadatasPayload;
+      };
+
+      // A tenant-scoped prefix with nothing to resolve it: asking now would
+      // only reach a route that does not exist, so nothing is requested.
+      provider.setPrefix('/{workspace}');
+
+      expect(await provider.getMetadatas(), isNull);
+      expect(calls, 0);
+    });
+
+    test('fetches under the tenant once it resolves', () async {
+      var scoped = 0;
+      adapter.routes['GET /acme/dataset/metadatas'] = (options) {
+        scoped++;
+
+        return _metadatasPayload;
+      };
+
+      container.registerSingleton<OfflineContextParams>(
+        OfflineContextParams()..register(_AcmeWorkspace()),
+      );
+      addTearDown(() => container.unregister<OfflineContextParams>());
+
+      provider.setPrefix('/{workspace}');
+
+      expect((await provider.getMetadatas())?['workspace_user'], isNotNull);
+      expect(scoped, 1);
+      expect(provider.scope, '/acme');
     });
 
     test('fetches again after a failed attempt', () async {

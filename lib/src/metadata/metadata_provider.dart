@@ -56,6 +56,13 @@ abstract class MetadataProvider {
   /// Get the current prefix
   String? get prefix;
 
+  /// Bucket the metadata currently belong to: the [prefix] with its context
+  /// params substituted (`/{workspace}` → `/acme`), so a consumer caching
+  /// anything derived from them can tell one tenant's schema from another's.
+  ///
+  /// Empty for a prefix-less provider, and while a param is unresolved.
+  String get scope => '';
+
   /// Set the prefix for metadata API calls
   ///
   /// Example: `/agent`, `/admin`, etc.

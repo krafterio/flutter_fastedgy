@@ -60,6 +60,9 @@ class _CountingMetadataProvider implements MetadataProvider {
   }
 
   @override
+  String get scope => '';
+
+  @override
   dynamic noSuchMethod(Invocation invocation) =>
       throw UnimplementedError('${invocation.memberName}');
 }
