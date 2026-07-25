@@ -12,7 +12,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_fastedgy/flutter_fastedgy.dart';
 
-class _FakeAuthProvider implements AuthProvider {
+class _MockAuthProvider implements AuthProvider {
   @override
   Future<bool> isAuthenticated() async => true;
 
@@ -134,7 +134,7 @@ void main() {
 
     provider = DefaultMetadataProvider(
       _fetcher(adapter),
-      _FakeAuthProvider(),
+      _MockAuthProvider(),
       getService<Bus>(),
     );
   });
@@ -161,7 +161,7 @@ void main() {
       adapter.offline = true;
       final offlineProvider = DefaultMetadataProvider(
         _fetcher(adapter),
-        _FakeAuthProvider(),
+        _MockAuthProvider(),
         getService<Bus>(),
       );
 
@@ -180,6 +180,44 @@ void main() {
 
       expect(metadatas, isNull);
       expect(provider.error, isNotNull);
+    });
+  });
+
+  group('DefaultMetadataProvider single-flight', () {
+    test('serves concurrent callers from one request', () async {
+      var calls = 0;
+      adapter.routes['GET /dataset/metadatas'] = (options) {
+        calls++;
+
+        return _metadatasPayload;
+      };
+
+      final results = await Future.wait([
+        provider.getMetadatas(),
+        provider.getMetadatas(),
+        provider.getMetadatas(),
+      ]);
+
+      expect(calls, 1);
+      for (final metadatas in results) {
+        expect(metadatas?['workspace_user']?.apiName, 'workspace_users');
+      }
+    });
+
+    test('fetches again after a failed attempt', () async {
+      adapter.offline = true;
+      expect(await provider.getMetadatas(), isNull);
+
+      var calls = 0;
+      adapter.offline = false;
+      adapter.routes['GET /dataset/metadatas'] = (options) {
+        calls++;
+
+        return _metadatasPayload;
+      };
+
+      expect((await provider.getMetadatas())?['workspace_user'], isNotNull);
+      expect(calls, 1);
     });
   });
 }
