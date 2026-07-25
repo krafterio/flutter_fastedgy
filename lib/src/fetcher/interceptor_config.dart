@@ -5,9 +5,16 @@
 
 import 'package:dio/dio.dart' as dio;
 
-// Export Dio's interceptor-related classes for external use
+// Export Dio's interceptor-related classes for external use. DioException is
+// part of it: rejecting a request is what an interceptor does when it can tell
+// the call is wrong, and an app has no other way to build one.
 export 'package:dio/dio.dart'
-    show Interceptor, RequestOptions, RequestInterceptorHandler;
+    show
+        Interceptor,
+        RequestOptions,
+        RequestInterceptorHandler,
+        DioException,
+        DioExceptionType;
 
 /// Alias for Dio's Interceptor
 typedef ApiInterceptor = dio.Interceptor;

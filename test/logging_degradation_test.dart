@@ -3,7 +3,6 @@
  * MIT License (see LICENSE file).
  */
 
-import 'package:dio/dio.dart';
 import 'package:flutter_fastedgy/flutter_fastedgy.dart';
 import 'package:flutter_test/flutter_test.dart';
 
