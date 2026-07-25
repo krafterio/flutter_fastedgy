@@ -241,6 +241,32 @@ void main() {
       expect(await _resolveOutcome(tester, provider('avatars/a.png')), isNull);
     });
 
+    testWidgets('falls back to a differently sized mirrored variant', (
+      tester,
+    ) async {
+      await mount(tester);
+
+      // What the image mirror prefetches: the variants the model declares
+      // (`SyncImageField(variants: [ImageVariant(width: 256, height: 256)])`),
+      // which is not the rendition a widget asks for — that one comes from its
+      // own logical size times the device pixel ratio.
+      await imageStore.putVariant(
+        'avatars/a.png',
+        '256x256|cover|webp',
+        _png,
+        width: 256,
+        height: 256,
+      );
+
+      adapter.offline = true;
+
+      // The exact key misses, so the most faithful stored one has to answer:
+      // otherwise every mirrored image is unusable offline, the widget never
+      // asking for the size the mirror stored.
+      expect(await _resolveOutcome(tester, provider('avatars/a.png')), isNull);
+      expect(adapter.calls, ['GET /storage/download/avatars/a.png']);
+    });
+
     testWidgets('fails on a server error with nothing mirrored', (
       tester,
     ) async {

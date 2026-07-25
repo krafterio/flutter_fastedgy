@@ -9,6 +9,7 @@ import '../container/container.dart';
 import '../storage/storage_downloader.dart';
 import '../logging/logger.dart';
 import 'image_cache.dart' as fastedgy_cache;
+import 'storage_image_bytes.dart';
 import 'image_dimensions_helper.dart';
 
 /// Image resize mode for API requests
@@ -249,12 +250,13 @@ class _CachedApiImageState extends State<CachedApiImage> {
         'Loading image from path: ${widget.path} with dimensions: ${physicalWidth}x$physicalHeight',
       );
 
-      final future = downloader.downloadPath(
-        widget.path,
+      final future = fetchStorageImageBytes(
+        downloader,
+        path: widget.path,
         width: physicalWidth,
         height: physicalHeight,
-        resizeMode: widget.mode.value,
-        outputFormat: widget.format,
+        mode: widget.mode.value,
+        format: widget.format,
       );
 
       imageCache.setPendingRequest(cacheKey, future);

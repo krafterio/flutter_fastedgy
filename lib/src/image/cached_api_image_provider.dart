@@ -7,12 +7,10 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../container/container.dart';
-import '../offline/local_image_store.dart';
-import '../offline/offline_error.dart';
-import '../offline/pending_upload_store.dart';
 import '../storage/storage_downloader.dart';
 import '../logging/logger.dart';
 import 'image_cache.dart' as fastedgy_cache;
+import 'storage_image_bytes.dart';
 import 'image_dimensions_helper.dart';
 
 /// ImageProvider for cached API images
@@ -168,67 +166,18 @@ class CachedApiImageProvider extends ImageProvider<CachedApiImageProvider> {
     return decode(buffer);
   }
 
-  // Network fetch with persistence in the offline image store (when
-  // registered) and disk fallback on connectivity failure: the exact stored
-  // variant first, else the most faithful one available for the path.
   Future<Uint8List> _fetchBytes(
     StorageDownloader downloader, {
     int? physicalWidth,
     int? physicalHeight,
-  }) async {
-    final imageStore = hasService<LocalImageStore>()
-        ? getService<LocalImageStore>()
-        : null;
-    final variantKey =
-        '${physicalWidth ?? 'auto'}x${physicalHeight ?? 'auto'}|$mode|${format ?? 'webp'}';
-
-    // A file still waiting for its upload exists only locally: the server knows
-    // no such path, so asking it would fail with a status the offline fallback
-    // below does not cover — the image would stay blank while connected.
-    if (pendingUploadIdOf(path) != null) {
-      final pending = await imageStore?.getBestVariant(path);
-
-      if (pending == null) {
-        throw StateError('No local bytes for the pending upload "$path"');
-      }
-
-      return pending;
-    }
-
-    try {
-      final bytes = await downloader.downloadPath(
-        path,
-        width: physicalWidth,
-        height: physicalHeight,
-        resizeMode: mode,
-        outputFormat: format,
-      );
-
-      await imageStore?.putVariant(
-        path,
-        variantKey,
-        bytes,
-        width: physicalWidth,
-        height: physicalHeight,
-      );
-
-      return bytes;
-    } catch (error) {
-      if (imageStore == null || !isServerUnavailable(error)) {
-        rethrow;
-      }
-
-      final stored =
-          await imageStore.getVariant(path, variantKey) ??
-          await imageStore.getBestVariant(path);
-
-      if (stored == null) {
-        rethrow;
-      }
-
-      return stored;
-    }
-  }
+  }) => fetchStorageImageBytes(
+    downloader,
+    path: path,
+    width: physicalWidth,
+    height: physicalHeight,
+    mode: mode,
+    format: format,
+  );
 
   @override
   bool operator ==(Object other) {
