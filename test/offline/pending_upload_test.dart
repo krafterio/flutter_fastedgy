@@ -476,6 +476,30 @@ void main() {
       expect(_blobs(tempDir), isEmpty);
     });
 
+    test('a missing buffered file leaves nothing behind', () async {
+      adapter.offline = true;
+
+      final buffered = await uploader.uploadAttachmentsFromBytes(
+        {
+          'shot.jpg': Uint8List.fromList([1, 2, 3]),
+        },
+        filenames: {'shot.jpg': 'shot.jpg'},
+      );
+      final ref = buffered.single.getString('_local_path')!;
+      final uploadId = pendingUploadIdOf(ref)!;
+
+      // Only the bytes vanish (removed out of band): the index row and the
+      // preview survive them, and would outlive the operation.
+      await File('${tempDir.path}/fastedgy_pending_uploads/$uploadId').delete();
+
+      adapter.offline = false;
+      await engine.flush();
+
+      expect(await outbox.all(), isEmpty);
+      expect(await uploads.get(uploadId), isNull);
+      expect(await previews.getBestVariant(ref), isNull);
+    });
+
     test('a missing buffered file drops its operation', () async {
       adapter.offline = true;
 

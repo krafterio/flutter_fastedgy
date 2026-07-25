@@ -7,6 +7,7 @@ import '../logging/logger.dart';
 import '../storage/storage_downloader.dart';
 import 'local_image_store.dart';
 import 'local_store.dart';
+import 'pending_upload_store.dart';
 import '../api/sync_image_field.dart';
 
 /// Mirrors the images referenced by synced records into the [LocalImageStore].
@@ -126,6 +127,13 @@ class ImageMirror {
   }
 
   Future<void> _prefetch(String path, Iterable<ImageVariant> variants) async {
+    if (pendingUploadIdOf(path) != null) {
+      // A file still waiting for its upload has nothing to download: its bytes
+      // are already local, and the server knows no such path. Trying would warn
+      // on every pass until the upload goes through.
+      return;
+    }
+
     for (final variant in variants) {
       if (await _images.hasVariant(path, variant.key)) {
         continue;

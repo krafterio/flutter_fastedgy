@@ -299,6 +299,22 @@ void main() {
       expect(request.queryParameters['e'], 'webp');
     });
 
+    test('never tries to download a file awaiting its upload', () async {
+      // A record can reference a file that only exists locally, until its
+      // buffered upload is replayed. The server knows no such path, so asking
+      // it would fail — and warn — on every single pass.
+      adapter.routes['GET /items'] = (options) => _page([
+        {'id': 1, 'name': 'One', 'avatar': 'local://0001-0000'},
+      ]);
+
+      await api.sync();
+
+      expect(
+        adapter.requests.where((r) => r.path.contains('/storage/')),
+        isEmpty,
+      );
+    });
+
     test('does not re-download an already stored variant', () async {
       adapter.routes['GET /items'] = (options) => _page([
         {'id': 1, 'avatar': 'avatars/a.png'},

@@ -394,12 +394,14 @@ class SyncEngine {
 
     if (bytes == null) {
       // The blob is gone (cache cleared, file removed out of band): there is
-      // nothing left to send and retrying would never succeed.
+      // nothing left to send and retrying would never succeed. Its index row
+      // and preview may well have survived the bytes, so reclaim them too.
       _logger.warning(
         'Buffered file ${request.uploadId} is missing, dropping its upload',
       );
       await _discard(operation, 'rejected');
       await _outbox.remove(operation.id);
+      await _dropBufferedFile(store, request.uploadId);
       counters.discarded++;
 
       return;

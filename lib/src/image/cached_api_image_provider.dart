@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import '../container/container.dart';
 import '../offline/local_image_store.dart';
 import '../offline/offline_error.dart';
+import '../offline/pending_upload_store.dart';
 import '../storage/storage_downloader.dart';
 import '../logging/logger.dart';
 import 'image_cache.dart' as fastedgy_cache;
@@ -180,6 +181,19 @@ class CachedApiImageProvider extends ImageProvider<CachedApiImageProvider> {
         : null;
     final variantKey =
         '${physicalWidth ?? 'auto'}x${physicalHeight ?? 'auto'}|$mode|${format ?? 'webp'}';
+
+    // A file still waiting for its upload exists only locally: the server knows
+    // no such path, so asking it would fail with a status the offline fallback
+    // below does not cover — the image would stay blank while connected.
+    if (pendingUploadIdOf(path) != null) {
+      final pending = await imageStore?.getBestVariant(path);
+
+      if (pending == null) {
+        throw StateError('No local bytes for the pending upload "$path"');
+      }
+
+      return pending;
+    }
 
     try {
       final bytes = await downloader.downloadPath(
