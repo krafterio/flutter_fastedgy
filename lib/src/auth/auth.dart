@@ -7,4 +7,5 @@ export 'auth_provider.dart';
 export 'auth_result.dart';
 export 'default_auth_provider.dart';
 export 'token_storage.dart';
+export 'user_provider.dart';
 export 'auth_events.dart';
