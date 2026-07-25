@@ -118,6 +118,7 @@ void main() {
   late Fetcher fetcher;
   late StorageUploader uploader;
   late SyncEngine engine;
+  late DriftLocalImageStore previews;
   late List<OutboxOperationDiscardedEvent> discarded;
 
   setUpAll(() {
@@ -157,6 +158,8 @@ void main() {
     await uploads.open();
     sequence = LocalSequence(databaseOpener: () => db);
     await sequence.open();
+    previews = DriftLocalImageStore(databaseOpener: () => db);
+    await previews.open();
 
     outbox = Outbox(store);
     uploader = StorageUploader(
@@ -165,6 +168,7 @@ void main() {
       outbox: outbox,
       uploads: uploads,
       sequence: sequence,
+      images: previews,
     );
     engine = SyncEngine(
       outbox,
@@ -172,6 +176,7 @@ void main() {
       getService<Bus>(),
       localStore: store,
       uploads: uploads,
+      images: previews,
     );
 
     discarded = [];
@@ -492,6 +497,94 @@ void main() {
       expect(buffered.single.id, isNegative);
     });
 
+    test('a buffered image stays displayable while it waits', () async {
+      adapter.offline = true;
+
+      final buffered = await uploader.uploadAttachmentsFromBytes(
+        {
+          'shot.jpg': Uint8List.fromList([1, 2, 3]),
+        },
+        filenames: {'shot.jpg': 'shot.jpg'},
+      );
+      final ref = buffered.single.getString('_local_path')!;
+
+      // Stored with no dimensions, so the image pipeline's getBestVariant
+      // fallback serves it as the original — no special case in the widgets.
+      expect(await previews.getBestVariant(ref), [1, 2, 3]);
+    });
+
+    test('a buffered document gets no preview', () async {
+      adapter.offline = true;
+
+      final buffered = await uploader.uploadAttachmentsFromBytes(
+        {
+          'brief.pdf': Uint8List.fromList([1]),
+        },
+        filenames: {'brief.pdf': 'brief.pdf'},
+      );
+      final ref = buffered.single.getString('_local_path')!;
+
+      expect(await previews.getBestVariant(ref), isNull);
+    });
+
+    test('the preview is reclaimed with the file on replay', () async {
+      adapter.offline = true;
+
+      final buffered = await uploader.uploadAttachmentsFromBytes(
+        {
+          'shot.jpg': Uint8List.fromList([1, 2, 3]),
+        },
+        filenames: {'shot.jpg': 'shot.jpg'},
+      );
+      final ref = buffered.single.getString('_local_path')!;
+
+      adapter.offline = false;
+      adapter.handler = (_) => {
+        'attachments': [
+          {'id': 100, 'name': 'shot'},
+        ],
+      };
+      await engine.flush();
+
+      // The server rendition is the reference from now on.
+      expect(await previews.getBestVariant(ref), isNull);
+      expect(await previews.paths(), isEmpty);
+    });
+
+    test('a rejected upload reclaims its preview too', () async {
+      adapter.offline = true;
+
+      final buffered = await uploader.uploadAttachmentsFromBytes(
+        {
+          'shot.jpg': Uint8List.fromList([1, 2, 3]),
+        },
+        filenames: {'shot.jpg': 'shot.jpg'},
+      );
+      final ref = buffered.single.getString('_local_path')!;
+
+      adapter.offline = false;
+      adapter.handler = (options) => throw badRequest(options);
+      await engine.flush();
+
+      expect(await previews.getBestVariant(ref), isNull);
+    });
+
+    test('an offline failure keeps the preview', () async {
+      adapter.offline = true;
+
+      final buffered = await uploader.uploadAttachmentsFromBytes(
+        {
+          'shot.jpg': Uint8List.fromList([1, 2, 3]),
+        },
+        filenames: {'shot.jpg': 'shot.jpg'},
+      );
+      final ref = buffered.single.getString('_local_path')!;
+
+      await engine.flush();
+
+      expect(await previews.getBestVariant(ref), [1, 2, 3]);
+    });
+
     test('an online upload never touches the outbox', () async {
       adapter.handler = (_) => {
         'attachments': [
@@ -564,6 +657,7 @@ void main() {
         file: file,
       );
 
+      // The local reference stands in for the storage path meanwhile.
       expect(result.path, startsWith('local://'));
 
       final operation = (await outbox.all()).single;
@@ -578,10 +672,59 @@ void main() {
 
       expect(adapter.calls.last, 'POST /storage/upload/user/7/avatar');
       expect(await outbox.all(), isEmpty);
+      expect(await uploads.all(), isEmpty);
+    });
 
-      // The field now holds the stored path instead of the local reference.
-      final record = await store.get('user', 7);
-      expect(record!['avatar'], 'user/real.png');
+    test('healing one field keeps the rest of the record', () async {
+      // The stores replace a record wholesale, so writing back the two keys the
+      // upload resolves would erase everything else about the record.
+      await store.put('user', 7, {
+        'id': 7,
+        'name': 'Ada',
+        'email': 'ada@example.com',
+      });
+
+      adapter.offline = true;
+      final file = File('${tempDir.path}/avatar.png')
+        ..writeAsBytesSync([1, 2, 3]);
+      await uploader.uploadModelField(
+        model: 'user',
+        modelId: 7,
+        field: 'avatar',
+        file: file,
+      );
+
+      adapter.offline = false;
+      adapter.handler = (_) => {'path': 'user/real.png'};
+      await engine.flush();
+
+      expect(await store.get('user', 7), {
+        'id': 7,
+        'name': 'Ada',
+        'email': 'ada@example.com',
+        'avatar': 'user/real.png',
+      });
+    });
+
+    test('a field upload for an unmirrored record writes nothing', () async {
+      adapter.offline = true;
+      final file = File('${tempDir.path}/avatar2.png')
+        ..writeAsBytesSync([1, 2, 3]);
+      await uploader.uploadModelField(
+        model: 'user',
+        modelId: 99,
+        field: 'avatar',
+        file: file,
+      );
+
+      adapter.offline = false;
+      adapter.handler = (_) => {'path': 'user/real.png'};
+      await engine.flush();
+
+      // Nothing to merge onto: mirroring a record made of a single field would
+      // be worse than mirroring nothing.
+      expect(await store.get('user', 99), isNull);
+      expect(await outbox.all(), isEmpty);
       expect(await uploads.all(), isEmpty);
     });
   });

@@ -14,6 +14,7 @@ import '../fetcher/http_error.dart';
 import '../logging/logger.dart';
 import '../metadata/metadata_provider.dart';
 import '../api/base/attachment_api.dart';
+import '../offline/local_image_store.dart';
 import '../offline/local_sequence.dart';
 import '../offline/outbox.dart';
 import '../offline/pending_upload_store.dart';
@@ -36,6 +37,7 @@ class StorageUploader {
   final PendingUploadStore? uploads;
   final LocalSequence? sequence;
   final MetadataProvider? metadatas;
+  final LocalImageStore? images;
   final _logger = getLogger('StorageUploader');
 
   StorageUploader(
@@ -45,7 +47,32 @@ class StorageUploader {
     this.uploads,
     this.sequence,
     this.metadatas,
+    this.images,
   });
+
+  /// Make a buffered image displayable while it waits for its upload.
+  ///
+  /// Stored under the local reference the record carries, with no dimensions, so
+  /// the image pipeline's `getBestVariant` fallback serves it as the original —
+  /// the same path a mirrored image takes, no special case in the widgets.
+  Future<void> _keepDisplayable(
+    String ref,
+    Uint8List bytes,
+    String? mimeType,
+  ) async {
+    final store = images;
+
+    if (store == null || !(mimeType ?? '').startsWith('image/')) {
+      return;
+    }
+
+    try {
+      await store.putVariant(ref, 'origin', bytes);
+    } on Object catch (error) {
+      // A preview is a nicety: never fail a buffered upload over it.
+      _logger.warning('Could not keep $ref displayable', error);
+    }
+  }
 
   /// Resource path of a model, resolved through its `api_name` like
   /// [ApiModel.resolvePath] does — never guessed from the model name.
@@ -151,6 +178,7 @@ class StorageUploader {
         fileName: fileName,
         mimeType: mimeType,
       );
+      await _keepDisplayable(buffered.ref, fileBytes, mimeType);
       final basePath = await _resourcePath(model);
 
       await outbox!.enqueue(
@@ -472,6 +500,7 @@ class StorageUploader {
         fileName: fileName,
         mimeType: mimeType,
       );
+      await _keepDisplayable(buffered.ref, entry.value, mimeType);
       final tempId = await _nextAttachmentId();
 
       await queue.enqueue(

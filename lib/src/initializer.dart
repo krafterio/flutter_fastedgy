@@ -340,6 +340,9 @@ Future<void> initializeFastEdgy({
       uploads: hasService<PendingUploadStore>()
           ? getService<PendingUploadStore>()
           : null,
+      images: hasService<LocalImageStore>()
+          ? getService<LocalImageStore>()
+          : null,
       online: Connectivity().onConnectivityChanged.map(
         (results) => results.any((result) => result != ConnectivityResult.none),
       ),
@@ -371,6 +374,10 @@ Future<void> initializeFastEdgy({
                 : null,
             // Resolves a model's api_name for the buffered operation's path.
             metadatas: getService<MetadataProvider>(),
+            // Keeps a buffered image displayable while it waits.
+            images: hasService<LocalImageStore>()
+                ? getService<LocalImageStore>()
+                : null,
           ),
     );
   }

@@ -19,6 +19,7 @@ import '../logging/logger.dart';
 import 'local_store.dart';
 import 'offline_error.dart';
 import 'conflict_store.dart';
+import 'local_image_store.dart';
 import 'outbox.dart';
 import 'pending_upload_store.dart';
 import 'replica.dart';
@@ -59,6 +60,7 @@ class SyncEngine {
   final SyncLock? _lock;
   final MetadataProvider? _metadatas;
   final PendingUploadStore? _uploads;
+  final LocalImageStore? _images;
   final _logger = getLogger('SyncEngine');
 
   /// Maximum operations per sync batch (matches the server-side cap).
@@ -96,6 +98,7 @@ class SyncEngine {
     SyncLock? lock,
     MetadataProvider? metadatas,
     PendingUploadStore? uploads,
+    LocalImageStore? images,
     this.batchSize = 500,
     this.maxAttempts = 25,
     this.retryBaseDelay = const Duration(seconds: 5),
@@ -107,7 +110,8 @@ class SyncEngine {
        _conflicts = conflicts,
        _lock = lock,
        _metadatas = metadatas,
-       _uploads = uploads;
+       _uploads = uploads,
+       _images = images;
 
   /// Start listening to connectivity: every regain triggers a flush.
   void start() {
@@ -414,26 +418,34 @@ class SyncEngine {
       await _outbox.remove(operation.id);
 
       if (record != null) {
-        if (operation.recordId != null && record['id'] != null) {
-          idMap.register(scope, operation.recordId!, record['id'] as Object);
-          await _localStore?.put(
-            _idMapNamespace,
-            TempIdMap.key(scope, operation.recordId!),
-            {
-              'scope': scope,
-              'temp': operation.recordId,
-              'server': record['id'],
-            },
-          );
-          await _cacheDelete(operation.cache, operation.recordId!);
-        }
+        if (request.kind == PendingUploadRequest.kindAttachment) {
+          // The response is a whole Attachment record, and it carries the
+          // identity the optimistic one stood in for.
+          if (operation.recordId != null && record['id'] != null) {
+            idMap.register(scope, operation.recordId!, record['id'] as Object);
+            await _localStore?.put(
+              _idMapNamespace,
+              TempIdMap.key(scope, operation.recordId!),
+              {
+                'scope': scope,
+                'temp': operation.recordId,
+                'server': record['id'],
+              },
+            );
+            await _cacheDelete(operation.cache, operation.recordId!);
+          }
 
-        await _cacheUpsert(operation.cache, record);
+          await _cacheUpsert(operation.cache, record);
+        } else {
+          // A model field upload only resolves one field of an existing record:
+          // merge it instead of replacing the record with those two keys.
+          await _cacheMerge(operation.cache, record);
+        }
       }
 
       // The server holds the file now, and its rendition is the reference: drop
       // the local copy.
-      await store.remove(request.uploadId);
+      await _dropBufferedFile(store, request.uploadId);
 
       _bus.fire(
         ResourceChangedEvent(
@@ -453,9 +465,22 @@ class SyncEngine {
       _logger.warning('Upload ${operation.id} rejected: $error');
       await _discard(operation, 'rejected', error);
       await _outbox.remove(operation.id);
-      await store.remove(request.uploadId);
+      await _dropBufferedFile(store, request.uploadId);
       counters.discarded++;
     }
+  }
+
+  /// Reclaim a buffered file and the preview kept alongside it.
+  ///
+  /// Called once the file no longer has to be sent: the server holds it (and its
+  /// own rendition is the reference from now on), or the operation was
+  /// definitively refused.
+  Future<void> _dropBufferedFile(
+    PendingUploadStore store,
+    String uploadId,
+  ) async {
+    await store.remove(uploadId);
+    await _images?.removePath(localUploadRef(uploadId));
   }
 
   /// POST the multipart body and return the record to heal the cache with.
@@ -751,6 +776,7 @@ class SyncEngine {
     _bus.fire(OutboxOperationDiscardedEvent(operation, reason, error));
   }
 
+  /// Write a **whole** server record over the cached one.
   Future<void> _cacheUpsert(
     OutboxCacheContext cache,
     Map<String, dynamic> record,
@@ -772,6 +798,47 @@ class SyncEngine {
     }
 
     await _localStore?.put(cache.namespace, record['id'] as Object, record);
+  }
+
+  /// Write only the fields of [changes] over the cached record.
+  ///
+  /// The stores replace a record wholesale (the replica re-encodes `_raw` and
+  /// rewrites every column), so a partial write has to be merged onto what is
+  /// already there — otherwise healing one field would erase all the others.
+  Future<void> _cacheMerge(
+    OutboxCacheContext cache,
+    Map<String, dynamic> changes,
+  ) async {
+    final id = changes['id'];
+
+    if (id == null) {
+      return;
+    }
+
+    final current = await _cacheGet(cache, id);
+
+    if (current == null) {
+      // Nothing mirrored for that record: a partial write has no base to sit
+      // on, and inventing one would mirror a record made of a single field.
+      return;
+    }
+
+    await _cacheUpsert(cache, {...current, ...changes});
+  }
+
+  Future<Map<String, dynamic>?> _cacheGet(
+    OutboxCacheContext cache,
+    Object id,
+  ) async {
+    if (cache.kind == 'replica') {
+      if (cache.model == null) {
+        return null;
+      }
+
+      return _replica?.store.getById(cache.model!, cache.scope, id);
+    }
+
+    return _localStore?.get(cache.namespace, id);
   }
 
   // Metadata resolve the target model of each payload field, so a temporary id

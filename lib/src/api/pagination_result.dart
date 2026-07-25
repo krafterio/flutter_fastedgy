@@ -38,18 +38,6 @@ class PaginationResult<T> {
     this.fromCache = false,
   });
 
-  /// Same page, marked as coming from the local mirror.
-  PaginationResult<T> asCached() => fromCache
-      ? this
-      : PaginationResult<T>(
-          items: items,
-          total: total,
-          limit: limit,
-          offset: offset,
-          totalPages: totalPages,
-          fromCache: true,
-        );
-
   /// Create from JSON response
   ///
   /// Expected format from FastAPI:
