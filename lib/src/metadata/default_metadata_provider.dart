@@ -11,7 +11,6 @@ import '../bus/bus.dart';
 import '../auth/auth_provider.dart';
 import '../auth/auth_events.dart';
 import '../offline/local_store.dart';
-import '../offline/offline_error.dart';
 import 'metadata_provider.dart';
 import 'models.dart';
 
@@ -80,8 +79,8 @@ class DefaultMetadataProvider implements MetadataProvider {
         'Metadata fetched successfully: ${_metadatas!.length} models',
       );
     } on HttpError catch (e) {
-      if (isOfflineError(e) && await _restore()) {
-        _logger.fine('Offline: metadata served from the local mirror');
+      if (isServerUnavailable(e) && await _restore()) {
+        _logger.fine('Metadata served from the local mirror');
       } else {
         _logger.severe('Failed to fetch metadata: ${e.message}');
         _error = e;

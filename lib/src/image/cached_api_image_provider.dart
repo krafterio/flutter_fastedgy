@@ -200,7 +200,7 @@ class CachedApiImageProvider extends ImageProvider<CachedApiImageProvider> {
 
       return bytes;
     } catch (error) {
-      if (imageStore == null || !isOfflineError(error)) {
+      if (imageStore == null || !isServerUnavailable(error)) {
         rethrow;
       }
 

@@ -100,8 +100,9 @@ abstract class OfflineApiResource extends ApiResource {
   /// with the renditions to prefetch.
   List<SyncImageField> get syncImageFields => const [];
 
-  /// Run [remote], cache its result and return it; on connectivity failure
-  /// serve the cached record instead (server errors are always rethrown).
+  /// Run [remote], cache its result and return it; when the server does not
+  /// answer (offline, maintenance) serve the cached record instead (a server
+  /// that rejects the request is always rethrown).
   ///
   /// [key] identifies the record inside the resource namespace; omit it for
   /// single-record resources.
@@ -116,7 +117,7 @@ abstract class OfflineApiResource extends ApiResource {
 
       return entity;
     } catch (error) {
-      if (localStore == null || !isOfflineError(error)) {
+      if (localStore == null || !isServerUnavailable(error)) {
         rethrow;
       }
 
@@ -133,8 +134,8 @@ abstract class OfflineApiResource extends ApiResource {
   /// Emit the cached record (when present), then the fresh [remote] result
   /// (also cached).
   ///
-  /// On connectivity failure after a cached emission the stream completes
-  /// silently; without any cached data the error is surfaced.
+  /// When the server does not answer after a cached emission the stream
+  /// completes silently; without any cached data the error is surfaced.
   Stream<T> cacheThenRemote<T extends DynamicSchema<T>>(
     T Function(Map<String, dynamic>) fromJson,
     Future<T> Function() remote, {
@@ -152,7 +153,7 @@ abstract class OfflineApiResource extends ApiResource {
 
       yield entity;
     } catch (error) {
-      if (cached == null || !isOfflineError(error)) {
+      if (cached == null || !isServerUnavailable(error)) {
         rethrow;
       }
     }

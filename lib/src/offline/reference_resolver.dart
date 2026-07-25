@@ -83,7 +83,7 @@ class ReferenceResolver {
       final response = await _fetcher.get(path);
       record = (response.data as Map).cast<String, dynamic>();
     } catch (error) {
-      if (isOfflineError(error)) {
+      if (isServerUnavailable(error)) {
         return null;
       }
 

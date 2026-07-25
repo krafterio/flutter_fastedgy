@@ -3,51 +3,18 @@
  * MIT License (see LICENSE file).
  */
 
-import 'package:dio/dio.dart';
-
-import '../fetcher/http_error.dart';
-
-/// Whether [error] denotes a connectivity failure (no network, unreachable
-/// server, timeout) rather than an applicative server error.
+/// Error classification used by the offline layer to tell a request the server
+/// refused from one it never answered.
 ///
-/// The offline layer only falls back to the local cache on connectivity
-/// failures: real server responses (4xx/5xx) are always rethrown.
-bool isOfflineError(Object error) {
-  if (error is NetworkError) {
-    return true;
-  }
+/// It lives with the error types it inspects ([HttpError] and friends) so the
+/// lower layers - the logger among them - can classify a failure without
+/// depending on the offline layer.
+library;
 
-  if (error is HttpError) {
-    return error.statusCode == null;
-  }
-
-  if (error is DioException) {
-    return error.type == DioExceptionType.connectionError ||
-        error.type == DioExceptionType.connectionTimeout ||
-        error.type == DioExceptionType.sendTimeout ||
-        error.type == DioExceptionType.receiveTimeout;
-  }
-
-  return false;
-}
-
-/// The HTTP status code carried by [error], if any.
-int? errorStatusCode(Object error) {
-  if (error is HttpError) {
-    return error.statusCode;
-  }
-
-  if (error is DioException) {
-    return error.response?.statusCode;
-  }
-
-  return null;
-}
-
-/// Whether [error] is a transient server failure (5xx, 429) that must be
-/// retried later rather than treated as a definitive rejection.
-bool isRetryableServerError(Object error) {
-  final status = errorStatusCode(error);
-
-  return status != null && (status >= 500 || status == 429);
-}
+export '../fetcher/http_error.dart'
+    show
+        describeUnavailable,
+        errorStatusCode,
+        isOfflineError,
+        isRetryableServerError,
+        isServerUnavailable;

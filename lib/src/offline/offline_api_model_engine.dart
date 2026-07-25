@@ -173,7 +173,7 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
     } catch (error) {
       final outbox = this.outbox;
 
-      if (outbox == null || !isOfflineError(error)) {
+      if (outbox == null || !isServerUnavailable(error)) {
         rethrow;
       }
 
@@ -227,7 +227,7 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
     } catch (error) {
       final outbox = this.outbox;
 
-      if (outbox == null || !isOfflineError(error)) {
+      if (outbox == null || !isServerUnavailable(error)) {
         rethrow;
       }
 
@@ -306,7 +306,7 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
     } catch (error) {
       final outbox = this.outbox;
 
-      if (outbox == null || !isOfflineError(error)) {
+      if (outbox == null || !isServerUnavailable(error)) {
         rethrow;
       }
 
@@ -361,7 +361,7 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
       } catch (error) {
         getLogger(
           'OfflineApiModelEngine',
-        ).warning('Outbox flush failed: $error');
+        ).warning('Outbox flush failed', error);
       }
     }
 
@@ -708,7 +708,7 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
   }
 
   bool _canFallback(Object error) =>
-      (localStore != null || replica != null) && isOfflineError(error);
+      (localStore != null || replica != null) && isServerUnavailable(error);
 
   Future<PaginationResult<T>?> _offlineListFallback(ListQuery? query) async {
     final ctx = await _replicaContext();
