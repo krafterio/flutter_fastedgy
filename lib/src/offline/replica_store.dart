@@ -600,11 +600,22 @@ class ReplicaStore {
     }
   }
 
+  /// Type of the scope column isolating one tenant's rows from another's.
+  ///
+  /// The scope identifies a tenant by id, so the column is an INTEGER. A
+  /// composite scope (a path declaring several params) still lands here as
+  /// text, which SQLite stores as-is on a column it cannot convert to.
+  ///
+  /// Changing this value is a migration on its own: [_ensureTable] rebuilds
+  /// any table whose column drifted from the expected type, which is what
+  /// clears rows written under a scope of the previous shape.
+  static const _scopeColumnType = 'INTEGER';
+
   /// Physical schema of every m2m pivot table: the workspace isolation
   /// column and the relation pair. Single source for both the CREATE
   /// statement and the self-repair diff of [_ensurePivots].
   static const _pivotColumns = {
-    '_workspace': 'CHAR',
+    '_workspace': _scopeColumnType,
     'parent_id': 'INTEGER',
     'target_id': 'INTEGER',
   };
@@ -813,7 +824,7 @@ class ReplicaStore {
   }
 
   Map<String, String> _expectedColumns(LocalModelSchema model) => {
-    '_workspace': 'CHAR',
+    '_workspace': _scopeColumnType,
     '_raw': 'JSON',
     for (final field in model.columns) field.name: field.sqlAffinity,
     for (final field in model.references) ...{

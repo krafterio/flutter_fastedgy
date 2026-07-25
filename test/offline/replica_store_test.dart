@@ -231,6 +231,21 @@ void main() {
       },
     );
 
+    test('isolates tenants by id, and keeps them apart', () async {
+      await store.ensureModel(_userSchema());
+      await store.upsertAll(_userSchema(), '7', [
+        {'id': 1, 'name': 'Ada'},
+      ]);
+      await store.upsertAll(_userSchema(), '8', [
+        {'id': 2, 'name': 'Grace'},
+      ]);
+
+      // The scope column is an INTEGER: a tenant is identified by its id,
+      // which outlives the rename its slug would not.
+      expect((await store.getAll('user', '7')).map((row) => row['id']), [1]);
+      expect((await store.getAll('user', '8')).map((row) => row['id']), [2]);
+    });
+
     test('clearAll drops every replicated model', () async {
       await store.ensureModel(_userSchema());
       await store.upsertAll(_userSchema(), 'acme', [
