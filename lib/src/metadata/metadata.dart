@@ -4,5 +4,6 @@
  */
 
 export 'models.dart';
+export 'display_fields.dart';
 export 'metadata_provider.dart';
 export 'default_metadata_provider.dart';

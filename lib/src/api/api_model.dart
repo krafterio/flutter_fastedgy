@@ -276,6 +276,13 @@ class GenericBaseModel extends BaseModel<GenericBaseModel> {
 
 class GenericApiModel extends ApiModel<GenericBaseModel> {
   GenericApiModel(super.basePath, {super.modelName, super.fetcher});
+
+  /// The inherited default cannot serve an untyped resource: it casts a
+  /// `DynamicSchema<GenericBaseModel>` to `GenericBaseModel`, which no value
+  /// satisfies, so every read through it threw.
+  @override
+  GenericBaseModel fromJson(Map<String, dynamic> json) =>
+      GenericBaseModel(json);
 }
 
 GenericApiModel useGenericApiModel(String basePath) =>
