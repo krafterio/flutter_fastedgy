@@ -159,6 +159,7 @@ void main() {
   late Fetcher fetcher;
   late DriftLocalStore store;
   late Outbox outbox;
+  late SyncStatus status;
 
   setUpAll(() {
     dotenv.loadFromString(envString: 'API_BASE_URL=http://localhost');
@@ -188,6 +189,8 @@ void main() {
 
   setUp(() async {
     OfflineDatabase.allowMultipleInstances();
+    status = SyncStatus(getService<Bus>());
+    container.registerSingleton<SyncStatus>(status);
     adapter = _ScriptedAdapter();
     final dio = Dio(BaseOptions(baseUrl: 'http://localhost'))
       ..httpClientAdapter = adapter;
@@ -208,7 +211,10 @@ void main() {
     outbox = Outbox(store);
   });
 
-  tearDown(() => store.close());
+  tearDown(() async {
+    container.unregister<SyncStatus>();
+    await store.close();
+  });
 
   _ThingApi partialApi() =>
       _ThingApi('/things', fetcher: fetcher, localStore: store, outbox: outbox);
@@ -361,6 +367,37 @@ void main() {
 
       collection.dispose();
     });
+
+    test(
+      'a dropped connection disables actions before the next read',
+      () async {
+        adapter.items = [
+          {'id': 1, 'name': 'One'},
+        ];
+        final strict = ApiCollection<_Thing>(strictApi());
+        final buffered = ApiCollection<_Thing>(partialApi());
+        await strict.load();
+        await buffered.load();
+
+        expect(strict.canWrite, isTrue);
+
+        var notified = 0;
+        strict.addListener(() => notified++);
+        status.setOnline(false);
+        await pumpEventQueue();
+
+        // No read happened since, so the verdict on the data stands — but an
+        // action on it would now be lost.
+        expect(strict.availability, DataAvailability.live);
+        expect(strict.canWrite, isFalse);
+        expect(notified, greaterThan(0));
+        // The same drop leaves a buffered model's actions alone.
+        expect(buffered.canWrite, isTrue);
+
+        strict.dispose();
+        buffered.dispose();
+      },
+    );
 
     test('a refusal is a failure, not a missing connection', () async {
       adapter.refuseWith = 500;

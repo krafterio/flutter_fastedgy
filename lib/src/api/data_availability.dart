@@ -11,6 +11,7 @@ import '../fetcher/http_error.dart';
 import '../sync/sync_status.dart';
 import 'api_model.dart';
 import 'base_model.dart';
+import 'model_availability.dart';
 
 /// Where the data a holder shows came from, and why it has none when it has
 /// none.
@@ -47,9 +48,9 @@ enum DataAvailability {
 /// empty state with a connection notice, [isIncomplete] to warn that local data
 /// is only part of the truth, [canWrite] to disable actions that would fail.
 ///
-/// Two model-level facts feed the verdict and are resolved once, from the
-/// metadata, on the first read: whether the model is only partially mirrored,
-/// and whether its writes buffer offline instead of failing.
+/// What the model itself allows comes from the same [ModelCapability] a
+/// standalone widget resolves, so a button away from this screen and the screen
+/// itself never disagree.
 mixin DataAvailabilityState<T extends BaseModel<T>> {
   /// The resource being read — satisfied by the holder's own `api` field.
   ApiModel<T> get api;
@@ -61,13 +62,18 @@ mixin DataAvailabilityState<T extends BaseModel<T>> {
   /// connectivity comes back.
   Future<void> healAvailability();
 
+  /// Tells the listeners the verdict may have moved — the holder's own notify.
+  void notifyAvailability();
+
   DataAvailability _availability = DataAvailability.idle;
-  bool _partiallyMirrored = false;
-  bool _bufferizesWrites = false;
-  bool _modelFactsResolved = false;
+  ModelCapability _capability = ModelCapability.unknown;
+  bool _capabilityResolved = false;
   StreamSubscription<SyncStatusChangedEvent>? _availabilitySub;
 
   DataAvailability get availability => _availability;
+
+  /// What the model allows away from the server, resolved on the first read.
+  ModelCapability get capability => _capability;
 
   /// True when the last read could not reach the server and left nothing to
   /// show: the screen should say a connection is required rather than render an
@@ -80,7 +86,7 @@ mixin DataAvailabilityState<T extends BaseModel<T>> {
   /// True when the local mirror is known to hold only part of the model
   /// (`synchronizable_mode: partial`): what is displayed is what earlier reads
   /// happened to bring back, not everything the server has.
-  bool get isIncomplete => isFromCache && _partiallyMirrored;
+  bool get isIncomplete => isFromCache && _capability.isPartiallyMirrored;
 
   /// True when the last read had to degrade — it came from the mirror, or it
   /// could not happen at all.
@@ -88,18 +94,27 @@ mixin DataAvailabilityState<T extends BaseModel<T>> {
       _availability == DataAvailability.cached ||
       _availability == DataAvailability.offline;
 
-  /// Whether a write is worth offering: always while the server answers, and
-  /// while degraded only if this model's writes buffer for a later replay.
-  bool get canWrite => !isDegraded || _bufferizesWrites;
+  /// Whether the server is answering, as both this holder's last read and the
+  /// sync layer see it: a read may have degraded on a resource the connectivity
+  /// stream still believes reachable, and connectivity may have dropped since
+  /// the last successful read.
+  bool get serverReachable => !isDegraded && SyncStatus.currentlyOnline;
 
-  /// Heals a degraded holder when connectivity comes back. The holder calls
-  /// this from its constructor.
+  /// Whether an action on this data is worth offering — the same rule a
+  /// standalone [ModelAvailability] applies.
+  bool get canWrite => _capability.canWrite(serverReachable: serverReachable);
+
+  /// Follows connectivity: heals a degraded holder when it comes back, and
+  /// re-notifies otherwise since [canWrite] moves with it. The holder calls this
+  /// from its constructor.
   void listenAvailability() {
     _availabilitySub = getService<Bus>().on<SyncStatusChangedEvent>().listen((
       event,
     ) {
       if (event.online && isDegraded) {
         healAvailability();
+      } else {
+        notifyAvailability();
       }
     });
   }
@@ -136,20 +151,18 @@ mixin DataAvailabilityState<T extends BaseModel<T>> {
         : DataAvailability.offline;
   }
 
-  /// Reads the two model-level facts once. Failing to resolve them — no
-  /// metadata provider, or metadata unreachable offline — leaves the defaults:
-  /// a screen keeps its actions enabled rather than locking itself out on a
-  /// missing payload.
+  /// Reads what the model allows, once. A failure to resolve it — no metadata
+  /// provider, or metadata unreachable offline — leaves [ModelCapability.unknown]
+  /// and retries on the next read, rather than freezing a verdict on a payload
+  /// that never arrived.
   Future<void> resolveModelFacts() async {
-    if (_modelFactsResolved) {
+    if (_capabilityResolved) {
       return;
     }
 
     try {
-      _partiallyMirrored =
-          (await api.metadata())?.isPartiallySynchronizable ?? false;
-      _bufferizesWrites = await api.bufferizesWrites();
-      _modelFactsResolved = true;
+      _capability = await api.capability();
+      _capabilityResolved = true;
     } catch (_) {}
   }
 }

@@ -12,6 +12,7 @@ import '../metadata/models.dart';
 import 'api_model_engine.dart';
 import 'api_query.dart';
 import 'base_model.dart';
+import 'model_availability.dart';
 import 'pagination_result.dart';
 import 'record_result.dart';
 import 'sync_image_field.dart';
@@ -184,6 +185,14 @@ abstract class ApiModel<T extends BaseModel<T>> {
   /// offline outbox is wired.
   Future<bool> bufferizesWrites() async =>
       (await _resolveEngine()).bufferizesWrites;
+
+  /// What this resource allows away from the server. Same facts as
+  /// [ModelCapability.of], read from this resource's own engine rather than
+  /// inferred from the container.
+  Future<ModelCapability> capability() async => ModelCapability(
+    synchronizableMode: (await metadata())?.synchronizableMode ?? 'none',
+    bufferizesWrites: (await _resolveEngine()).bufferizesWrites,
+  );
 
   Future<T> create(
     DynamicSchema<T> payload, {

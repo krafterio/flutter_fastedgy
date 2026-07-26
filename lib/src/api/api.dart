@@ -7,6 +7,7 @@ export 'api_collection.dart';
 export 'api_record.dart';
 export 'api_helpers.dart';
 export 'data_availability.dart';
+export 'model_availability.dart';
 export 'record_result.dart';
 export 'list_url_state.dart';
 export 'api_model.dart';

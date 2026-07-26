@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 
 import '../bus/bus.dart';
 import '../bus/events.dart';
+import '../container/container.dart';
 
 /// Fired on every transition of the offline [SyncStatus] (connectivity change,
 /// a flush starting or finishing, the pending queue growing or draining).
@@ -52,6 +53,15 @@ class SyncStatus extends ChangeNotifier {
   int _conflicts = 0;
 
   SyncStatus(this._bus, {bool online = true}) : _online = online;
+
+  /// Connectivity as the sync layer knows it, readable without holding the
+  /// service.
+  ///
+  /// True when there is no [SyncStatus] at all: a build without the offline
+  /// write path never reports itself offline, so a caller gating on this one
+  /// needs no `hasService` guard of its own.
+  static bool get currentlyOnline =>
+      hasService<SyncStatus>() ? getService<SyncStatus>().online : true;
 
   /// Whether the device currently has connectivity.
   bool get online => _online;

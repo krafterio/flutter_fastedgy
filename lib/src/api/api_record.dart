@@ -52,6 +52,9 @@ class ApiRecord<T extends BaseModel<T>> extends ChangeNotifier
   @override
   bool get hasData => _value != null;
 
+  @override
+  void notifyAvailability() => _safeNotify();
+
   /// The id currently bound, set by [load].
   Object? get id => _id;
 

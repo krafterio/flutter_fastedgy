@@ -56,6 +56,9 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
   @override
   bool get hasData => _items.isNotEmpty;
 
+  @override
+  void notifyAvailability() => _safeNotify();
+
   /// True when the read settled and brought nothing back: an empty state is
   /// honest here, unlike [requiresConnection]. Pair it with [isIncomplete] to
   /// soften the wording when the mirror only holds part of the model.
