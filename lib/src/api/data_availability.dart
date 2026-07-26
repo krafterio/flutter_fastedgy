@@ -98,7 +98,7 @@ mixin DataAvailabilityState<T extends BaseModel<T>> {
   /// sync layer see it: a read may have degraded on a resource the connectivity
   /// stream still believes reachable, and connectivity may have dropped since
   /// the last successful read.
-  bool get serverReachable => !isDegraded && SyncStatus.currentlyOnline;
+  bool get serverReachable => !isDegraded && SyncStatus.currentlyReachable;
 
   /// Whether an action on this data is worth offering — the same rule a
   /// standalone [ModelAvailability] applies.

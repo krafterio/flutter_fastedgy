@@ -125,8 +125,8 @@ class ModelAvailability extends ChangeNotifier {
 
   ModelCapability get capability => _capability;
 
-  /// Connectivity as the sync layer knows it.
-  bool get serverReachable => SyncStatus.currentlyOnline;
+  /// Whether the server can be expected to answer, as the sync layer knows it.
+  bool get serverReachable => SyncStatus.currentlyReachable;
 
   /// Whether an action on this model is worth offering right now.
   bool get canWrite => _capability.canWrite(serverReachable: serverReachable);
@@ -148,4 +148,4 @@ class ModelAvailability extends ChangeNotifier {
 /// at the top of an action handler.
 Future<bool> canWriteModel(String modelName) async => (await ModelCapability.of(
   modelName,
-)).canWrite(serverReachable: SyncStatus.currentlyOnline);
+)).canWrite(serverReachable: SyncStatus.currentlyReachable);

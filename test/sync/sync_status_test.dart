@@ -65,6 +65,35 @@ void main() {
       status.setSyncing(false);
       expect(status.isActive, isFalse);
     });
+
+    test('a device on a network whose server is down is not reachable', () {
+      // The distinction the whole flag exists for: connectivity says the wifi
+      // works, not that anything is answering on it.
+      status.setServerAnswering(false);
+
+      expect(status.online, isTrue);
+      expect(status.reachable, isFalse);
+      expect(status.isActive, isTrue);
+    });
+
+    test('the reachability travels with the event', () async {
+      status.setServerAnswering(false);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(events.single.online, isTrue);
+      expect(events.single.reachable, isFalse);
+    });
+
+    test('connectivity coming back leaves the server to prove itself', () {
+      status.setServerAnswering(false);
+      status.setOnline(false);
+
+      status.setOnline(true);
+
+      // Reset rather than kept false: the old evidence was gathered on another
+      // network, and the next request will say.
+      expect(status.reachable, isTrue);
+    });
   });
 
   group('Outbox.onChanged', () {
