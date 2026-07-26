@@ -11,6 +11,7 @@ import 'models.dart';
 /// only — so naming a record is a client convention. Kept in one place so a
 /// relation picker, a group header and a chip all name it the same way.
 const List<String> labelFieldCandidates = [
+  'display_name',
   'name',
   'label',
   'title',
