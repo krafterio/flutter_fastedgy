@@ -8,6 +8,7 @@ import '../api/api_model.dart';
 import '../api/api_query.dart';
 import '../api/base_model.dart';
 import '../api/pagination_result.dart';
+import '../api/record_result.dart';
 import '../container/container.dart';
 import '../logging/logger.dart';
 import '../storage/storage_downloader.dart';
@@ -185,10 +186,18 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
     }
   }
 
+  /// [ApiModelEngine.get] routes through this one, so overriding it alone covers
+  /// both reads.
   @override
-  Future<T> get(Object id, {FieldsOptions? options, ApiParams? params}) async {
+  Future<RecordResult<T>> getResult(
+    Object id, {
+    FieldsOptions? options,
+    ApiParams? params,
+  }) async {
     try {
-      return await _getRemote(id, options: options, params: params);
+      return RecordResult(
+        await _getRemote(id, options: options, params: params),
+      );
     } catch (error) {
       if (!_canFallback(error)) {
         rethrow;
@@ -200,9 +209,12 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
         rethrow;
       }
 
-      return cached;
+      return RecordResult(cached, fromCache: true);
     }
   }
+
+  @override
+  bool get bufferizesWrites => outbox != null;
 
   @override
   Future<T> create(
@@ -915,7 +927,13 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
     FieldsOptions? options,
     ApiParams? params,
   }) async {
-    final entity = await super.get(id, options: options, params: params);
+    // super.getResult, not super.get: the latter routes back through this
+    // engine's override, which would loop.
+    final entity = (await super.getResult(
+      id,
+      options: options,
+      params: params,
+    )).value;
 
     if (entity.id != null) {
       await _mergeRecord(entity.id!, entity.toJson());

@@ -8,8 +8,10 @@ import '../container/container.dart';
 import 'api_model.dart';
 import 'api_query.dart';
 import 'base_model.dart';
+import 'data_availability.dart';
 
-class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier {
+class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
+    with DataAvailabilityState<T> {
   ApiCollection(this.api, {dynamic fields, dynamic orderBy, int? limit})
     : _configFields = fields,
       _configOrderBy = orderBy,
@@ -17,8 +19,10 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier {
     _sub = getService<Bus>().on<ResourceChangedEvent>().listen(
       _onResourceChanged,
     );
+    listenAvailability();
   }
 
+  @override
   final ApiModel<T> api;
   final dynamic _configFields;
   final dynamic _configOrderBy;
@@ -48,6 +52,17 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier {
   int _page = 1;
   int _total = 0;
   int _totalPages = 0;
+
+  @override
+  bool get hasData => _items.isNotEmpty;
+
+  /// True when the read settled and brought nothing back: an empty state is
+  /// honest here, unlike [requiresConnection]. Pair it with [isIncomplete] to
+  /// soften the wording when the mirror only holds part of the model.
+  bool get isEmpty =>
+      !hasData &&
+      (availability == DataAvailability.live ||
+          availability == DataAvailability.cached);
 
   List<T> get items => _items;
   bool get isLoading => _isLoading;
@@ -91,6 +106,7 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier {
     }
     _isLoading = true;
     _error = null;
+    beginRead();
     _safeNotify();
     try {
       final result = await api.list(
@@ -107,11 +123,14 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier {
       _total = result.total;
       _totalPages = (result.total / pageSize).ceil();
       _items = result.items;
+      resolveRead(fromCache: result.fromCache);
       return true;
     } catch (e) {
       _error = e;
+      failRead(e);
       return false;
     } finally {
+      await resolveModelFacts();
       _isLoading = false;
       _safeNotify();
     }
@@ -163,8 +182,24 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier {
       _totalPages = pageSize != null && pageSize > 0
           ? (result.total / pageSize).ceil()
           : result.totalPages;
+      _error = null;
+      resolveRead(fromCache: result.fromCache);
+      await resolveModelFacts();
       _safeNotify();
-    } catch (_) {}
+    } catch (_) {
+      // A silent refresh that fails leaves the availability alone: what is on
+      // screen did not change, and claiming a missing connection while showing
+      // rows would contradict requiresConnection.
+    }
+  }
+
+  /// Silently re-reads the loaded range — the recovery path when connectivity
+  /// comes back on a collection that fell back to the mirror or found nothing
+  /// to fall back on.
+  @override
+  Future<void> healAvailability() async {
+    if (!_loaded || _disposed || _isLoading || _isLoadingMore) return;
+    await _refreshLoadedRange();
   }
 
   Future<bool> setPage(int page) => _fetch(page, append: false);
@@ -194,6 +229,7 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier {
       _isLoading = true;
     }
     _error = null;
+    beginRead();
     _safeNotify();
     try {
       final result = await api.list(query: _pageQuery(page));
@@ -210,11 +246,14 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier {
       } else {
         _items = result.items;
       }
+      resolveRead(fromCache: result.fromCache);
       return true;
     } catch (e) {
       _error = e;
+      failRead(e);
       return false;
     } finally {
+      await resolveModelFacts();
       if (append) {
         _isLoadingMore = false;
       } else {
@@ -251,6 +290,7 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _sub.cancel();
+    disposeAvailability();
     super.dispose();
   }
 }

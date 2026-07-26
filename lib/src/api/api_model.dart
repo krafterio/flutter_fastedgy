@@ -13,6 +13,7 @@ import 'api_model_engine.dart';
 import 'api_query.dart';
 import 'base_model.dart';
 import 'pagination_result.dart';
+import 'record_result.dart';
 import 'sync_image_field.dart';
 
 export 'api_model_engine.dart';
@@ -168,6 +169,21 @@ abstract class ApiModel<T extends BaseModel<T>> {
 
   Future<T> get(Object id, {FieldsOptions? options, ApiParams? params}) async =>
       (await _resolveEngine()).get(id, options: options, params: params);
+
+  /// Same read as [get], keeping whether the local mirror answered instead of
+  /// the server.
+  Future<RecordResult<T>> getResult(
+    Object id, {
+    FieldsOptions? options,
+    ApiParams? params,
+  }) async =>
+      (await _resolveEngine()).getResult(id, options: options, params: params);
+
+  /// Whether a write made while the server is unreachable buffers for a later
+  /// replay instead of failing — true for a synchronizable model once the
+  /// offline outbox is wired.
+  Future<bool> bufferizesWrites() async =>
+      (await _resolveEngine()).bufferizesWrites;
 
   Future<T> create(
     DynamicSchema<T> payload, {

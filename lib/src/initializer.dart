@@ -39,7 +39,7 @@ import 'offline/sync_lock.dart';
 import 'offline/replica.dart';
 import 'offline/replica_store.dart';
 import 'offline/sync_engine.dart';
-import 'offline/sync_status.dart';
+import 'sync/sync_status.dart';
 import 'storage/storage_downloader.dart';
 import 'storage/storage_uploader.dart';
 

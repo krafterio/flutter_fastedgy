@@ -24,7 +24,7 @@ import 'outbox.dart';
 import 'pending_upload_store.dart';
 import 'replica.dart';
 import 'sync_lock.dart';
-import 'sync_status.dart';
+import '../sync/sync_status.dart';
 import 'temp_id_map.dart';
 
 /// Replays the [Outbox] against the server when connectivity comes back.

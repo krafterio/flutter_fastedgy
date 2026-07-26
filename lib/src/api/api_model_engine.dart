@@ -10,6 +10,7 @@ import 'api_model.dart';
 import 'api_query.dart';
 import 'base_model.dart';
 import 'pagination_result.dart';
+import 'record_result.dart';
 
 enum ResourceChangeType { created, updated, deleted }
 
@@ -103,7 +104,17 @@ class ApiModelEngine<T extends BaseModel<T>> {
     return PaginationResult.fromJson(response.data, owner.fromJson);
   }
 
-  Future<T> get(Object id, {FieldsOptions? options, ApiParams? params}) async {
+  /// Reads a record, routed through [getResult]: an engine that widens where a
+  /// record may come from — the offline one and its mirror fallback — overrides
+  /// that one alone and both stay consistent.
+  Future<T> get(Object id, {FieldsOptions? options, ApiParams? params}) async =>
+      (await getResult(id, options: options, params: params)).value;
+
+  Future<RecordResult<T>> getResult(
+    Object id, {
+    FieldsOptions? options,
+    ApiParams? params,
+  }) async {
     if (owner.disabledActions.contains(ApiAction.get)) {
       throw Exception('Get action is not available for this model');
     }
@@ -121,8 +132,13 @@ class ApiModelEngine<T extends BaseModel<T>> {
       headers: headers,
     );
 
-    return owner.fromJson(response.data);
+    return RecordResult(owner.fromJson(response.data));
   }
+
+  /// Whether a write made while the server is unreachable buffers for a later
+  /// replay instead of failing. False here: the online engine has nowhere to
+  /// keep it.
+  bool get bufferizesWrites => false;
 
   Future<T> create(
     DynamicSchema<T> payload, {

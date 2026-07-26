@@ -53,6 +53,9 @@ export 'src/api/api.dart';
 // Metadata
 export 'src/metadata/metadata.dart';
 
+// Sync state (readable without the offline module)
+export 'src/sync/sync_status.dart';
+
 // Offline
 export 'src/offline/offline.dart';
 

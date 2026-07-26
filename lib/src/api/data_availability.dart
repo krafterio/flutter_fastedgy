@@ -1,0 +1,155 @@
+/*
+ * Copyright Krafter SAS <developer@krafter.io>
+ * MIT License (see LICENSE file).
+ */
+
+import 'dart:async';
+
+import '../bus/bus.dart';
+import '../container/container.dart';
+import '../fetcher/http_error.dart';
+import '../sync/sync_status.dart';
+import 'api_model.dart';
+import 'base_model.dart';
+
+/// Where the data a holder shows came from, and why it has none when it has
+/// none.
+///
+/// An empty list alone cannot tell a server that answered with nothing from a
+/// server that never answered: [live] with no item is a legitimate empty state,
+/// [offline] is a missing connection.
+enum DataAvailability {
+  /// Nothing loaded yet.
+  idle,
+
+  /// A first read is in flight and there is nothing to show meanwhile.
+  loading,
+
+  /// The server answered.
+  live,
+
+  /// Served by the local mirror: as fresh as the last successful read.
+  cached,
+
+  /// The server could not be reached and nothing was mirrored — this data needs
+  /// a connection.
+  offline,
+
+  /// The server answered and refused (4xx, 500).
+  failed,
+}
+
+/// Availability tracking shared by [ApiCollection] and [ApiRecord] so the two
+/// never drift.
+///
+/// The holder reports its reads ([beginRead], [resolveRead], [failRead]) and
+/// gets back the verdict a screen renders on: [requiresConnection] to replace an
+/// empty state with a connection notice, [isIncomplete] to warn that local data
+/// is only part of the truth, [canWrite] to disable actions that would fail.
+///
+/// Two model-level facts feed the verdict and are resolved once, from the
+/// metadata, on the first read: whether the model is only partially mirrored,
+/// and whether its writes buffer offline instead of failing.
+mixin DataAvailabilityState<T extends BaseModel<T>> {
+  /// The resource being read — satisfied by the holder's own `api` field.
+  ApiModel<T> get api;
+
+  /// Whether the holder currently holds something to display.
+  bool get hasData;
+
+  /// Re-reads after a failed or degraded read, without a loader. Called when
+  /// connectivity comes back.
+  Future<void> healAvailability();
+
+  DataAvailability _availability = DataAvailability.idle;
+  bool _partiallyMirrored = false;
+  bool _bufferizesWrites = false;
+  bool _modelFactsResolved = false;
+  StreamSubscription<SyncStatusChangedEvent>? _availabilitySub;
+
+  DataAvailability get availability => _availability;
+
+  /// True when the last read could not reach the server and left nothing to
+  /// show: the screen should say a connection is required rather than render an
+  /// empty state.
+  bool get requiresConnection => _availability == DataAvailability.offline;
+
+  /// True when what is displayed comes from the local mirror.
+  bool get isFromCache => _availability == DataAvailability.cached;
+
+  /// True when the local mirror is known to hold only part of the model
+  /// (`synchronizable_mode: partial`): what is displayed is what earlier reads
+  /// happened to bring back, not everything the server has.
+  bool get isIncomplete => isFromCache && _partiallyMirrored;
+
+  /// True when the last read had to degrade — it came from the mirror, or it
+  /// could not happen at all.
+  bool get isDegraded =>
+      _availability == DataAvailability.cached ||
+      _availability == DataAvailability.offline;
+
+  /// Whether a write is worth offering: always while the server answers, and
+  /// while degraded only if this model's writes buffer for a later replay.
+  bool get canWrite => !isDegraded || _bufferizesWrites;
+
+  /// Heals a degraded holder when connectivity comes back. The holder calls
+  /// this from its constructor.
+  void listenAvailability() {
+    _availabilitySub = getService<Bus>().on<SyncStatusChangedEvent>().listen((
+      event,
+    ) {
+      if (event.online && isDegraded) {
+        healAvailability();
+      }
+    });
+  }
+
+  void disposeAvailability() {
+    _availabilitySub?.cancel();
+    _availabilitySub = null;
+  }
+
+  /// Marks a read as started. Data already held stays displayed, and keeps its
+  /// verdict until the new read settles.
+  void beginRead() {
+    if (!hasData) {
+      _availability = DataAvailability.loading;
+    }
+  }
+
+  void resolveRead({required bool fromCache}) => _availability = fromCache
+      ? DataAvailability.cached
+      : DataAvailability.live;
+
+  void failRead(Object error) {
+    if (!isServerUnavailable(error)) {
+      _availability = DataAvailability.failed;
+
+      return;
+    }
+
+    // What is already on screen is stale, not missing — a failed reload or a
+    // failed page-two must not raise [requiresConnection], which promises the
+    // holder has nothing to show.
+    _availability = hasData
+        ? DataAvailability.cached
+        : DataAvailability.offline;
+  }
+
+  /// Reads the two model-level facts once. Failing to resolve them — no
+  /// metadata provider, or metadata unreachable offline — leaves the defaults:
+  /// a screen keeps its actions enabled rather than locking itself out on a
+  /// missing payload.
+  Future<void> resolveModelFacts() async {
+    if (_modelFactsResolved) {
+      return;
+    }
+
+    try {
+      _partiallyMirrored =
+          (await api.metadata())?.isPartiallySynchronizable ?? false;
+      _bufferizesWrites = await api.bufferizesWrites();
+      _modelFactsResolved = true;
+    } catch (_) {}
+  }
+}
