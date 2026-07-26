@@ -44,7 +44,11 @@ class Attachment extends BaseModel<Attachment> {
 
 /// Attachment API
 class AttachmentApi extends ApiModel<Attachment> {
-  AttachmentApi(String? basePath) : super('${basePath ?? ''}/attachments');
+  /// [modelName] is what earns the resource a replicated table of its own: keyed
+  /// by the path alone, its records would mirror as opaque JSON, which no
+  /// offline filter can reach.
+  AttachmentApi(String? basePath)
+    : super(basePath ?? '', modelName: 'attachment');
 
   @override
   Set<ApiAction> get disabledActions => {
@@ -53,4 +57,9 @@ class AttachmentApi extends ApiModel<Attachment> {
     ApiAction.import,
     ApiAction.importTemplate,
   };
+
+  /// The inherited default cannot build its own type: every resource declares
+  /// one, and reads throw a cast error without it.
+  @override
+  Attachment fromJson(Map<String, dynamic> json) => Attachment(json);
 }
