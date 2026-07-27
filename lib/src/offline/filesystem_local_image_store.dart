@@ -67,14 +67,18 @@ class FilesystemLocalImageStore implements LocalImageStore {
   File _fileFor(Directory dir, String fileName) =>
       File(p.join(dir.path, fileName));
 
+  static final _fnvOffset = BigInt.parse('cbf29ce484222325', radix: 16);
+  static final _fnvPrime = BigInt.parse('100000001b3', radix: 16);
+  static final _fnvMask = BigInt.parse('ffffffffffffffff', radix: 16);
+
   /// Deterministic, filesystem-safe file name for a (path, variant) pair.
   String _fileName(String path, String variantKey) {
     // FNV-1a 64-bit over the key: fixed-length, no unsafe characters, stable
-    // across runs so the same variant reuses the same file.
-    var hash = 0xcbf29ce484222325;
+    // across runs so the same variant reuses the same file. BigInt keeps the
+    // 64-bit arithmetic representable when compiled to JavaScript.
+    var hash = _fnvOffset;
     for (final unit in '$path|$variantKey'.codeUnits) {
-      hash = (hash ^ unit) * 0x100000001b3;
-      hash &= 0xFFFFFFFFFFFFFFFF;
+      hash = ((hash ^ BigInt.from(unit)) * _fnvPrime) & _fnvMask;
     }
 
     return '${hash.toRadixString(16).padLeft(16, '0')}.img';
