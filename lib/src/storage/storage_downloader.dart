@@ -41,7 +41,11 @@ class StorageDownloader {
     if (forceDownload) params['force_download'] = 'true';
     if (width != null) params['w'] = width.toString();
     if (height != null) params['h'] = height.toString();
-    if (resizeMode != null) params['m'] = resizeMode;
+    // Only meaningful with both dimensions: it says how to fit a box. Sent with
+    // one, the server has no box to fit and scales on that side alone.
+    if (resizeMode != null && width != null && height != null) {
+      params['m'] = resizeMode;
+    }
     if (outputFormat != null) params['e'] = outputFormat;
 
     final response = await _fetcher.get(
@@ -110,7 +114,11 @@ class StorageDownloader {
     if (forceDownload) params['force_download'] = 'true';
     if (width != null) params['w'] = width.toString();
     if (height != null) params['h'] = height.toString();
-    if (resizeMode != null) params['m'] = resizeMode;
+    // Only meaningful with both dimensions: it says how to fit a box. Sent with
+    // one, the server has no box to fit and scales on that side alone.
+    if (resizeMode != null && width != null && height != null) {
+      params['m'] = resizeMode;
+    }
     if (outputFormat != null) params['e'] = outputFormat;
 
     // Remove leading slash if present
@@ -165,7 +173,9 @@ class StorageDownloader {
     if (forceDownload) params.add('force_download=true');
     if (width != null) params.add('w=$width');
     if (height != null) params.add('h=$height');
-    if (resizeMode != null) params.add('m=$resizeMode');
+    if (resizeMode != null && width != null && height != null) {
+      params.add('m=$resizeMode');
+    }
     if (outputFormat != null) params.add('e=$outputFormat');
 
     final queryString = params.isNotEmpty ? '?${params.join('&')}' : '';
@@ -191,7 +201,9 @@ class StorageDownloader {
     if (forceDownload) params.add('force_download=true');
     if (width != null) params.add('w=$width');
     if (height != null) params.add('h=$height');
-    if (resizeMode != null) params.add('m=$resizeMode');
+    if (resizeMode != null && width != null && height != null) {
+      params.add('m=$resizeMode');
+    }
     if (outputFormat != null) params.add('e=$outputFormat');
 
     // Remove leading slash if present
