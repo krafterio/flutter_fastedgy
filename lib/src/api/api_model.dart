@@ -158,10 +158,16 @@ abstract class ApiModel<T extends BaseModel<T>> {
   Future<MetadataField?> metadataField(String name) async =>
       (await metadata())?.fields[name];
 
-  void notifyChanged([ResourceChangeType? type, Object? id]) =>
-      getService<Bus>().fire(
-        ResourceChangedEvent(resolvedBasePath, type: type, id: id),
-      );
+  /// [fields] is what the write asked to change, when it can say: a holder
+  /// reading none of them can then leave the event alone instead of re-reading
+  /// to find out nothing moved.
+  void notifyChanged([
+    ResourceChangeType? type,
+    Object? id,
+    Set<String>? fields,
+  ]) => getService<Bus>().fire(
+    ResourceChangedEvent(resolvedBasePath, type: type, id: id, fields: fields),
+  );
 
   Future<PaginationResult<T>> list({
     ListQuery? query,

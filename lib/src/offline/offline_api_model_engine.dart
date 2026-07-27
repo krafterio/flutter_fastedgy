@@ -266,7 +266,11 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
           cache: cache,
         ),
       );
-      owner.notifyChanged(ResourceChangeType.created, tempId);
+      owner.notifyChanged(
+        ResourceChangeType.created,
+        tempId,
+        payload.toJson().keys.toSet(),
+      );
 
       return owner.fromJson(record);
     }
@@ -321,7 +325,11 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
           cache: cache,
         ),
       );
-      owner.notifyChanged(ResourceChangeType.updated, id);
+      owner.notifyChanged(
+        ResourceChangeType.updated,
+        id,
+        payload.toJson().keys.toSet(),
+      );
 
       final cached = await cachedGet(id);
 

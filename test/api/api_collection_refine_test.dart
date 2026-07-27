@@ -83,6 +83,8 @@ void main() {
     dynamic orderBy,
     int? limit,
     bool autoRefreshOnChange = true,
+    Duration refreshDelay = const Duration(milliseconds: 10),
+    Object? watchFields,
   }) {
     final collection = ApiCollection<_Thing>(
       api,
@@ -90,6 +92,8 @@ void main() {
       orderBy: orderBy,
       limit: limit,
       autoRefreshOnChange: autoRefreshOnChange,
+      refreshDelay: refreshDelay,
+      watchFields: watchFields,
     );
 
     // Torn down here rather than at the end of each test: a failing expectation
@@ -372,7 +376,101 @@ void main() {
       getService<Bus>().fire(
         const ResourceChangedEvent('/things', type: ResourceChangeType.updated),
       );
-      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+
+      expect(requests.length, before + 1);
+    });
+
+    test('a burst of writes costs one re-read, not one each', () async {
+      // A field saved on a timer fires an event per tick, and every list on
+      // screen was re-reading its whole loaded range on each of them.
+      seed(2);
+      final collection = collectionOf(limit: 20);
+      await collection.load();
+      final before = requests.length;
+
+      for (var tick = 0; tick < 5; tick++) {
+        getService<Bus>().fire(
+          const ResourceChangedEvent(
+            '/things',
+            type: ResourceChangeType.updated,
+          ),
+        );
+      }
+
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+
+      expect(requests.length, before + 1);
+    });
+
+    test(
+      'a write touching none of the fields it depends on is left alone',
+      () async {
+        seed(2);
+        // It reads the description — a model replicated in part needs the
+        // column — and does not depend on it. What it reads is no answer to
+        // whether anything on screen would change.
+        final collection = collectionOf(
+          fields: ['id', 'name', 'description'],
+          watchFields: ['id', 'name'],
+          limit: 20,
+        );
+        await collection.load();
+        final before = requests.length;
+
+        getService<Bus>().fire(
+          const ResourceChangedEvent(
+            '/things',
+            type: ResourceChangeType.updated,
+            fields: {'description'},
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 40));
+
+        expect(requests.length, before);
+      },
+    );
+
+    test('a write touching one of them is read', () async {
+      seed(2);
+      final collection = collectionOf(
+        fields: ['id', 'name'],
+        watchFields: true,
+        limit: 20,
+      );
+      await collection.load();
+      final before = requests.length;
+
+      getService<Bus>().fire(
+        const ResourceChangedEvent(
+          '/things',
+          type: ResourceChangeType.updated,
+          fields: {'name'},
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+
+      expect(requests.length, before + 1);
+    });
+
+    test('a row appearing is read whatever the fields say', () async {
+      seed(2);
+      final collection = collectionOf(
+        fields: ['id', 'name'],
+        watchFields: true,
+        limit: 20,
+      );
+      await collection.load();
+      final before = requests.length;
+
+      getService<Bus>().fire(
+        const ResourceChangedEvent(
+          '/things',
+          type: ResourceChangeType.created,
+          fields: {'description'},
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 40));
 
       expect(requests.length, before + 1);
     });

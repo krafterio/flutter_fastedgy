@@ -24,17 +24,60 @@ class ResourceChangedEvent {
   /// flag is what breaks the echo loop between instances.
   final bool relayed;
 
+  /// What the write asked to change, when it said so.
+  ///
+  /// The keys of the payload that was sent — never everything the server ended
+  /// up touching, which it does not report: a save also stamps whatever the
+  /// model stamps on every write. So this answers "did the writer aim at any of
+  /// this?", and a holder that reads none of these fields *and* nothing the
+  /// server stamps has nothing to learn from the event.
+  ///
+  /// Null where the write did not say, which has to be taken as everything.
+  final Set<String>? fields;
+
   const ResourceChangedEvent(
     this.basePath, {
     this.type,
     this.id,
     this.relayed = false,
+    this.fields,
   });
+
+  /// Whether something reading [read] has anything to learn from this event.
+  ///
+  /// Anything but an update always has: a row appearing or going changes a list
+  /// whatever its columns are. An update with nothing declared has too — an
+  /// event that says nothing means everything.
+  ///
+  /// A dotted path counts either way round, `project` moving being news to a
+  /// holder reading `project.name`.
+  /// Reading nothing in particular is reading everything: a holder that has not
+  /// said what it is after cannot be told it is not concerned.
+  bool touches(Iterable<String> read) {
+    final moved = fields;
+
+    if (type != ResourceChangeType.updated ||
+        moved == null ||
+        moved.isEmpty ||
+        read.isEmpty) {
+      return true;
+    }
+
+    return read.any(
+      (one) => moved.any(
+        (other) =>
+            one == other ||
+            one.startsWith('$other.') ||
+            other.startsWith('$one.'),
+      ),
+    );
+  }
 
   Map<String, dynamic> toJson() => {
     'basePath': basePath,
     if (type != null) 'type': type!.name,
     if (id != null) 'id': id,
+    if (fields != null) 'fields': fields!.toList(),
   };
 
   factory ResourceChangedEvent.fromJson(
@@ -50,11 +93,14 @@ class ResourceChangedEvent {
       }
     }
 
+    final fields = json['fields'];
+
     return ResourceChangedEvent(
       json['basePath'] as String,
       type: type,
       id: json['id'],
       relayed: relayed,
+      fields: fields is List ? {for (final field in fields) '$field'} : null,
     );
   }
 }
@@ -164,7 +210,11 @@ class ApiModelEngine<T extends BaseModel<T>> {
     );
 
     final entity = owner.fromJson(response.data);
-    owner.notifyChanged(ResourceChangeType.created, entity.id);
+    owner.notifyChanged(
+      ResourceChangeType.created,
+      entity.id,
+      payload.toJson().keys.toSet(),
+    );
     return entity;
   }
 
@@ -192,7 +242,11 @@ class ApiModelEngine<T extends BaseModel<T>> {
       headers: headers,
     );
 
-    owner.notifyChanged(ResourceChangeType.updated, id);
+    owner.notifyChanged(
+      ResourceChangeType.updated,
+      id,
+      payload.toJson().keys.toSet(),
+    );
     return owner.fromJson(response.data);
   }
 

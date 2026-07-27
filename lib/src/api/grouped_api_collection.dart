@@ -11,6 +11,7 @@ import 'package:flutter/scheduler.dart';
 import '../bus/bus.dart';
 import '../container/container.dart';
 import 'api_collection.dart';
+import 'api_helpers.dart';
 import 'api_model.dart';
 import 'base_model.dart';
 import 'data_availability.dart';
@@ -52,7 +53,9 @@ class GroupedApiCollection<T extends BaseModel<T>> extends ChangeNotifier
     ListSort sort = ListSort.empty,
     this.rowLimit = 20,
     this.refreshDelay = const Duration(milliseconds: 250),
-  }) : _fields = fields,
+    Object? watchFields,
+  }) : _watchFields = watchFields,
+       _fields = fields,
        // An ordering known up front — restored from a URL — is what the buckets
        // are built with, rather than re-read right after their first page.
        _orderBy = sort.isEmpty ? orderBy : sort.toOrderBy(),
@@ -74,6 +77,24 @@ class GroupedApiCollection<T extends BaseModel<T>> extends ChangeNotifier
 
   /// Rows per page **inside** each bucket.
   final int rowLimit;
+
+  /// What a write has to touch for the buckets to be worth re-reading: `true`
+  /// for whatever [fields] asks for, a list of names for a holder reading more
+  /// than it depends on, null for every write (the safe answer).
+  final Object? _watchFields;
+
+  /// [_watchFields] resolved; empty stands for everything.
+  List<String> get _watched {
+    final declared = _watchFields;
+
+    if (declared == true) {
+      return ApiHelpers.encodeFields(
+        _fields,
+      ).split(',').where((one) => one.isNotEmpty).toList();
+    }
+
+    return declared is Iterable<String> ? declared.toList() : const [];
+  }
 
   /// How long a burst of mutations is collapsed before the buckets re-read.
   final Duration refreshDelay;
@@ -356,6 +377,11 @@ class GroupedApiCollection<T extends BaseModel<T>> extends ChangeNotifier
 
         await _settle();
 
+        return;
+      }
+
+      // What the holder depends on, never what it happens to read.
+      if (!event.touches(_watched)) {
         return;
       }
 

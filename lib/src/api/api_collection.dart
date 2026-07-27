@@ -5,6 +5,7 @@ import 'package:flutter/scheduler.dart';
 
 import '../bus/bus.dart';
 import '../container/container.dart';
+import 'api_helpers.dart';
 import 'api_model.dart';
 import 'api_query.dart';
 import 'base_model.dart';
@@ -19,7 +20,10 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
     dynamic orderBy,
     int? limit,
     bool autoRefreshOnChange = true,
-  }) : _configFields = fields,
+    this.refreshDelay = const Duration(milliseconds: 250),
+    Object? watchFields,
+  }) : _watchFields = watchFields,
+       _configFields = fields,
        _configOrderBy = orderBy,
        _limit = limit {
     if (autoRefreshOnChange) {
@@ -39,7 +43,41 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
   final dynamic _configFields;
   final dynamic _configOrderBy;
 
+  /// What a write has to touch for these rows to be worth re-reading, as the
+  /// holder declares it:
+  ///
+  /// - `true` — whatever [fields] asks for, which is the usual case: a list
+  ///   that reads what it shows depends on what it reads.
+  /// - a list of names — for a holder reading more than it depends on. A model
+  ///   replicated in part comes back with a null column for anything left out
+  ///   of the read, so a field is often carried for the mirror alone and is no
+  ///   reason to go back to the server.
+  /// - null — every write re-reads, which is the safe answer.
+  final Object? _watchFields;
+
+  /// [_watchFields] resolved. Empty stands for everything, which is what
+  /// [ResourceChangedEvent.touches] makes of a holder that declared nothing.
+  List<String> get _watched {
+    final declared = _watchFields;
+
+    if (declared == true) {
+      return ApiHelpers.encodeFields(
+        fields,
+      ).split(',').where((one) => one.isNotEmpty).toList();
+    }
+
+    return declared is Iterable<String> ? declared.toList() : const [];
+  }
+
+  /// How long a burst of writes is collapsed before the rows re-read.
+  ///
+  /// A field saved on a timer fires one event per tick, and re-reading the
+  /// whole loaded range on each of them was a request per keystroke settled.
+  /// The same collapse [GroupedApiCollection] already runs on its buckets.
+  final Duration refreshDelay;
+
   StreamSubscription<ResourceChangedEvent>? _sub;
+  Timer? _refresh;
 
   List<T> _items = [];
   bool _isLoading = false;
@@ -257,7 +295,16 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
       removeLocal(event.id);
       return;
     }
-    await _refreshLoadedRange();
+
+    // A write that touched nothing these rows depend on is news to somebody
+    // else. Only what the holder declared counts: what it reads says nothing
+    // about what would change on screen.
+    if (!event.touches(_watched)) {
+      return;
+    }
+
+    _refresh?.cancel();
+    _refresh = Timer(refreshDelay, () => unawaited(_refreshLoadedRange()));
   }
 
   Future<void> _refreshLoadedRange() async {
@@ -422,6 +469,7 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
   void dispose() {
     _disposed = true;
     _sub?.cancel();
+    _refresh?.cancel();
     disposeAvailability();
     super.dispose();
   }
