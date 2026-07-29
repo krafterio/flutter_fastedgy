@@ -7,6 +7,7 @@ import 'dart:convert';
 
 import 'package:appflowy_editor/appflowy_editor.dart';
 
+import 'rich_text_blank.dart';
 import 'rich_text_feature.dart';
 import 'rich_text_nesting.dart';
 
@@ -19,7 +20,20 @@ import 'rich_text_nesting.dart';
 abstract class RichTextCodec {
   const RichTextCodec();
 
+  /// Empty for the document a cleared field is left in — the single blank
+  /// block an editor opens on.
+  ///
+  /// A blank paragraph writes itself as a non-breaking space, which is how the
+  /// blank lines somebody typed between two sentences survive the round trip.
+  /// That is worth keeping, and worth not storing when it is *all* there is:
+  /// a cleared field would come back holding a space, and every reader — a
+  /// server, an agent, a list preview — would take it for content.
   String encode(Document document);
+
+  /// Whether [document] is what a cleared field holds: nothing said, and no
+  /// blank line deliberately left standing.
+  static bool isCleared(Document document) =>
+      document.root.children.length <= 1 && isRichTextBlank(document);
 
   /// Never returns a blockless document. The decoders drop what they cannot
   /// read, and a document with no block renders as a dead zone — nothing to
@@ -46,13 +60,15 @@ class MarkdownRichTextCodec extends RichTextCodec {
   /// nothing but list items, and the package flattens what it cannot nest into
   /// the text of the block above (see [encodeNestedMarkdown]).
   @override
-  String encode(Document document) => encodeNestedMarkdown(
-    features.beforeMarkdown(document),
-    (block) => documentToMarkdown(
-      Document.blank()..insert([0], [block]),
-      customParsers: features.markdownEncoders,
-    ).trimRight(),
-  );
+  String encode(Document document) => RichTextCodec.isCleared(document)
+      ? ''
+      : encodeNestedMarkdown(
+          features.beforeMarkdown(document),
+          (block) => documentToMarkdown(
+            Document.blank()..insert([0], [block]),
+            customParsers: features.markdownEncoders,
+          ).trimRight(),
+        );
 
   @override
   Document decode(String? source) {
@@ -86,7 +102,8 @@ class JsonRichTextCodec extends RichTextCodec {
   const JsonRichTextCodec();
 
   @override
-  String encode(Document document) => jsonEncode(document.toJson());
+  String encode(Document document) =>
+      RichTextCodec.isCleared(document) ? '' : jsonEncode(document.toJson());
 
   @override
   Document decode(String? source) {

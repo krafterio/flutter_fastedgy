@@ -333,4 +333,54 @@ void main() {
       );
     });
   });
+
+  group('emptiness', () {
+    const markdown = MarkdownRichTextCodec(features: defaultRichTextFeatures);
+    const json = JsonRichTextCodec();
+
+    test('a document that says nothing encodes to nothing', () {
+      for (final document in [
+        RichTextCodec.blank,
+        Document.blank(),
+        documentOf([paragraphNode(delta: Delta()..insert('   '))]),
+        documentOf([headingNode(level: 1)]),
+      ]) {
+        expect(markdown.encode(document), '');
+        expect(json.encode(document), '');
+      }
+    });
+
+    test('what a cleared field stores comes back cleared', () {
+      expect(
+        markdown.encode(markdown.decode(markdown.encode(RichTextCodec.blank))),
+        '',
+      );
+      expect(json.encode(json.decode(json.encode(RichTextCodec.blank))), '');
+    });
+
+    test('a field holding nothing but the marker comes back cleared', () {
+      for (final stored in ['&nbsp;', '&nbsp;\n', '\n&nbsp;\n\n']) {
+        expect(markdown.encode(markdown.decode(stored)), '', reason: stored);
+      }
+    });
+
+    test('blank lines somebody left standing are still theirs to keep', () {
+      final document = documentOf([paragraphNode(), paragraphNode()]);
+
+      expect(markdown.encode(document), isNot(''));
+      expect(
+        markdown.decode(markdown.encode(document)).root.children,
+        hasLength(2),
+      );
+    });
+
+    test('a document holding a single word still encodes it', () {
+      final document = documentOf([
+        paragraphNode(delta: Delta()..insert('Lait')),
+      ]);
+
+      expect(markdown.encode(document), 'Lait');
+      expect(json.encode(document), isNot(''));
+    });
+  });
 }
