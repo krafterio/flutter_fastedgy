@@ -20,8 +20,11 @@ class DocumentLayout extends ComponentThemeData {
   final double contentWidth;
   final double horizontalPadding;
 
-  /// Width reserved on the left of every block by the hover gutter (+ and drag
-  /// grip), so its buttons hang in the margin instead of pushing the text.
+  /// Width reserved on the left of every block by the gutter (+ and drag grip),
+  /// so its buttons hang in the margin instead of pushing the text.
+  ///
+  /// What it is actually given is [gutter], never more than the margin there is
+  /// to hang in.
   final double gutterWidth;
 
   const DocumentLayout({
@@ -47,10 +50,19 @@ class DocumentLayout extends ComponentThemeData {
   /// to — the same column, padding included.
   double get maxWidth => contentWidth + 2 * horizontalPadding;
 
+  /// The gutter as it is really drawn.
+  ///
+  /// A gutter hangs in the margin, so it cannot be wider than one: asking for
+  /// more than [horizontalPadding] would push every block off the column its
+  /// header and footer sit on. A narrow page — a phone, where the margin is
+  /// whatever the application's screens use — simply gets a narrow gutter.
+  double get gutter =>
+      gutterWidth < horizontalPadding ? gutterWidth : horizontalPadding;
+
   /// The editor's own padding: cut on the left by the gutter it hangs in, so
   /// block text still lines up with the header.
   EdgeInsets get editorPadding => EdgeInsets.only(
-    left: horizontalPadding - gutterWidth,
+    left: horizontalPadding - gutter,
     right: horizontalPadding,
   );
 

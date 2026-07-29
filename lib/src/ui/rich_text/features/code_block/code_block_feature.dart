@@ -20,7 +20,11 @@ class CodeBlockFeature extends RichTextFeature {
   /// [FastEdgyIcons] from the context like the rest.
   final IconData menuIcon;
 
-  const CodeBlockFeature({this.menuIcon = Icons.code});
+  /// False withdraws every way of making one and keeps everything that reads
+  /// one. Dropping the feature instead takes the reading with it.
+  final bool offered;
+
+  const CodeBlockFeature({this.menuIcon = Icons.code, this.offered = true});
 
   @override
   Map<String, BlockComponentBuilder> get builders => {
@@ -28,12 +32,12 @@ class CodeBlockFeature extends RichTextFeature {
   };
 
   @override
-  List<SelectionMenuItem> get menuItems => [codeBlockMenuItem(icon: menuIcon)];
+  List<SelectionMenuItem> get menuItems =>
+      offered ? [codeBlockMenuItem(icon: menuIcon)] : const [];
 
   @override
-  List<CharacterShortcutEvent> get characterShortcuts => [
-    formatTripleBackquoteToCodeBlock,
-  ];
+  List<CharacterShortcutEvent> get characterShortcuts =>
+      offered ? [formatTripleBackquoteToCodeBlock] : const [];
 
   @override
   List<CommandShortcutEvent> get commandShortcuts => codeBlockCommands;

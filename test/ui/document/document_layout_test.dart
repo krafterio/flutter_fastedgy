@@ -26,6 +26,24 @@ void main() {
       expect(layout.sidePadding(top: 8, bottom: 4).bottom, 4);
     });
 
+    test('a margin narrower than the gutter keeps the column where it is', () {
+      // What a phone asks for: the page lines up with the screen's own margin,
+      // which is narrower than a gutter meant for a desktop page. The gutter
+      // gives way — pushing the blocks off the column their header sits on
+      // would be worse, and a negative padding asserts outright.
+      final phone = DocumentLayout.standard.copyWith(horizontalPadding: 24);
+
+      expect(phone.gutter, 24);
+      expect(phone.editorPadding.left, 0);
+      expect(phone.editorPadding.right, 24);
+    });
+
+    test('a margin with room to spare leaves the gutter its width', () {
+      const page = DocumentLayout.standard;
+
+      expect(page.gutter, page.gutterWidth);
+    });
+
     test('copyWith narrows the column and the rest follows', () {
       final narrow = DocumentLayout.standard.copyWith(contentWidth: 500);
 

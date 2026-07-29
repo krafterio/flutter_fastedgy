@@ -9,15 +9,18 @@ import 'package:flutter_fastedgy/flutter_fastedgy.dart' show t;
 
 import 'rich_text_feature.dart';
 
+const _ourNames = {
+  'Bulleted List': 'Bulleted list',
+  'Numbered List': 'Numbered list',
+};
+
+String richTextMenuLabel(String upstreamName) =>
+    _ourNames[upstreamName] ?? upstreamName;
+
 /// The "/" menu: the package's blocks first, then what the features add.
-///
 /// The package names its items from `AppFlowyEditorL10n`, an English-only
 /// catalog the app never configures — hence a menu that stayed in English. Its
 /// labels being plain English text is exactly how our own keys are written, so
-/// each one is translated under itself as key. Grep will not find these: the
-/// keys live in `assets/translations/*.json` under the labels the package
-/// ships ('Text', 'H1', 'Bulleted List'…), and a label changed upstream shows
-/// up untranslated rather than breaking.
 /// [icons] swaps the glyph on an upstream item, keyed by the English label the
 /// package ships ('Divider'), so a menu stays on the host application's icon set
 /// without the module knowing one.
@@ -46,7 +49,7 @@ SelectionMenuItem _translated(SelectionMenuItem item, IconData? icon) {
     ..deleteKeywords = false;
 
   return SelectionMenuItem(
-    getName: () => t(label),
+    getName: () => t(richTextMenuLabel(label)),
     icon: icon == null ? item.icon : _iconWidget(icon),
     keywords: item.keywords,
     handler: item.handler,

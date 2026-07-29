@@ -7,20 +7,21 @@ import 'dart:async' show unawaited;
 import 'dart:math' show max;
 
 import 'package:appflowy_editor/appflowy_editor.dart';
-import 'package:flutter/foundation.dart'
-    show TargetPlatform, defaultTargetPlatform;
+import 'package:flutter/gestures.dart' show kPrecisePointerHitSlop, kTouchSlop;
 import 'package:flutter/material.dart';
 import 'package:flutter_fastedgy/flutter_fastedgy.dart';
 import 'package:provider/provider.dart';
 
 import '../../../icons.dart';
+import '../../../interaction.dart';
 import '../../../image/fullscreen_image_viewer.dart';
+import '../../rich_text_caret.dart';
+import '../../rich_text_controls.dart';
 import '../../rich_text_theme.dart';
 import 'image_source.dart';
 
 /// The width the optimised variant is asked for, whatever width the image is
 /// shown at.
-///
 /// One variant per image rather than one per size: shrinking a picture to a
 /// fifth of the column must not fetch a fifth-sized file, or every drag of the
 /// handle would download again and every enlargement would come back blurred.
@@ -30,15 +31,17 @@ const _minWidth = 60.0;
 
 const _handleWidth = 6.0;
 
+/// The band along the picture's own edges where a tap asks for the caret before
+/// or after it rather than for the picture itself.
+const _edgeWidth = 24.0;
+
 /// What holds the place while the bytes are on their way.
-///
 /// Only until then: a picture sizes itself once loaded, and it is the loading
 /// state that asks for every pixel it can get — inside a column of blocks that
 /// means an unbounded height, which does not lay out at all.
 const _loadingHeight = 240.0;
 
 /// The storage path an attached picture is read from.
-///
 /// A path, not a URL: the image layer composes the address and appends the size
 /// it wants. Handing it a finished URL made it build one on top of another.
 String attachmentDownloadPath(int id) => 'attachments/$id';
@@ -105,15 +108,9 @@ class _ImageComponentWidgetState extends State<ImageComponentWidget>
   bool _hovering = false;
 
   /// Whether the handle waits to be hovered rather than standing there.
-  ///
   /// Only where there is a pointer to hover with: a touch screen has none, and
   /// a handle that never shows itself is a picture that cannot be resized.
-  static bool get _hoverReveals => switch (defaultTargetPlatform) {
-    TargetPlatform.macOS ||
-    TargetPlatform.windows ||
-    TargetPlatform.linux => true,
-    _ => false,
-  };
+  static bool get _hoverReveals => hasHoverPointer;
 
   /// Held through a drag: pulling the picture wider takes the pointer past its
   /// own edge, and a handle that vanished there would drop the drag with it.
@@ -128,7 +125,6 @@ class _ImageComponentWidgetState extends State<ImageComponentWidget>
       (node.attributes[ImageBlockKeys.height] as num?)?.toDouble();
 
   /// The shape the picture was left in, rather than the height it was left at.
-  ///
   /// A window narrower than the stored width forces the picture down, and a
   /// height held to what it once was leaves the box taller than what it draws —
   /// the picture shrinks, the frame around it does not.
@@ -230,7 +226,9 @@ class _ImageComponentWidgetState extends State<ImageComponentWidget>
       opaque: false,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: _openGallery,
+        onTapUp: editable
+            ? (details) => _onPicture(details.localPosition, width)
+            : (_) => _openGallery(),
         child: image,
       ),
     );
@@ -242,35 +240,90 @@ class _ImageComponentWidgetState extends State<ImageComponentWidget>
       );
     }
 
-    return Align(
-      alignment: Alignment.centerLeft,
-      // Over the picture, not over the handle: the handle is what appears, so
-      // it cannot be what is watched for.
-      child: MouseRegion(
-        onEnter: (_) => setState(() => _hovering = true),
-        onExit: (_) => setState(() => _hovering = false),
-        child: SizedBox(
-          key: _pictureKey,
-          width: width,
-          child: Stack(
-            children: [
-              tappable,
-              if (_showsHandle)
-                Positioned(
-                  top: 0,
-                  bottom: 0,
-                  right: 0,
-                  child: _Handle(onDrag: (delta) => _drag(width, delta)),
-                ),
-            ],
+    return Stack(
+      children: [
+        // Beside the picture the block is empty, and a tap there is asking for
+        // the caret rather than for the picture.
+        Positioned.fill(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => unawaited(_caret(forward: true)),
           ),
         ),
-      ),
+        Align(
+          alignment: Alignment.centerLeft,
+          // Over the picture, not over the handle: the handle is what appears,
+          // so it cannot be what is watched for.
+          child: MouseRegion(
+            onEnter: (_) => setState(() => _hovering = true),
+            onExit: (_) => setState(() => _hovering = false),
+            child: SizedBox(
+              key: _pictureKey,
+              width: width,
+              child: Stack(
+                children: [
+                  tappable,
+                  if (_showsHandle)
+                    Positioned(
+                      top: 0,
+                      bottom: 0,
+                      right: 0,
+                      child: _Handle(
+                        onDrag: (deltaX) => _drag(width, deltaX),
+                        onTap: _select,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _onPicture(Offset at, double width) {
+    if (at.dx <= _edgeWidth) {
+      unawaited(_caret(forward: false));
+
+      return;
+    }
+
+    if (at.dx >= width - _edgeWidth) {
+      unawaited(_caret(forward: true));
+
+      return;
+    }
+
+    _openGallery();
+  }
+
+  /// Puts the caret in the block next to the picture, adding the paragraph it
+  /// needs when the picture is the first or the last thing the document holds.
+  Future<void> _caret({required bool forward}) async {
+    final editorState = context.read<EditorState>();
+    final node = widget.node;
+    final neighbour = forward ? node.next : node.previous;
+    final delta = neighbour?.delta;
+
+    if (neighbour != null && delta != null) {
+      editorState.updateSelectionWithReason(
+        Selection.collapsed(
+          Position(path: neighbour.path, offset: forward ? 0 : delta.length),
+        ),
+        reason: SelectionUpdateReason.uiEvent,
+      );
+
+      return;
+    }
+
+    await addParagraphForCaret(
+      editorState,
+      forward ? node.path.next : node.path,
     );
   }
 
   /// Every picture the document holds, in the order they are written.
-  ///
   /// The gallery is of the document, not of the record: what is shown is what
   /// the reader is looking at, and a file merely attached to the flow has no
   /// place in it.
@@ -348,8 +401,8 @@ class _ImageComponentWidgetState extends State<ImageComponentWidget>
   /// the width instead of being worked out anew on every frame.
   double? _ratio;
 
-  void _drag(double width, DragUpdateDetails? details) {
-    if (details == null) {
+  void _drag(double width, double? deltaX) {
+    if (deltaX == null) {
       final settled = _dragging;
       final ratio = _ratio;
 
@@ -371,8 +424,18 @@ class _ImageComponentWidgetState extends State<ImageComponentWidget>
 
     setState(() {
       _ratio ??= _measuredRatio();
-      _dragging = max(_minWidth, (_dragging ?? width) + details.delta.dx);
+      _dragging = max(_minWidth, (_dragging ?? width) + deltaX);
     });
+  }
+
+  void _select() {
+    final editorState = context.read<EditorState>();
+
+    editorState.selection = Selection.single(
+      path: widget.node.path,
+      startOffset: 0,
+      endOffset: 1,
+    );
   }
 
   double? _measuredRatio() {
@@ -396,6 +459,7 @@ class _ImageComponentWidgetState extends State<ImageComponentWidget>
       return _AttachmentImage(
         key: ValueKey('attachment:$attachment'),
         id: attachment,
+        ratio: _ratio ?? _storedRatio,
         onError: _missing,
       );
     }
@@ -514,7 +578,6 @@ class _ImageComponentWidgetState extends State<ImageComponentWidget>
 
 /// An attached picture, asked for once at [imageDownloadWidth] and shown at
 /// whatever width the block was given.
-///
 /// The two sizes are kept apart on purpose. [CachedApiImage] asks for the
 /// variant matching the size it is laid out at, so a picture dragged narrower
 /// would pull a smaller file down and come back blurred when widened again.
@@ -522,12 +585,27 @@ class _ImageComponentWidgetState extends State<ImageComponentWidget>
 /// scales what is drawn.
 class _AttachmentImage extends StatelessWidget {
   final int id;
+
+  /// The shape the picture is known to have, when it has one: the placeholder
+  /// takes it so the page does not move when the bytes land.
+  final double? ratio;
+
   final Widget Function() onError;
 
-  const _AttachmentImage({required this.id, required this.onError, super.key});
+  const _AttachmentImage({
+    required this.id,
+    required this.onError,
+    this.ratio,
+    super.key,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final width = imageDownloadWidth.toDouble();
+    final height = ratio != null && ratio! > 0
+        ? width / ratio!
+        : _loadingHeight;
+
     return FittedBox(
       fit: BoxFit.contain,
       alignment: Alignment.topLeft,
@@ -536,12 +614,14 @@ class _AttachmentImage extends StatelessWidget {
       // all the height it asks for, the box then takes that same shape.
       child: CachedApiImage(
         path: attachmentDownloadPath(id),
-        width: imageDownloadWidth.toDouble(),
-        // The one moment there is no shape to follow: without this the loading
-        // state asks for an unbounded height, which a column cannot lay out.
-        loadingBuilder: (context) => SizedBox(
-          width: imageDownloadWidth.toDouble(),
-          height: _loadingHeight,
+        width: width,
+        // A shape rather than a spinner, and the application's own: a box that
+        // settles into what its placeholder promised does not jump. Without a
+        // size here the loading state asks for an unbounded height, which a
+        // column cannot lay out.
+        loadingBuilder: (context) => RichTextControls.of(context).placeholder(
+          context,
+          RichTextPlaceholderSpec(width: width, height: height),
         ),
         errorBuilder: (context, error, stackTrace) => onError(),
       ),
@@ -551,9 +631,11 @@ class _AttachmentImage extends StatelessWidget {
 
 /// The bar held to resize the picture, on its trailing edge.
 class _Handle extends StatefulWidget {
-  final void Function(DragUpdateDetails? details) onDrag;
+  final void Function(double? deltaX) onDrag;
 
-  const _Handle({required this.onDrag});
+  final VoidCallback onTap;
+
+  const _Handle({required this.onDrag, required this.onTap});
 
   @override
   State<_Handle> createState() => _HandleState();
@@ -561,6 +643,45 @@ class _Handle extends StatefulWidget {
 
 class _HandleState extends State<_Handle> {
   bool _hovering = false;
+  bool _holding = false;
+  bool _dragged = false;
+  double _travel = 0;
+
+  double get _target => hasHoverPointer ? _handleWidth + 8 : 32;
+
+  double get _slop => hasHoverPointer ? kPrecisePointerHitSlop : kTouchSlop;
+
+  void _onDown(PointerDownEvent event) {
+    _travel = 0;
+    _dragged = false;
+    setState(() => _holding = true);
+  }
+
+  void _onMove(PointerMoveEvent event) {
+    if (!_dragged) {
+      _travel += event.delta.distance;
+
+      if (_travel < _slop) {
+        return;
+      }
+
+      _dragged = true;
+    }
+
+    widget.onDrag(event.delta.dx);
+  }
+
+  void _onUp(PointerEvent event) {
+    setState(() => _holding = false);
+    widget.onDrag(null);
+
+    if (!_dragged && event is PointerUpEvent) {
+      widget.onTap();
+    }
+
+    _dragged = false;
+    _travel = 0;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -574,19 +695,27 @@ class _HandleState extends State<_Handle> {
       opaque: false,
       onEnter: (_) => setState(() => _hovering = true),
       onExit: (_) => setState(() => _hovering = false),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onHorizontalDragUpdate: widget.onDrag,
-        onHorizontalDragEnd: (_) => widget.onDrag(null),
-        onHorizontalDragCancel: () => widget.onDrag(null),
-        child: Center(
-          child: Container(
-            width: _handleWidth,
-            height: 36,
-            margin: const EdgeInsets.symmetric(horizontal: 4),
-            decoration: BoxDecoration(
-              color: _hovering ? theme.ink : theme.ink.withValues(alpha: 0.35),
-              borderRadius: BorderRadius.circular(3),
+      child: Listener(
+        onPointerDown: _onDown,
+        onPointerMove: _onMove,
+        onPointerUp: _onUp,
+        onPointerCancel: _onUp,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () {},
+          child: SizedBox(
+            width: _target,
+            child: Center(
+              child: Container(
+                width: _handleWidth,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: _hovering || _holding
+                      ? theme.ink
+                      : theme.ink.withValues(alpha: 0.35),
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
             ),
           ),
         ),

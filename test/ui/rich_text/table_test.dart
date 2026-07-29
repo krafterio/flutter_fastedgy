@@ -113,6 +113,264 @@ void main() {
     expect(find.text('poignée'), findsNWidgets(2));
   });
 
+  // A table measures its rows on arrival and records what it measured, so a
+  // transaction fires on open with nothing written. A screen that takes every
+  // transaction for an edit declares the note changed before it is touched.
+  testWidgets('monter un tableau ne change pas ce que le document dit', (
+    tester,
+  ) async {
+    const codec = MarkdownRichTextCodec(features: defaultRichTextFeatures);
+    final table = tableOf();
+    final document = Document.blank()..insert([0], [paragraphNode(), table]);
+    final before = codec.encode(document);
+
+    final state = EditorState(document: document);
+    state.disableSealTimer = true;
+    addTearDown(state.dispose);
+
+    var transactions = 0;
+    final edits = state.transactionStream.listen((_) => transactions++);
+    addTearDown(edits.cancel);
+
+    await tester.pumpWidget(
+      _themed(
+        MaterialApp(
+          home: Scaffold(
+            body: RichTextEditor(
+              features: defaultRichTextFeatures,
+              editorState: state,
+              toolbar: false,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 2));
+    });
+
+    expect(transactions, greaterThan(0), reason: 'rien ne serait à prouver');
+    expect(codec.encode(state.document), before);
+  });
+
+  group('les poignées au doigt', () {
+    Future<(EditorState, Node)> pumpTable(WidgetTester tester) async {
+      final table = tableOf();
+      final state = EditorState(
+        document: Document.blank()..insert([0], [paragraphNode(), table]),
+      );
+      state.disableSealTimer = true;
+      addTearDown(state.dispose);
+
+      await tester.pumpWidget(
+        _themed(
+          MaterialApp(
+            home: Scaffold(
+              body: RichTextEditor(
+                features: defaultRichTextFeatures,
+                editorState: state,
+                toolbar: false,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      addTearDown(() async {
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(seconds: 2));
+      });
+
+      return (state, table);
+    }
+
+    Future<void> caretIn(
+      WidgetTester tester,
+      EditorState state,
+      Node cell,
+    ) async {
+      state.selection = Selection.collapsed(
+        Position(path: cell.children.first.path, offset: 0),
+      );
+      await tester.pump();
+      await tester.pump();
+    }
+
+    testWidgets('écrire dans une cellule les fait venir, sans survol', (
+      tester,
+    ) async {
+      final (state, table) = await pumpTable(tester);
+
+      expect(find.byIcon(_rowGrip), findsNothing);
+      expect(find.byIcon(_columnGrip), findsNothing);
+
+      await caretIn(tester, state, table.children.first);
+
+      expect(find.byIcon(_rowGrip), findsOneWidget);
+      expect(find.byIcon(_columnGrip), findsOneWidget);
+    });
+
+    testWidgets('elles suivent la cellule qu\'on écrit', (tester) async {
+      final (state, table) = await pumpTable(tester);
+
+      await caretIn(tester, state, table.children.first);
+      final first = tester.getRect(find.byIcon(_rowGrip));
+
+      await caretIn(tester, state, table.children[1]);
+
+      expect(tester.getRect(find.byIcon(_rowGrip)), isNot(first));
+    });
+
+    testWidgets('elles partent quand le caret quitte le tableau', (
+      tester,
+    ) async {
+      final (state, table) = await pumpTable(tester);
+
+      await caretIn(tester, state, table.children.first);
+      expect(find.byIcon(_columnGrip), findsOneWidget);
+
+      state.selection = Selection.collapsed(Position(path: [0], offset: 0));
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byIcon(_rowGrip), findsNothing);
+      expect(find.byIcon(_columnGrip), findsNothing);
+    });
+
+    Offset edgeOf(Node cell) {
+      final box = cell.renderBox!;
+      final rect = box.localToGlobal(Offset.zero) & box.size;
+
+      return Offset(rect.right, rect.center.dy);
+    }
+
+    testWidgets('un bord intérieur se prend et élargit sa colonne', (
+      tester,
+    ) async {
+      final (state, table) = await pumpTable(tester);
+      await caretIn(tester, state, table.children.first);
+
+      final before = TableNode(node: table).getColWidth(0);
+
+      await tester.dragFrom(edgeOf(table.children.first), const Offset(40, 0));
+      await tester.pumpAndSettle();
+
+      expect(TableNode(node: table).getColWidth(0), greaterThan(before));
+    });
+
+    testWidgets('chaque bord est le sien, où que soit le caret', (
+      tester,
+    ) async {
+      final (state, table) = await pumpTable(tester);
+      await caretIn(tester, state, table.children[2]);
+
+      final first = TableNode(node: table).getColWidth(0);
+      final second = TableNode(node: table).getColWidth(1);
+
+      await tester.dragFrom(edgeOf(table.children.first), const Offset(40, 0));
+      await tester.pumpAndSettle();
+
+      expect(TableNode(node: table).getColWidth(0), greaterThan(first));
+      expect(TableNode(node: table).getColWidth(1), second);
+    });
+
+    testWidgets('toute la pastille répond, pas seulement son glyphe', (
+      tester,
+    ) async {
+      final (state, table) = await pumpTable(tester);
+      await caretIn(tester, state, table.children.first);
+
+      final chip = tester.getRect(
+        find
+            .ancestor(
+              of: find.byIcon(_rowGrip),
+              matching: find.byType(GestureDetector),
+            )
+            .first,
+      );
+
+      await tester.tapAt(chip.center);
+      await tester.pumpAndSettle();
+
+      expect(find.text(t('Insert a row above')), findsOneWidget);
+    });
+
+    testWidgets('la pastille d\'une autre ligne répond de la même façon', (
+      tester,
+    ) async {
+      final (state, table) = await pumpTable(tester);
+      await caretIn(tester, state, table.children[1]);
+
+      final chip = tester.getRect(
+        find
+            .ancestor(
+              of: find.byIcon(_rowGrip),
+              matching: find.byType(GestureDetector),
+            )
+            .first,
+      );
+
+      await tester.tapAt(chip.center);
+      await tester.pumpAndSettle();
+
+      expect(find.text(t('Insert a row above')), findsOneWidget);
+    });
+
+    testWidgets('les boutons d\'ajout sont là, et ils ajoutent', (
+      tester,
+    ) async {
+      final (state, table) = await pumpTable(tester);
+      await caretIn(tester, state, table.children.first);
+
+      final adders = find.byIcon(Icons.add);
+
+      expect(adders, findsNWidgets(2));
+
+      final columns = TableNode(node: table).colsLen;
+
+      await tester.tap(adders.first);
+      await tester.pumpAndSettle();
+
+      expect(TableNode(node: table).colsLen, columns + 1);
+    });
+
+    testWidgets('ouvrir le menu ne fait pas perdre le caret ni les poignées', (
+      tester,
+    ) async {
+      final (state, table) = await pumpTable(tester);
+      await caretIn(tester, state, table.children.first);
+
+      final caret = state.selection;
+
+      await tester.tap(find.byIcon(_rowGrip));
+      await tester.pumpAndSettle();
+
+      expect(state.selection, caret);
+      expect(find.byIcon(_rowGrip), findsOneWidget);
+      expect(find.byIcon(_columnGrip), findsOneWidget);
+    });
+
+    testWidgets('elles restent dans le tableau, comme celles du pointeur', (
+      tester,
+    ) async {
+      final (state, table) = await pumpTable(tester);
+      await caretIn(tester, state, table.children.first);
+
+      final bounds = tester.getRect(find.byType(RichTextEditor));
+
+      for (final grip in [_rowGrip, _columnGrip]) {
+        final rect = tester.getRect(find.byIcon(grip));
+
+        expect(bounds.contains(rect.topLeft), isTrue, reason: '$grip');
+        expect(bounds.contains(rect.bottomRight), isTrue, reason: '$grip');
+      }
+    });
+  });
+
   group('the handle a row or a column is taken by', () {
     /// Hovering a cell is what reveals them — the package shows a handle only
     /// while the pointer is over the row or the column it belongs to.

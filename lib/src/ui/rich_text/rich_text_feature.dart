@@ -4,6 +4,8 @@
  */
 
 import 'package:appflowy_editor/appflowy_editor.dart';
+
+import 'rich_text_action.dart';
 import 'package:flutter/painting.dart' show TextSpan;
 
 /// One content feature of a [DocumentEditor]: everything a kind of block needs,
@@ -31,6 +33,9 @@ abstract class RichTextFeature {
   /// What it adds to the toolbar floating over a selection — an inline format
   /// rather than a block of its own.
   List<ToolbarItem> get toolbarItems => const [];
+
+  /// What it adds to the strip of formatting actions.
+  List<RichTextAction> get actions => const [];
 
   /// How the rendered text of its attribute looks and answers to the pointer.
   ///
@@ -121,6 +126,10 @@ class RichTextFeatures {
   Set<String> get replacedMenuItems => {
     for (final feature in features) ...feature.replacesMenuItems,
   };
+
+  List<RichTextAction> get actions => [
+    for (final feature in features) ...feature.actions,
+  ];
 
   List<ToolbarItem> get toolbarItems => [
     for (final feature in features) ...feature.toolbarItems,

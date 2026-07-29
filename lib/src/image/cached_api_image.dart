@@ -102,6 +102,7 @@ class _CachedApiImageState extends State<CachedApiImage> {
   Object? _error;
   bool _isDisposed = false;
   BoxConstraints? _lastConstraints;
+  bool _probedCache = false;
 
   @override
   void initState() {
@@ -115,6 +116,31 @@ class _CachedApiImageState extends State<CachedApiImage> {
         }
       });
     }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    // What is already in memory, taken before the first frame is drawn.
+    //
+    // Loading is otherwise asked for after that frame, so a widget rebuilt from
+    // scratch over an image the cache already holds still painted its loading
+    // state once — a picture that blinks every time the list around it is
+    // rebuilt, which is every time a block is added above it. Reading the cache
+    // here costs a map lookup and skips the blink; the frame after still asks,
+    // and still finds the same bytes.
+    //
+    // Here rather than in initState: the key is computed from the device pixel
+    // ratio, which is an inherited value and not one to read before this.
+    if (_probedCache || (widget.width == null && widget.height == null)) {
+      return;
+    }
+
+    _probedCache = true;
+    _imageBytes = getService<fastedgy_cache.ImageCache>().getCachedImage(
+      _getCacheKey(),
+    );
   }
 
   @override

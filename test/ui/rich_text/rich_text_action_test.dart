@@ -1,0 +1,139 @@
+/*
+ * Copyright Krafter SAS <developer@krafter.io>
+ * MIT License (see LICENSE file).
+ */
+
+import 'package:appflowy_editor/appflowy_editor.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_fastedgy/ui.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+void main() {
+  RichTextAction actionOf(String id) =>
+      RichTextActions.standard.firstWhere((action) => action.id == id);
+
+  EditorState stateOf(String text) {
+    final state = EditorState(
+      document: Document.blank()
+        ..insert([0], [paragraphNode(delta: Delta()..insert(text))]),
+    );
+    state.selection = Selection.single(
+      path: [0],
+      startOffset: 0,
+      endOffset: text.length,
+    );
+
+    return state;
+  }
+
+  group('ce que fait une action', () {
+    test('une marque se pose et se retire', () async {
+      final state = stateOf('Lait');
+      final bold = actionOf('bold');
+
+      expect(bold.isActive(state), isFalse);
+
+      await bold.run(state);
+      expect(bold.isActive(state), isTrue);
+
+      await bold.run(state);
+      expect(bold.isActive(state), isFalse);
+
+      state.dispose();
+    });
+
+    test('un type de bloc s\'applique et revient au paragraphe', () async {
+      final state = stateOf('Pain');
+      final list = actionOf('bulleted_list');
+
+      await list.run(state);
+      expect(state.getNodeAtPath([0])?.type, BulletedListBlockKeys.type);
+      expect(list.isActive(state), isTrue);
+
+      await list.run(state);
+      expect(state.getNodeAtPath([0])?.type, ParagraphBlockKeys.type);
+
+      state.dispose();
+    });
+
+    test('le texte du bloc survit au changement de type', () async {
+      final state = stateOf('Œufs');
+
+      await actionOf('quote').run(state);
+
+      expect(state.getNodeAtPath([0])?.delta?.toPlainText(), 'Œufs');
+
+      state.dispose();
+    });
+
+    test('une action à cocher porte son attribut', () async {
+      final state = stateOf('Courses');
+
+      await actionOf('todo_list').run(state);
+
+      final node = state.getNodeAtPath([0]);
+
+      expect(node?.type, TodoListBlockKeys.type);
+      expect(node?.attributes[TodoListBlockKeys.checked], isFalse);
+
+      state.dispose();
+    });
+
+    test(
+      'revenir en arrière n\'est offert qu\'une fois qu\'il y a de quoi',
+      () async {
+        final state = stateOf('Rien');
+        final undo = actionOf('undo');
+
+        expect(undo.isEnabled(state), isFalse);
+
+        await actionOf('bold').run(state);
+
+        expect(undo.isEnabled(state), isTrue);
+
+        state.dispose();
+      },
+    );
+
+    test('le jeu standard est groupé, pas en vrac', () {
+      final groups = RichTextActions.standard.map((action) => action.group);
+
+      expect(groups.toSet().length, greaterThan(1));
+      expect(groups.toList(), orderedEquals(groups.toList()..sort()));
+    });
+  });
+
+  group('ce que dessine la barre', () {
+    Future<void> pump(WidgetTester tester, EditorState state) =>
+        tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: RichTextActionBar(
+                editorState: state,
+                actions: RichTextActions.marks,
+              ),
+            ),
+          ),
+        );
+
+    testWidgets('un bouton par action', (tester) async {
+      final state = stateOf('Texte');
+      addTearDown(state.dispose);
+
+      await pump(tester, state);
+
+      expect(find.byType(Icon), findsNWidgets(RichTextActions.marks.length));
+    });
+
+    testWidgets('taper un bouton applique son action', (tester) async {
+      final state = stateOf('Texte');
+      addTearDown(state.dispose);
+
+      await pump(tester, state);
+      await tester.tap(find.byType(Icon).first);
+      await tester.pumpAndSettle();
+
+      expect(actionOf('bold').isActive(state), isTrue);
+    });
+  });
+}

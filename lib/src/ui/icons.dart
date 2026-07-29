@@ -63,9 +63,45 @@ enum FastEdgyGlyph {
 
   previous,
   next,
+
+  /// The character that opens the list of blocks, drawn as itself: a strip of
+  /// actions offers it where there is no keyboard to type it on.
+  slash,
+
+  /// What a formatting strip offers: marks carried by the text, block kinds it
+  /// can be turned into, and the two ways back.
+  bold,
+  italic,
+  underline,
+  strikethrough,
+  heading,
+  quote,
+  bulletedList,
+  numberedList,
+  todoList,
+  rule,
+  undo,
+  redo,
 }
 
 const Map<FastEdgyGlyph, IconData> _material = {
+  // Material ships no bare slash; this is the only glyph it has that draws one,
+  // circle and all. Distinct from `add` on purpose — sharing that one would put
+  // the same picture on "insert a block" and on "add a row". An application
+  // with its own icon set gives this the character itself.
+  FastEdgyGlyph.slash: Icons.dnd_forwardslash,
+  FastEdgyGlyph.bold: Icons.format_bold,
+  FastEdgyGlyph.italic: Icons.format_italic,
+  FastEdgyGlyph.underline: Icons.format_underlined,
+  FastEdgyGlyph.strikethrough: Icons.format_strikethrough,
+  FastEdgyGlyph.heading: Icons.title,
+  FastEdgyGlyph.quote: Icons.format_quote,
+  FastEdgyGlyph.bulletedList: Icons.format_list_bulleted,
+  FastEdgyGlyph.numberedList: Icons.format_list_numbered,
+  FastEdgyGlyph.todoList: Icons.checklist,
+  FastEdgyGlyph.rule: Icons.horizontal_rule,
+  FastEdgyGlyph.undo: Icons.undo,
+  FastEdgyGlyph.redo: Icons.redo,
   FastEdgyGlyph.check: Icons.check,
   FastEdgyGlyph.copy: Icons.copy,
   FastEdgyGlyph.copied: Icons.check,

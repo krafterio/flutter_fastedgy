@@ -41,6 +41,19 @@ void main() {
   });
   tearDown(resetUiTestServices);
 
+  /// The override has to be undone before the body returns — the framework
+  /// checks the foundation's debug flags there, so a tear-down would be too
+  /// late and the failure would name the wrong thing.
+  Future<void> on(TargetPlatform platform, Future<void> Function() body) async {
+    debugDefaultTargetPlatformOverride = platform;
+
+    try {
+      await body();
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  }
+
   group('where an image points', () {
     test('an attachment is read back from its reference', () {
       expect(attachmentIdOf('attachment:42'), 42);
@@ -227,22 +240,6 @@ void main() {
       return gesture;
     }
 
-    /// The override has to be undone before the body returns — the framework
-    /// checks the foundation's debug flags there, so a tear-down would be too
-    /// late and the failure would name the wrong thing.
-    Future<void> on(
-      TargetPlatform platform,
-      Future<void> Function() body,
-    ) async {
-      debugDefaultTargetPlatformOverride = platform;
-
-      try {
-        await body();
-      } finally {
-        debugDefaultTargetPlatformOverride = null;
-      }
-    }
-
     testWidgets('waits to be hovered rather than standing over the picture', (
       tester,
     ) async {
@@ -290,6 +287,331 @@ void main() {
         await pointAt(tester, find.byType(Image));
 
         expect(handle, findsNothing);
+      });
+    });
+
+    testWidgets('offre au doigt de quoi se poser dessus', (tester) async {
+      late double pointer;
+
+      await on(TargetPlatform.macOS, () async {
+        await pump(tester);
+        await pointAt(tester, find.byType(Image));
+        pointer = tester.getSize(handle).width;
+      });
+
+      await on(TargetPlatform.iOS, () async {
+        await pump(tester);
+
+        // La barre dessinée ne change pas ; c'est la zone autour qui grandit.
+        expect(tester.getSize(handle).width, greaterThan(pointer));
+      });
+    });
+
+    testWidgets('un glissement au doigt redimensionne vraiment', (
+      tester,
+    ) async {
+      await on(TargetPlatform.iOS, () async {
+        final state = EditorState(
+          document: Document.blank()
+            ..insert([0], [imageNode(url: _pixel, width: 200, height: 120)]),
+        );
+        addTearDown(state.dispose);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: RichTextEditor(
+                features: defaultRichTextFeatures,
+                editorState: state,
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        // Sans arbitrage : la poignée est posée sur un éditeur qui prend le
+        // premier contact pour une sélection, et dans une page qui défile.
+        await tester.drag(handle, const Offset(-60, 0));
+        await tester.pumpAndSettle();
+
+        final width =
+            (state.getNodeAtPath([0])?.attributes[ImageBlockKeys.width] as num?)
+                ?.toDouble();
+
+        expect(width, isNotNull);
+        expect(width, lessThan(200));
+      });
+    });
+
+    testWidgets('a tap without a drag selects the picture', (tester) async {
+      await on(TargetPlatform.iOS, () async {
+        final state = EditorState(
+          document: Document.blank()
+            ..insert([0], [imageNode(url: _pixel, width: 200, height: 120)]),
+        );
+        addTearDown(state.dispose);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: RichTextEditor(
+                features: defaultRichTextFeatures,
+                editorState: state,
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        await tester.tap(handle);
+        await tester.pumpAndSettle();
+
+        expect(
+          state.selection,
+          Selection.single(path: [0], startOffset: 0, endOffset: 1),
+        );
+        expect(
+          (state.getNodeAtPath([0])?.attributes[ImageBlockKeys.width] as num?)
+              ?.toDouble(),
+          200,
+        );
+      });
+    });
+  });
+
+  group('tapping beside a picture', () {
+    Future<EditorState> pump(WidgetTester tester) async {
+      final state = EditorState(
+        document: Document.blank()
+          ..insert([0], [imageNode(url: _pixel, width: 200, height: 120)]),
+      );
+      addTearDown(state.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: RichTextEditor(
+              features: defaultRichTextFeatures,
+              editorState: state,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      return state;
+    }
+
+    List<String> blocksOf(EditorState state) => [
+      for (final node in state.document.root.children) node.type,
+    ];
+
+    testWidgets('on its right the caret lands in the paragraph it adds', (
+      tester,
+    ) async {
+      await on(TargetPlatform.iOS, () async {
+        final state = await pump(tester);
+        final picture = tester.getRect(find.byType(Image));
+
+        await tester.tapAt(Offset(picture.right + 120, picture.center.dy));
+        await tester.pumpAndSettle();
+
+        expect(blocksOf(state), [ImageBlockKeys.type, ParagraphBlockKeys.type]);
+        expect(
+          state.selection,
+          Selection.collapsed(Position(path: [1], offset: 0)),
+        );
+      });
+    });
+
+    testWidgets('on the edge of the picture it lands before it', (
+      tester,
+    ) async {
+      await on(TargetPlatform.iOS, () async {
+        final state = await pump(tester);
+        final picture = tester.getRect(find.byType(Image));
+
+        await tester.tapAt(Offset(picture.left + 4, picture.center.dy));
+        await tester.pumpAndSettle();
+
+        expect(blocksOf(state), [ParagraphBlockKeys.type, ImageBlockKeys.type]);
+        expect(
+          state.selection,
+          Selection.collapsed(Position(path: [0], offset: 0)),
+        );
+
+        // Over the picture the line is as provisional as the one under it, and
+        // taking it back moves everything that followed it back up a path.
+        state.selection = Selection.single(
+          path: [1],
+          startOffset: 0,
+          endOffset: 1,
+        );
+        await tester.pumpAndSettle();
+
+        expect(blocksOf(state), [ImageBlockKeys.type]);
+        expect(
+          state.selection,
+          Selection.single(path: [0], startOffset: 0, endOffset: 1),
+        );
+      });
+    });
+
+    testWidgets('under the last block the caret lands after it', (
+      tester,
+    ) async {
+      await on(TargetPlatform.iOS, () async {
+        final state = await pump(tester);
+        final picture = tester.getRect(find.byType(Image));
+
+        await tester.tapAt(Offset(picture.center.dx, picture.bottom + 200));
+        await tester.pumpAndSettle();
+
+        expect(blocksOf(state), [ImageBlockKeys.type, ParagraphBlockKeys.type]);
+        expect(
+          state.selection,
+          Selection.collapsed(Position(path: [1], offset: 0)),
+        );
+      });
+    });
+
+    testWidgets('the text already written beside it is left alone', (
+      tester,
+    ) async {
+      await on(TargetPlatform.iOS, () async {
+        final state = EditorState(
+          document: Document.blank()
+            ..insert(
+              [0],
+              [
+                imageNode(url: _pixel, width: 200, height: 120),
+                paragraphNode(delta: Delta()..insert('After')),
+              ],
+            ),
+        );
+        addTearDown(state.dispose);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: RichTextEditor(
+                features: defaultRichTextFeatures,
+                editorState: state,
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        final picture = tester.getRect(find.byType(Image));
+
+        await tester.tapAt(Offset(picture.right + 120, picture.center.dy));
+        await tester.pumpAndSettle();
+
+        expect(blocksOf(state), [ImageBlockKeys.type, ParagraphBlockKeys.type]);
+        expect(
+          state.selection,
+          Selection.collapsed(Position(path: [1], offset: 0)),
+        );
+      });
+    });
+
+    testWidgets('the line it adds goes again when the caret leaves it', (
+      tester,
+    ) async {
+      await on(TargetPlatform.iOS, () async {
+        final state = EditorState(
+          document: Document.blank()
+            ..insert(
+              [0],
+              [
+                paragraphNode(delta: Delta()..insert('Before')),
+                imageNode(url: _pixel, width: 200, height: 120),
+              ],
+            ),
+        );
+        addTearDown(state.dispose);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: RichTextEditor(
+                features: defaultRichTextFeatures,
+                editorState: state,
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        final written = const MarkdownRichTextCodec(
+          features: defaultRichTextFeatures,
+        ).encode(state.document);
+        final picture = tester.getRect(find.byType(Image));
+
+        await tester.tapAt(Offset(picture.right + 120, picture.center.dy));
+        await tester.pumpAndSettle();
+
+        expect(blocksOf(state), [
+          ParagraphBlockKeys.type,
+          ImageBlockKeys.type,
+          ParagraphBlockKeys.type,
+        ]);
+
+        state.selection = Selection.collapsed(Position(path: [0], offset: 6));
+        await tester.pumpAndSettle();
+
+        // Nothing was written in it, so nothing was written at all: the
+        // document is back to what a save would have found before the tap.
+        expect(blocksOf(state), [ParagraphBlockKeys.type, ImageBlockKeys.type]);
+        expect(
+          state.selection,
+          Selection.collapsed(Position(path: [0], offset: 6)),
+        );
+        expect(
+          const MarkdownRichTextCodec(
+            features: defaultRichTextFeatures,
+          ).encode(state.document),
+          written,
+        );
+      });
+    });
+
+    testWidgets('the line it adds stays once something is written in it', (
+      tester,
+    ) async {
+      await on(TargetPlatform.iOS, () async {
+        final state = await pump(tester);
+        final picture = tester.getRect(find.byType(Image));
+
+        await tester.tapAt(Offset(picture.right + 120, picture.center.dy));
+        await tester.pumpAndSettle();
+
+        await state.insertTextAtPosition(
+          'Written',
+          position: Position(path: [1], offset: 0),
+        );
+        await tester.pumpAndSettle();
+
+        state.selection = Selection.collapsed(Position(path: [0], offset: 0));
+        await tester.pumpAndSettle();
+
+        expect(blocksOf(state), [ImageBlockKeys.type, ParagraphBlockKeys.type]);
+        expect(state.getNodeAtPath([1])?.delta?.toPlainText(), 'Written');
+      });
+    });
+
+    testWidgets('the middle of the picture still opens the gallery', (
+      tester,
+    ) async {
+      await on(TargetPlatform.iOS, () async {
+        final state = await pump(tester);
+        final picture = tester.getRect(find.byType(Image));
+
+        await tester.tapAt(picture.center);
+        await tester.pumpAndSettle();
+
+        expect(blocksOf(state), [ImageBlockKeys.type]);
       });
     });
   });
@@ -610,6 +932,50 @@ void main() {
         ImageBlockKeys.type,
       ]);
       expect(blocks.first.delta?.toPlainText(), 'Un texte');
+    });
+  });
+
+  group('while an attachment is on its way', () {
+    testWidgets('the block holds a shape, never a spinner', (tester) async {
+      final state = EditorState(
+        document: Document.blank()
+          ..insert(
+            [0],
+            [imageNode(url: 'attachment:42', width: 200, height: 120)],
+          ),
+      );
+      addTearDown(state.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: RichTextView(
+              editorState: state,
+              features: defaultRichTextFeatures,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+
+      // The shape it was stored at, so the page does not move when the bytes
+      // land: 200 by 120 is the same ratio as the box the placeholder takes.
+      final box = tester.getSize(
+        find
+            .descendant(
+              of: find.byType(CachedApiImage),
+              matching: find.byType(Container),
+            )
+            .first,
+      );
+
+      expect(box.width / box.height, closeTo(200 / 120, 0.01));
+
+      // The download it started outlives the tree unless it is let go of.
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 30));
     });
   });
 }

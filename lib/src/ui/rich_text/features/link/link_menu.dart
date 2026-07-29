@@ -258,7 +258,10 @@ class _LinkMenuState extends State<_LinkMenu> {
         ),
         if (editing) ...[
           const SizedBox(height: 10),
-          Row(
+          // Wrapped rather than in a row: a card is as wide as every other
+          // card, and what an application draws these with is its own —
+          // three labels in its own font are not owed to fit on one line.
+          Wrap(
             children: [
               _LinkAction(
                 icon: widget.icons[FastEdgyGlyph.openExternal],
@@ -279,8 +282,10 @@ class _LinkMenuState extends State<_LinkMenu> {
           ),
         ],
         const SizedBox(height: 12),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.end,
+        Wrap(
+          alignment: WrapAlignment.end,
+          spacing: 8,
+          runSpacing: 8,
           children: [
             RichTextControls.of(context).button(
               context,
@@ -290,7 +295,6 @@ class _LinkMenuState extends State<_LinkMenu> {
                 onTap: widget.onDismiss,
               ),
             ),
-            const SizedBox(width: 8),
             RichTextControls.of(context).button(
               context,
               RichTextButtonSpec(

@@ -3,13 +3,14 @@
  * MIT License (see LICENSE file).
  */
 
-import 'dart:math' show max;
+import 'dart:math' show max, min;
 
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 
 import 'rich_text_style.dart';
+import 'rich_text_toolbar_theme.dart';
 import 'rich_text_theme.dart';
 
 /// Width every editing card shares, so the ones a document offers line up.
@@ -43,6 +44,8 @@ bool showRichTextPopover(
   required RichTextPopoverBuilder builder,
   double width = richTextPopoverWidth,
   double? height,
+  EdgeInsets? padding,
+  bool fitsContent = false,
 }) {
   final rects = editorState.selectionRects();
   final editorBox = editorState.renderBox;
@@ -101,8 +104,9 @@ bool showRichTextPopover(
             child: CustomSingleChildLayout(
               delegate: layout,
               child: _Card(
-                width: width,
+                width: fitsContent ? null : width,
                 height: height,
+                padding: padding,
                 onDismiss: dismiss,
                 child: builder(context, dismiss),
               ),
@@ -121,14 +125,20 @@ bool showRichTextPopover(
 class _Card extends StatefulWidget {
   final Widget child;
   final VoidCallback onDismiss;
-  final double width;
+
+  /// Null where the card takes the width of what it holds — the delegate hands
+  /// it a loose constraint, so a menu of four words is four words wide.
+  final double? width;
+
   final double? height;
+  final EdgeInsets? padding;
 
   const _Card({
     required this.child,
     required this.onDismiss,
     required this.width,
     this.height,
+    this.padding,
   });
 
   @override
@@ -175,17 +185,111 @@ class _CardState extends State<_Card> {
         },
         child: FocusScope(
           node: _scope,
-          child: Container(
+          child: RichTextSurface(
             width: widget.width,
             height: widget.height,
-            padding: const EdgeInsets.all(12),
-            decoration: RichTextTheme.of(context).floatingSurface,
+            padding: widget.padding ?? const EdgeInsets.all(12),
             child: widget.child,
           ),
         ),
       ),
     );
   }
+}
+
+/// The chrome every surface a document floats shares: the mention list, the
+/// link card, the toolbar over a selection.
+///
+/// One widget rather than a decoration each of them applies, so they cannot
+/// drift apart — and so an application restyling [RichTextTheme.floatingSurface]
+/// restyles all of them at once.
+class RichTextSurface extends StatelessWidget {
+  final Widget child;
+  final EdgeInsets padding;
+  final double? width;
+  final double? height;
+
+  /// What it is drawn on. The shared floating surface unless a caller carries
+  /// its own — the toolbar does, so it can be restyled on its own.
+  final BoxDecoration? decoration;
+
+  const RichTextSurface({
+    required this.child,
+    this.padding = const EdgeInsets.all(12),
+    this.width,
+    this.height,
+    this.decoration,
+    super.key,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      height: height,
+      padding: padding,
+      // Clipped to its own corners: what scrolls inside a surface has to stop
+      // at them, or a row of items runs out past the rounding.
+      clipBehavior: Clip.antiAlias,
+      decoration: decoration ?? RichTextTheme.of(context).floatingSurface,
+      child: child,
+    );
+  }
+}
+
+/// Places the toolbar that floats over a selection, on the surface and through
+/// the delegate every other floating thing uses.
+///
+/// The editor's own placement is a desktop one: it cuts the editor in thirds
+/// and hangs the toolbar off the left edge of the selection without ever asking
+/// how wide the toolbar is. On a phone it runs off the screen and half its
+/// items cannot be reached — which is one of the reasons a touch platform docks
+/// the strip instead (see [RichTextDockedToolbar]) and never comes here.
+///
+/// One caveat comes from the editor and cannot be answered here: it drops the
+/// toolbar entirely when the selection sits in the top few pixels of the
+/// viewport, before this is ever called.
+Widget placeRichTextToolbar(
+  BuildContext context,
+  EditorState editorState,
+  Widget bar,
+) {
+  final rects = editorState.selectionRects();
+  final editorBox = editorState.renderBox;
+
+  if (rects.isEmpty || editorBox == null) {
+    return const SizedBox.shrink();
+  }
+
+  final theme = RichTextToolbarTheme.of(context);
+  final editor = editorBox.localToGlobal(Offset.zero) & editorBox.size;
+
+  final strip = RichTextSurface(
+    padding: theme.padding,
+    decoration: theme.surface,
+    child: bar,
+  );
+
+  // The first line of the selection that is on screen: a selection running past
+  // the top of the viewport has rects with a negative offset, and hanging off
+  // one of those puts the toolbar out of sight.
+  final visible = rects.where((rect) => rect.top >= 0);
+  final anchor = (visible.isEmpty ? rects : visible).reduce(
+    (min, current) => current.top < min.top ? current : min,
+  );
+
+  return Positioned.fill(
+    child: CustomSingleChildLayout(
+      delegate: RichTextPopoverLayout(
+        selection: anchor,
+        editor: editor,
+        width: max(0, editor.width - _gap * 2),
+        avoidToolbar: false,
+        preferAbove: true,
+      ),
+      child: strip,
+    ),
+  );
 }
 
 /// Places a card under the selected text, flipped above it when there is no
@@ -214,12 +318,18 @@ class RichTextPopoverLayout extends SingleChildLayoutDelegate {
   /// away from it.
   final bool avoidToolbar;
 
+  /// Above the selection first, below it when there is no room — which is what
+  /// a toolbar acting on the selected words does, so it does not cover them.
+  /// A card offering something to read or fill in does the opposite.
+  final bool preferAbove;
+
   const RichTextPopoverLayout({
     required this.selection,
     required this.editor,
     this.width = richTextPopoverWidth,
     this.height,
     this.avoidToolbar = true,
+    this.preferAbove = false,
   });
 
   @override
@@ -243,16 +353,23 @@ class RichTextPopoverLayout extends SingleChildLayoutDelegate {
         _gap +
         (toolbarBelow ? RichTextStyle.toolbarSpan : 0);
 
-    if (below + childSize.height <= editor.bottom) {
-      return Offset(left, below);
-    }
-
     final ceiling =
         selection.top -
         _gap -
         (avoidToolbar && !toolbarBelow ? RichTextStyle.toolbarHeight : 0);
+    final above = ceiling - childSize.height;
 
-    return Offset(left, max(0, ceiling - childSize.height));
+    if (preferAbove) {
+      return above >= 0
+          ? Offset(left, above)
+          : Offset(left, min(below, max(0, editor.bottom - childSize.height)));
+    }
+
+    if (below + childSize.height <= editor.bottom) {
+      return Offset(left, below);
+    }
+
+    return Offset(left, max(0, above));
   }
 
   @override
@@ -261,5 +378,6 @@ class RichTextPopoverLayout extends SingleChildLayoutDelegate {
       oldDelegate.editor != editor ||
       oldDelegate.width != width ||
       oldDelegate.height != height ||
-      oldDelegate.avoidToolbar != avoidToolbar;
+      oldDelegate.avoidToolbar != avoidToolbar ||
+      oldDelegate.preferAbove != preferAbove;
 }

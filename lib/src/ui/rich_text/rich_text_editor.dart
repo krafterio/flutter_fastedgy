@@ -6,18 +6,28 @@
 import 'dart:async';
 
 import 'package:appflowy_editor/appflowy_editor.dart';
+import 'package:flutter/gestures.dart' show kTouchSlop;
 import 'package:flutter/material.dart';
 import 'package:flutter_fastedgy/flutter_fastedgy.dart' show t;
 import 'package:provider/provider.dart';
 
+import '../icons.dart';
+import '../interaction.dart';
 import 'rich_text_blank.dart';
+import 'rich_text_action.dart';
+import 'rich_text_action_bar.dart';
 import 'rich_text_blocks.dart';
+import 'rich_text_caret.dart';
 import 'rich_text_feature.dart';
 import 'rich_text_menu.dart';
+import 'rich_text_paste.dart';
+import 'rich_text_popover.dart';
 import 'rich_text_shortcuts.dart';
+import 'rich_text_slash_menu.dart';
 import 'rich_text_style.dart';
 import 'rich_text_theme.dart';
-import 'rich_text_toolbar.dart';
+import 'rich_text_toolbar_theme.dart';
+import 'rich_text_touch_menu.dart';
 
 /// Rich text on the app's design system (appflowy_editor, MPL-2.0): floating
 /// toolbar on the selection, "/" menu to insert blocks, and whatever the
@@ -79,9 +89,22 @@ class RichTextEditor extends StatefulWidget {
   /// The toolbar that floats over a selection.
   final bool toolbar;
 
-  /// What it offers, from [RichTextToolbar]'s groups. Null takes the standard
-  /// set. The features' own items are appended either way.
-  final List<ToolbarItem>? toolbarItems;
+  /// What the strip offers, from [RichTextActions]' groups. Null takes the
+  /// standard set. The features' own actions are appended either way.
+  final List<RichTextAction>? actions;
+
+  /// How long the strip stays up.
+  ///
+  /// Only a docked one — a touch platform's — has any say: a floating strip
+  /// hangs off the selected words and cannot outlast them. Null leaves a docked
+  /// strip on [RichTextToolbarVisibility.caret], which is what makes it survive
+  /// its own block actions and its own undo.
+  final RichTextToolbarVisibility? toolbarVisibility;
+
+  /// Room on the strip for what the package cannot know about — an
+  /// application's own bottom inset under a navigation bar that floats, a
+  /// control of its own at either end of the row.
+  final RichTextToolbarSlots toolbarSlots;
 
   /// The menu that "/" opens. Off leaves the character to be typed.
   final bool slashMenu;
@@ -128,7 +151,9 @@ class RichTextEditor extends StatefulWidget {
     this.footer,
     this.blockActions,
     this.toolbar = true,
-    this.toolbarItems,
+    this.actions,
+    this.toolbarVisibility,
+    this.toolbarSlots = RichTextToolbarSlots.none,
     this.slashMenu = true,
     this.emptyPlaceholder,
     this.hintPlaceholder,
@@ -147,11 +172,33 @@ class RichTextEditorState extends State<RichTextEditor> {
   /// The footer, as one item of the page: what [revealFooter] scrolls to.
   final _footerKey = GlobalKey();
 
+  /// Everything the page ends on, footer included: what a tap under the
+  /// document must not be mistaken for.
+  final _pageEndKey = GlobalKey();
+
   StreamSubscription<EditorTransactionValue>? _edits;
+
+  /// The block list a finger opens, held here because the shortcut and the
+  /// toolbar button both open the same one.
+  final _slash = RichTextSlashController();
 
   @override
   void initState() {
     super.initState();
+
+    // The editor shows a block's gutter while the block is hovered, and a
+    // finger cannot hover: on a touch platform that gate is taken off and the
+    // gutter decides for itself which block deserves one — the one being
+    // written in (see DocumentGutter).
+    //
+    // A global of the editor's, read once by each block as it mounts, so it is
+    // set here rather than at the gutter: by then every block has already
+    // decided. Set and left, never cleared — what it answers is the platform,
+    // and that does not change under a running application.
+    if (widget.blockActions != null && !hasHoverPointer) {
+      forceShowBlockAction = true;
+    }
+
     // shrinkWrap lays the document out as a column of its blocks instead of a
     // scrollable list — what anything that is not a page needs.
     scrollController = EditorScrollController(
@@ -205,6 +252,7 @@ class RichTextEditorState extends State<RichTextEditor> {
   @override
   void dispose() {
     unawaited(_edits?.cancel());
+    _slash.dispose();
     scrollController.dispose();
     super.dispose();
   }
@@ -252,14 +300,98 @@ class RichTextEditorState extends State<RichTextEditor> {
     ...standardCharacterShortcutEvents
         .where((event) => event != slashCommand)
         .map(widget.features.guard),
-    if (widget.slashMenu)
-      widget.features.guard(
-        customSlashCommand(
-          richTextSlashMenuItems(widget.features, icons: widget.menuIcons),
-          style: RichTextStyle.slashMenu(RichTextTheme.of(context)),
-        ),
-      ),
+    if (widget.slashMenu) widget.features.guard(_slashCommand()),
   ];
+
+  /// The "/" menu, in the only form the platform has one.
+  ///
+  /// The editor's own is desktop and web only — on a touch platform it answers
+  /// false and offers nothing, which is what left the character typed and the
+  /// placeholder promising a menu that never came. There, the list is asked for
+  /// through the application's own control instead.
+  CharacterShortcutEvent _slashCommand() {
+    final style = RichTextStyle.slashMenu(RichTextTheme.of(context));
+
+    if (hasHoverPointer) {
+      return customSlashCommand(
+        richTextSlashMenuItems(widget.features, icons: widget.menuIcons),
+        style: style,
+      );
+    }
+
+    return CharacterShortcutEvent(
+      key: 'show the slash menu',
+      character: '/',
+      handler: (editorState) async {
+        final selection = editorState.selection;
+        final delta = selection == null
+            ? null
+            : editorState.getNodeAtPath(selection.start.path)?.delta;
+
+        if (selection == null || !selection.isCollapsed || delta == null) {
+          return false;
+        }
+
+        // Only where a block could be starting: at the head of the line, or
+        // after a space. Anywhere else the character belongs to what is being
+        // written — a date, an address, a fraction.
+        final before = delta.toPlainText().substring(0, selection.start.offset);
+
+        if (before.isNotEmpty && !before.endsWith(' ')) {
+          return false;
+        }
+
+        await editorState.insertTextAtPosition('/', position: selection.start);
+        _openSlashMenu(trigger: 1);
+
+        return true;
+      },
+    );
+  }
+
+  /// Where the caret stands, or failing that the block it stands in.
+  ///
+  /// The editor answers with no rectangle at all until its selection service
+  /// has drawn one, which it has not always done by the frame after a character
+  /// was typed — and a list with nothing to hang from would simply not open.
+  Rect? _caretRect() {
+    final rect = widget.editorState.selectionRects().firstOrNull;
+
+    if (rect != null) {
+      return rect;
+    }
+
+    final path = widget.editorState.selection?.start.path;
+    final box = path == null
+        ? null
+        : widget.editorState.getNodeAtPath(path)?.renderBox;
+
+    return box == null || !box.attached
+        ? null
+        : box.localToGlobal(Offset.zero) & box.size;
+  }
+
+  /// Puts the block list on the caret, however it was asked for.
+  ///
+  /// A frame late: what it hangs from is the caret's rectangle, and the caret
+  /// has only just moved — over the character typed, or to wherever the button
+  /// was pressed from.
+  void _openSlashMenu({required int trigger}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+
+      _slash.open(
+        widget.editorState,
+        richTextSlashMenuItems(widget.features, icons: widget.menuIcons),
+        trigger: trigger,
+        at: _caretRect(),
+      );
+
+      showRichTextSlashMenu(context, _slash, widget.editorState);
+    });
+  }
 
   /// Enter sends, and the modifier opens the line it would have opened.
   ///
@@ -347,9 +479,195 @@ class RichTextEditorState extends State<RichTextEditor> {
     );
   }
 
+  /// Where a tap on the page started, so a scroll that ends under the content
+  /// is not read as one.
+  Offset? _tapStart;
+
+  Widget _underContent(Widget child) => Listener(
+    behavior: HitTestBehavior.translucent,
+    onPointerDown: (event) => _tapStart = event.position,
+    onPointerUp: (event) {
+      final start = _tapStart;
+      _tapStart = null;
+
+      if (start != null && (event.position - start).distance <= kTouchSlop) {
+        _caretUnderContent(event.position);
+      }
+    },
+    onPointerCancel: (_) => _tapStart = null,
+    child: child,
+  );
+
+  /// Answers a tap on the empty room under the document: the caret goes to the
+  /// end of what is written, and where the last block holds no text — a
+  /// picture, a table — it goes into the paragraph that tap adds.
+  void _caretUnderContent(Offset at) {
+    final last = widget.editorState.document.root.children.lastOrNull;
+    final rect = last?.rect;
+
+    if (last == null || rect == null || rect.isEmpty || at.dy <= rect.bottom) {
+      return;
+    }
+
+    if (_pageEndKey.currentContext?.findRenderObject() case final RenderBox end
+        when end.attached) {
+      final top = end.localToGlobal(Offset.zero).dy;
+
+      if (at.dy >= top && at.dy <= top + end.size.height) {
+        return;
+      }
+    }
+
+    final target = _deepestLast(last);
+    final delta = target.delta;
+
+    if (delta != null) {
+      widget.editorState.updateSelectionWithReason(
+        Selection.collapsed(Position(path: target.path, offset: delta.length)),
+        reason: SelectionUpdateReason.uiEvent,
+      );
+
+      return;
+    }
+
+    unawaited(addParagraphForCaret(widget.editorState, last.path.next));
+  }
+
+  /// The last block written under [node], following only blocks that hold text:
+  /// a nested list ends on its deepest item, while a table ends on itself —
+  /// its cells are not what the page ends with.
+  Node _deepestLast(Node node) {
+    final child = node.children.lastOrNull;
+
+    return child == null || child.delta == null ? node : _deepestLast(child);
+  }
+
+  /// The strip of formatting actions, drawn the way the platform expects.
+  ///
+  /// Two widgets rather than one placed differently: what a pointer gets is a
+  /// compact bar floating over the words, what a thumb gets is a docked one
+  /// with targets it can actually hit and menus that open upward. The editor
+  /// ships both, with an item set each, and they share no widget.
+  /// The strip of formatting actions: our buttons on our glyphs, offering the
+  /// same list wherever it is shown.
+  ///
+  /// Two placements, and only the floating one goes through the editor's own
+  /// toolbar — for one thing: knowing when a selection deserves a strip and
+  /// putting it in the root overlay. What it would have drawn is replaced, its
+  /// items coming in one set for a pointer and another for a thumb, so the same
+  /// strip offered different things depending on the device.
+  ///
+  /// The docked one does not go through it at all: that machinery is wired to
+  /// the selection and takes the strip away the moment the caret stops covering
+  /// words — which is where every block action and every undo leaves it.
+  Widget _toolbar(
+    BuildContext context,
+    RichTextTheme theme,
+    RichTextToolbarTheme toolbarTheme,
+    Widget editor,
+  ) {
+    final actions = [
+      ...widget.actions ?? RichTextActions.standard,
+      ...widget.features.actions,
+    ];
+    final themed = Theme(
+      data: RichTextStyle.overlayTheme(context, theme),
+      child: editor,
+    );
+
+    if (toolbarTheme.isDocked) {
+      return RichTextDockedToolbar(
+        editorState: widget.editorState,
+        // The "/" first, and only here: a keyboard types the character, a thumb
+        // has no key for it and would otherwise have no way to reach the list
+        // of blocks at all. Its own group, so a rule sets it apart from the
+        // marks that follow.
+        actions: [
+          if (widget.slashMenu)
+            RichTextAction(
+              id: 'blocks',
+              glyph: FastEdgyGlyph.slash,
+              getLabel: () => t('Insert a block'),
+              group: -1,
+              isActive: (editorState) => false,
+              isEnabled: (editorState) =>
+                  editorState.selection?.isCollapsed ?? false,
+              // Nothing is written to open it, so nothing has to be taken back
+              // if it is closed again.
+              run: (editorState) async => _openSlashMenu(trigger: 0),
+            ),
+          ...actions,
+        ],
+        visibility: widget.toolbarVisibility ?? RichTextToolbarVisibility.caret,
+        slots: widget.toolbarSlots,
+        child: themed,
+      );
+    }
+
+    return FloatingToolbar(
+      items: const [],
+      style: RichTextStyle.toolbar(toolbarTheme),
+      floatingToolbarHeight: toolbarTheme.height,
+      toolbarBuilder: (context, _, onDismiss, isMetricsChanged) =>
+          placeRichTextToolbar(
+            context,
+            widget.editorState,
+            widget.toolbarSlots.around(
+              RichTextActionBar(
+                editorState: widget.editorState,
+                actions: actions,
+                leading: widget.toolbarSlots.leading,
+                trailing: widget.toolbarSlots.trailing,
+              ),
+            ),
+          ),
+      editorState: widget.editorState,
+      editorScrollController: scrollController,
+      textDirection: TextDirection.ltr,
+      child: themed,
+    );
+  }
+
+  /// What the page ends on: the caller's footer, the gap the docked strip
+  /// leaves above itself, and whatever the caller asked to put under all that.
+  ///
+  /// None of it is room the content needs — the strip stands beside the editor
+  /// rather than over it, so nothing is ever hidden underneath. It is the room
+  /// the content deserves, and it scrolls away like any other trailing padding.
+  Widget? _footer(RichTextToolbarTheme toolbarTheme) {
+    final footer = switch (widget.footer) {
+      final footer? => KeyedSubtree(key: _footerKey, child: footer),
+      _ => null,
+    };
+    final under = widget.toolbarSlots.underContent;
+    final gap = widget.editable && widget.toolbar && toolbarTheme.isDocked
+        ? toolbarTheme.contentGap
+        : 0.0;
+
+    if (under == null && gap == 0) {
+      return footer == null
+          ? null
+          : KeyedSubtree(key: _pageEndKey, child: footer);
+    }
+
+    return KeyedSubtree(
+      key: _pageEndKey,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ?footer,
+          SizedBox(height: gap),
+          ?under,
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = RichTextTheme.of(context);
+    final toolbarTheme = RichTextToolbarTheme.of(context);
 
     final editor = AppFlowyEditor(
       editorState: widget.editorState,
@@ -372,6 +690,7 @@ class RichTextEditorState extends State<RichTextEditor> {
         ...widget.features.commandShortcuts,
         if (widget.onSubmit != null) ..._submitShortcuts,
         ...wholeBlockCommands,
+        richTextPasteCommand(features: widget.features),
         ...standardCommandShortcutEvents,
       ],
       editorStyle: RichTextStyle.editor(
@@ -383,31 +702,26 @@ class RichTextEditorState extends State<RichTextEditor> {
       ),
       dropTargetStyle: RichTextStyle.dropTarget(theme),
       header: widget.header,
-      footer: switch (widget.footer) {
-        final footer? => KeyedSubtree(key: _footerKey, child: footer),
-        _ => null,
-      },
+      footer: _footer(toolbarTheme),
     );
 
-    final whole = widget.editable && widget.toolbar
-        ? FloatingToolbar(
-            items: [
-              ...widget.toolbarItems ?? RichTextToolbar.standard,
-              ...widget.features.toolbarItems,
-            ],
-            style: RichTextStyle.toolbar(theme),
-            decoration: theme.floatingSurface,
-            // Shared with whatever has to place itself clear of the toolbar.
-            floatingToolbarHeight: RichTextStyle.toolbarHeight,
-            editorState: widget.editorState,
-            editorScrollController: scrollController,
-            textDirection: TextDirection.ltr,
-            child: Theme(
-              data: RichTextStyle.overlayTheme(context, theme),
-              child: editor,
-            ),
+    // The menu a right-click gets is the package's; the one a held press gets
+    // is ours, and only where there is no pointer to right-click with.
+    final page = widget.editable
+        ? _underContent(
+            hasHoverPointer
+                ? editor
+                : RichTextTouchMenu(
+                    editorState: widget.editorState,
+                    features: widget.features,
+                    child: editor,
+                  ),
           )
         : editor;
+
+    final whole = widget.editable && widget.toolbar
+        ? _toolbar(context, theme, toolbarTheme, page)
+        : page;
 
     // The editor always mounts an Overlay, and an Overlay cannot be laid out
     // where the height is unbounded — a rendered message in a list. Measuring

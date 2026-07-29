@@ -7,6 +7,7 @@ import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/material.dart';
 
 import 'document_layout.dart';
+import '../rich_text/rich_text_action_bar.dart';
 import '../rich_text/rich_text_editor.dart';
 import '../rich_text/rich_text_feature.dart';
 import '../rich_text/rich_text_features.dart';
@@ -38,7 +39,11 @@ class DocumentEditor extends StatefulWidget {
   /// page (see [RichTextEditorState.revealFooter]).
   final GlobalKey<RichTextEditorState>? editorKey;
 
-  final DocumentLayout layout;
+  /// The column this page reads on. Null takes the one the application mounted
+  /// — which is the usual case, a page having no reason to disagree with every
+  /// other page of the same application about how wide its text runs.
+  final DocumentLayout? layout;
+
   final RichTextFeatures? features;
 
   /// Glyphs swapped on the upstream "/" menu, keyed by the English label the
@@ -56,6 +61,16 @@ class DocumentEditor extends StatefulWidget {
   /// What the empty paragraph holding the cursor reads as.
   final String? hintPlaceholder;
 
+  /// How long the formatting strip stays up, where it is docked — a phone.
+  /// Null keeps it while the caret is in the page; [RichTextToolbarVisibility.always]
+  /// leaves it standing whether the page is being written in or not.
+  final RichTextToolbarVisibility? toolbarVisibility;
+
+  /// Room on that strip for what the page's application puts there — its own
+  /// bottom inset where a navigation bar floats over the edge, a control of its
+  /// own at either end of the row, breathing room under the last block.
+  final RichTextToolbarSlots toolbarSlots;
+
   const DocumentEditor({
     required this.editorState,
     super.key,
@@ -63,12 +78,14 @@ class DocumentEditor extends StatefulWidget {
     this.footer,
     this.cover,
     this.editorKey,
-    this.layout = DocumentLayout.standard,
+    this.layout,
     this.features,
     this.menuIcons = const {},
     this.editable = true,
     this.emptyPlaceholder,
     this.hintPlaceholder,
+    this.toolbarVisibility,
+    this.toolbarSlots = RichTextToolbarSlots.none,
   });
 
   @override
@@ -152,23 +169,23 @@ class _DocumentEditorState extends State<DocumentEditor> {
   /// The package centres and pads each block on the document column but hands
   /// the header and the footer to its scroll list raw — put them back on that
   /// column, so no caller has to know its metrics.
-  Widget? _onDocumentColumn(Widget? child) {
+  Widget? _onDocumentColumn(Widget? child, DocumentLayout layout) {
     if (child == null) {
       return null;
     }
 
     return Center(
       child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: widget.layout.maxWidth),
-        child: Padding(padding: widget.layout.sidePadding(), child: child),
+        constraints: BoxConstraints(maxWidth: layout.maxWidth),
+        child: Padding(padding: layout.sidePadding(), child: child),
       ),
     );
   }
 
   /// The cover above the header, the cover alone, the header alone, or nothing
   /// — the editor's own header slot takes one widget.
-  Widget? _headerWithCover() {
-    final header = _onDocumentColumn(widget.header);
+  Widget? _headerWithCover(DocumentLayout layout) {
+    final header = _onDocumentColumn(widget.header, layout);
     final cover = widget.cover;
 
     if (cover == null) {
@@ -184,25 +201,29 @@ class _DocumentEditorState extends State<DocumentEditor> {
 
   @override
   Widget build(BuildContext context) {
+    final layout = widget.layout ?? DocumentLayout.of(context);
+
     return RichTextEditor(
       key: widget.editorKey,
       editorState: widget.editorState,
       features: widget.features ?? defaultRichTextFeatures,
       editable: widget.editable,
       scrollable: true,
-      maxWidth: widget.layout.maxWidth,
-      padding: widget.layout.editorPadding,
+      maxWidth: layout.maxWidth,
+      padding: layout.editorPadding,
       blockActions: widget.editable
           ? (blockContext, builder) => DocumentGutter(
               blockComponentContext: blockContext,
               builder: builder,
-              gutterWidth: widget.layout.gutterWidth,
+              gutterWidth: layout.gutter,
             )
           : null,
-      header: _headerWithCover(),
-      footer: _onDocumentColumn(widget.footer),
+      header: _headerWithCover(layout),
+      footer: _onDocumentColumn(widget.footer, layout),
       emptyPlaceholder: widget.emptyPlaceholder,
       hintPlaceholder: widget.hintPlaceholder,
+      toolbarVisibility: widget.toolbarVisibility,
+      toolbarSlots: widget.toolbarSlots,
     );
   }
 }

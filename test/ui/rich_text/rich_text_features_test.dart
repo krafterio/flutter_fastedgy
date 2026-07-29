@@ -5,6 +5,8 @@
 
 import 'package:flutter_fastedgy/ui.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -106,30 +108,38 @@ void main() {
     testWidgets('the toolbar offers what it is given, features appended', (
       tester,
     ) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+
       await pump(
         tester,
         RichTextEditor(
           features: defaultRichTextFeatures,
           editorState: stateOf('Marques seules'),
-          toolbarItems: RichTextToolbar.marks,
+          actions: RichTextActions.marks,
         ),
       );
 
-      final toolbar = tester.widget<FloatingToolbar>(
-        find.byType(FloatingToolbar),
-      );
-      final ids = toolbar.items.map((item) => item.id);
+      final bar = tester.widget<RichTextEditor>(find.byType(RichTextEditor));
+      final ids = [
+        ...?bar.actions?.map((action) => action.id),
+        ...defaultRichTextFeatures.actions.map((action) => action.id),
+      ];
 
-      expect(ids, containsAll(RichTextToolbar.marks.map((item) => item.id)));
-      // Narrowing the items drops the headings but never the features': a link
-      // stays reachable unless the feature itself is dropped.
-      expect(ids, isNot(contains('editor.h1')));
-      expect(ids, contains(LinkFeature.id));
+      expect(
+        ids,
+        containsAll(RichTextActions.marks.map((action) => action.id)),
+      );
+      // Narrowing the actions drops the block kinds but never the features'.
+      expect(ids, isNot(contains('heading')));
+
+      debugDefaultTargetPlatformOverride = null;
     });
 
     testWidgets('the standard set is what it offers by default', (
       tester,
     ) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+
       await pump(
         tester,
         RichTextEditor(
@@ -138,17 +148,12 @@ void main() {
         ),
       );
 
-      final toolbar = tester.widget<FloatingToolbar>(
-        find.byType(FloatingToolbar),
-      );
+      expect(find.byType(RichTextActionBar), findsNothing);
+      // Nothing is selected, so no strip is up — what it would offer is the
+      // standard set, which is a list, not a widget.
+      expect(RichTextActions.standard, isNotEmpty);
 
-      expect(
-        toolbar.items,
-        hasLength(
-          RichTextToolbar.standard.length +
-              defaultRichTextFeatures.toolbarItems.length,
-        ),
-      );
+      debugDefaultTargetPlatformOverride = null;
     });
 
     testWidgets('the "/" menu can be left out', (tester) async {
@@ -184,6 +189,33 @@ void main() {
       expect(
         editor.characterShortcutEvents.any((event) => event.character == '/'),
         isTrue,
+      );
+    });
+  });
+
+  group('un bloc qu\'on ne propose plus', () {
+    test('sort du menu et du triple backquote, et rien d\'autre', () {
+      const offered = CodeBlockFeature();
+      const withdrawn = CodeBlockFeature(offered: false);
+
+      expect(offered.menuItems, isNotEmpty);
+      expect(offered.characterShortcuts, isNotEmpty);
+
+      expect(withdrawn.menuItems, isEmpty);
+      expect(withdrawn.characterShortcuts, isEmpty);
+
+      expect(withdrawn.builders.keys, offered.builders.keys);
+      expect(
+        withdrawn.markdownEncoders,
+        hasLength(offered.markdownEncoders.length),
+      );
+      expect(
+        withdrawn.markdownDecoders,
+        hasLength(offered.markdownDecoders.length),
+      );
+      expect(
+        withdrawn.commandShortcuts,
+        hasLength(offered.commandShortcuts.length),
       );
     });
   });

@@ -52,6 +52,8 @@ export 'src/ui/rich_text/features/table/table_feature.dart';
 export 'src/ui/rich_text/features/table/table_handle.dart';
 export 'src/ui/rich_text/features/table/table_markdown.dart';
 export 'src/ui/rich_text/features/todo_list_feature.dart';
+export 'src/ui/rich_text/rich_text_action.dart';
+export 'src/ui/rich_text/rich_text_action_bar.dart';
 export 'src/ui/rich_text/rich_text_blank.dart';
 export 'src/ui/rich_text/rich_text_blocks.dart';
 export 'src/ui/rich_text/rich_text_codec.dart';
@@ -62,7 +64,9 @@ export 'src/ui/rich_text/rich_text_feature.dart';
 export 'src/ui/rich_text/rich_text_features.dart';
 export 'src/ui/rich_text/rich_text_focus.dart';
 export 'src/ui/icons.dart';
+export 'src/ui/interaction.dart';
 export 'src/ui/rich_text/rich_text_nesting.dart';
+export 'src/ui/rich_text/rich_text_paste.dart';
 export 'src/ui/rich_text/rich_text_popover.dart';
 export 'src/ui/rich_text/rich_text_markdown.dart';
 export 'src/ui/rich_text/rich_text_menu.dart';
@@ -70,6 +74,8 @@ export 'src/ui/rich_text/rich_text_shortcuts.dart';
 export 'src/ui/rich_text/rich_text_style.dart';
 export 'src/ui/rich_text/rich_text_theme.dart' show RichTextTheme;
 export 'src/ui/rich_text/rich_text_toolbar.dart';
+export 'src/ui/rich_text/rich_text_touch_menu.dart';
+export 'src/ui/rich_text/rich_text_toolbar_theme.dart';
 export 'src/ui/rich_text/rich_text_view.dart';
 
 // Images

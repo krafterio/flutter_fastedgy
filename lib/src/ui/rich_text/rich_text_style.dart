@@ -7,6 +7,7 @@ import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/material.dart';
 
 import 'rich_text_theme.dart';
+import 'rich_text_toolbar_theme.dart';
 
 /// Turns a [RichTextTheme] into the style objects the underlying editor expects.
 ///
@@ -62,11 +63,14 @@ class RichTextStyle {
   /// it drops below the selection — approximate, unlike [toolbarHeight].
   static const double toolbarSpan = toolbarHeight + 44;
 
-  static FloatingToolbarStyle toolbar(RichTextTheme theme) =>
+  static FloatingToolbarStyle toolbar(RichTextToolbarTheme theme) =>
       FloatingToolbarStyle(
-        backgroundColor: theme.surface,
-        toolbarActiveColor: theme.ink,
-        toolbarIconColor: theme.mutedText,
+        // Transparent: the surface under it is the package's own, shared with
+        // every other floating card. A colour here would draw a second pill
+        // inside the first.
+        backgroundColor: const Color(0x00000000),
+        toolbarActiveColor: theme.activeColor,
+        toolbarIconColor: theme.iconColor,
       );
 
   static AppFlowyDropTargetStyle dropTarget(RichTextTheme theme) =>

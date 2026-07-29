@@ -23,12 +23,14 @@ void main() {
     double? width,
     double? height,
     bool avoidToolbar = true,
+    bool preferAbove = false,
   }) => RichTextPopoverLayout(
     selection: selection,
     editor: editor,
     width: width ?? richTextPopoverWidth,
     height: height,
     avoidToolbar: avoidToolbar,
+    preferAbove: preferAbove,
   ).getPositionForChild(overlay, size);
 
   group('where a popover lands', () {
@@ -293,6 +295,81 @@ void main() {
       expect(
         FocusManager.instance.primaryFocus?.debugLabel,
         contains('keyboard service'),
+      );
+    });
+  });
+
+  // What the toolbar over a selection asks of the same delegate: above the
+  // words it acts on, so it does not cover them.
+  group('where the toolbar lands', () {
+    const bar = Size(320, 40);
+
+    Offset toolbar(Rect selection) => place(
+      selection,
+      size: bar,
+      width: editor.width - 12,
+      avoidToolbar: false,
+      preferAbove: true,
+    );
+
+    test('above the selection rather than over it', () {
+      const selection = Rect.fromLTWH(200, 300, 120, 20);
+
+      expect(
+        toolbar(selection).dy + bar.height,
+        lessThanOrEqualTo(selection.top),
+      );
+    });
+
+    test('below it when the selection is against the top', () {
+      const selection = Rect.fromLTWH(200, 4, 120, 20);
+
+      expect(toolbar(selection).dy, greaterThanOrEqualTo(selection.bottom));
+    });
+
+    test('never out of the editor, whichever edge the selection hugs', () {
+      for (final selection in [
+        const Rect.fromLTWH(100, 300, 40, 20),
+        const Rect.fromLTWH(860, 300, 40, 20),
+        const Rect.fromLTWH(500, 880, 40, 20),
+      ]) {
+        final placed = toolbar(selection) & bar;
+
+        expect(
+          placed.left,
+          greaterThanOrEqualTo(editor.left),
+          reason: '$selection',
+        );
+        expect(
+          placed.right,
+          lessThanOrEqualTo(editor.right),
+          reason: '$selection',
+        );
+        expect(placed.top, greaterThanOrEqualTo(0), reason: '$selection');
+        expect(
+          placed.bottom,
+          lessThanOrEqualTo(overlay.height),
+          reason: '$selection',
+        );
+      }
+    });
+
+    test('no wider than the editor holding it', () {
+      const delegate = RichTextPopoverLayout(
+        selection: Rect.fromLTWH(200, 300, 120, 20),
+        editor: editor,
+        width: 788,
+        avoidToolbar: false,
+        preferAbove: true,
+      );
+
+      expect(
+        delegate
+            .getConstraintsForChild(
+              const BoxConstraints(maxWidth: 1000, maxHeight: 900),
+            )
+            .maxWidth,
+        lessThanOrEqualTo(editor.width),
       );
     });
   });

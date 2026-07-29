@@ -26,17 +26,20 @@ void main() {
     final en = catalog('en');
 
     for (final item in standardSelectionMenuItems) {
-      // The package's label is the key it is translated under: a label renamed
-      // upstream silently drops the item back to English, so it is caught here.
+      // What the item is called here is the key it is translated under: a label
+      // renamed upstream, or one of ours dropped from the catalog, silently
+      // sends the item back to English — which is what this catches.
+      final label = richTextMenuLabel(item.name);
+
       expect(
         fr,
-        contains(item.name),
-        reason: '"${item.name}" is missing from the French catalog',
+        contains(label),
+        reason: '"$label" is missing from the French catalog',
       );
       expect(
         en,
-        contains(item.name),
-        reason: '"${item.name}" is missing from the English catalog',
+        contains(label),
+        reason: '"$label" is missing from the English catalog',
       );
     }
   });

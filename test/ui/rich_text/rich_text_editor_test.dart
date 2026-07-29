@@ -5,6 +5,8 @@
 
 import 'package:flutter_fastedgy/ui.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
@@ -90,11 +92,33 @@ void main() {
     );
 
     expect(find.byType(FloatingToolbar), findsNothing);
+    expect(find.byType(RichTextDockedToolbar), findsNothing);
+  });
+
+  testWidgets('editable docks one on a touch platform', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+
+    await pump(
+      tester,
+      RichTextEditor(
+        features: defaultRichTextFeatures,
+        editorState: stateOf('Saisie'),
+      ),
+    );
+
+    // Nothing of the editor's own toolbar under a thumb: that one is wired to
+    // the selection and would take the strip away at the first block action.
+    expect(find.byType(RichTextDockedToolbar), findsOneWidget);
+    expect(find.byType(FloatingToolbar), findsNothing);
+
+    debugDefaultTargetPlatformOverride = null;
   });
 
   testWidgets('editable carries one, and fills what it is given', (
     tester,
   ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+
     await pump(
       tester,
       RichTextEditor(
@@ -105,6 +129,8 @@ void main() {
 
     expect(find.byType(FloatingToolbar), findsOneWidget);
     expect(find.text('Saisie', findRichText: true), findsOneWidget);
+
+    debugDefaultTargetPlatformOverride = null;
   });
 
   group('a field with a ceiling', () {
