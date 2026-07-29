@@ -8,6 +8,7 @@ import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/foundation.dart'
     show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart' show SchedulerBinding;
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
 
@@ -351,6 +352,41 @@ void main() {
       await tester.pump();
 
       expect(sent, 0);
+    });
+  });
+
+  group('a page being left', () {
+    testWidgets('lets the frame that unmounts it finish first', (tester) async {
+      final state = stateOf('Une note');
+      final key = GlobalKey<RichTextEditorState>();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: RichTextEditor(
+              key: key,
+              features: defaultRichTextFeatures,
+              editorState: state,
+              scrollable: true,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final controller = key.currentState!.scrollController;
+
+      // What the list under the editor does: a scroll schedules a write of
+      // where its items landed, run once the frame is over. A page left while
+      // it scrolls unmounts in that very frame.
+      SchedulerBinding.instance.addPostFrameCallback(
+        (_) => controller.offsetNotifier.value = 12,
+      );
+
+      await tester.pumpWidget(const MaterialApp(home: Scaffold()));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
     });
   });
 }

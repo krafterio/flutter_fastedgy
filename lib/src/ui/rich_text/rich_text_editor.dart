@@ -253,7 +253,15 @@ class RichTextEditorState extends State<RichTextEditor> {
   void dispose() {
     unawaited(_edits?.cancel());
     _slash.dispose();
-    scrollController.dispose();
+
+    // A frame late, and it has to be: the list under the editor answers a
+    // scroll by writing where its items ended up *after* the frame, and a page
+    // being left scrolls one last time. Disposing here lands that write on a
+    // dead notifier — the assertion that ended every exit from a document.
+    final controller = scrollController;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) => controller.dispose());
+
     super.dispose();
   }
 
