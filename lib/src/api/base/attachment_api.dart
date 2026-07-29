@@ -36,6 +36,27 @@ class Attachment extends BaseModel<Attachment> {
 
   bool get isAudio => mimeType.startsWith('audio/');
 
+  /// The model the generic reference points at, and its id.
+  String? get recordModel => getReferenceModel('record');
+  int? get recordId => getReferenceId('record');
+
+  /// Stages the attachment on any record the generic reference accepts — the
+  /// value an upload sends as its `meta`, so the file is stored and associated
+  /// in a single pass.
+  Attachment attachToRecord(String model, int id) =>
+      setReference('record', model, id);
+
+  /// The rich text field this image is part of, or null when the file is a
+  /// listed attachment rather than something written into the record.
+  String? get inlineField => getField<String>('inline_field');
+
+  /// Whether the file belongs to a field's text, and so is shown there rather
+  /// than in the record's list of attachments.
+  bool get isInline => (inlineField ?? '').isNotEmpty;
+
+  /// Stages the attachment as part of [field]'s text.
+  Attachment inlineOn(String field) => this..setField('inline_field', field);
+
   bool get isDocument =>
       mimeType.contains('pdf') ||
       mimeType.contains('document') ||

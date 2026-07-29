@@ -1,0 +1,109 @@
+/*
+ * Copyright Krafter SAS <developer@krafter.io>
+ * MIT License (see LICENSE file).
+ */
+
+import 'package:appflowy_editor/appflowy_editor.dart';
+import 'package:flutter/material.dart';
+
+import 'rich_text_theme.dart';
+
+/// Turns a [RichTextTheme] into the style objects the underlying editor expects.
+///
+/// A derivation, not a table of values: everything here comes from the theme, so
+/// an application that overrides a colour sees the editor, the view and the
+/// blocks follow together.
+class RichTextStyle {
+  RichTextStyle._();
+
+  /// How much smaller inline code reads than the text around it. Enough to tell
+  /// a monospace run from its sentence without breaking the line's rhythm.
+  static const double _inlineCodeDrop = 2;
+
+  static EditorStyle editor(
+    RichTextTheme theme, {
+    required EdgeInsets padding,
+    double? maxWidth,
+    TextSpanDecoratorForAttribute? textSpanDecorator,
+    TextStyle? text,
+  }) {
+    final blockText = text ?? theme.blockText;
+
+    return EditorStyle.desktop(
+      textSpanDecorator: textSpanDecorator,
+      padding: padding,
+      maxWidth: maxWidth,
+      cursorColor: theme.cursor,
+      selectionColor: theme.selection,
+      textStyleConfiguration: TextStyleConfiguration(
+        text: blockText,
+        bold: blockText.copyWith(fontWeight: FontWeight.w600),
+        code: blockText.copyWith(
+          fontFamily: theme.monoFontFamily,
+          fontSize: blockText.fontSize == null
+              ? theme.fieldText.fontSize
+              : blockText.fontSize! - _inlineCodeDrop,
+          backgroundColor: theme.subtleSurface,
+        ),
+        href: blockText.copyWith(
+          color: theme.link,
+          decoration: TextDecoration.underline,
+        ),
+      ),
+    );
+  }
+
+  /// What the editor reserves above a selection for the floating toolbar: the
+  /// package pins its top edge at `selection.top - floatingToolbarHeight`, so
+  /// this is exactly how much anything else has to clear to sit above it.
+  static const double toolbarHeight = 32.0;
+
+  /// What the toolbar occupies once rendered, offset included. Only needed when
+  /// it drops below the selection — approximate, unlike [toolbarHeight].
+  static const double toolbarSpan = toolbarHeight + 44;
+
+  static FloatingToolbarStyle toolbar(RichTextTheme theme) =>
+      FloatingToolbarStyle(
+        backgroundColor: theme.surface,
+        toolbarActiveColor: theme.ink,
+        toolbarIconColor: theme.mutedText,
+      );
+
+  static AppFlowyDropTargetStyle dropTarget(RichTextTheme theme) =>
+      AppFlowyDropTargetStyle(color: theme.dropIndicator);
+
+  /// The "/" menu keeps upstream's shape — it builds its own overlay and takes
+  /// no builder — and wears the theme's colours.
+  static SelectionMenuStyle slashMenu(RichTextTheme theme) {
+    final label = theme.blockText.color ?? theme.ink;
+
+    return SelectionMenuStyle(
+      selectionMenuBackgroundColor: theme.surface,
+      selectionMenuItemTextColor: label,
+      selectionMenuItemIconColor: theme.mutedText,
+      selectionMenuItemSelectedTextColor: theme.ink,
+      selectionMenuItemSelectedIconColor: theme.ink,
+      selectionMenuItemSelectedColor: theme.selection,
+      selectionMenuUnselectedLabelColor: label,
+      selectionMenuDividerColor: theme.subtleBorder,
+      selectionMenuLinkBorderColor: theme.strongBorder,
+      selectionMenuInvalidLinkColor: theme.danger,
+      selectionMenuButtonColor: theme.ink,
+      selectionMenuButtonTextColor: label,
+      selectionMenuButtonIconColor: theme.mutedText,
+      selectionMenuButtonBorderColor: theme.border,
+      selectionMenuTabIndicatorColor: theme.ink,
+    );
+  }
+
+  /// The editor's overlay inherits the ambient theme, so the "/" menu labels
+  /// render in the host application's button font unless it is overridden here.
+  static ThemeData overlayTheme(BuildContext context, RichTextTheme theme) =>
+      Theme.of(context).copyWith(
+        textButtonTheme: TextButtonThemeData(
+          style: TextButton.styleFrom(
+            textStyle: theme.fieldText.copyWith(fontWeight: FontWeight.w500),
+          ),
+        ),
+      );
+}

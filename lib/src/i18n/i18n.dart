@@ -3,10 +3,55 @@
  * MIT License (see LICENSE file).
  */
 
+import 'dart:convert';
+
 import 'package:easy_localization/easy_localization.dart';
 import 'package:easy_logger/easy_logger.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter/widgets.dart';
 import 'package:logging/logging.dart';
+
+/// Loads this package's own translations under the application's.
+///
+/// The widgets the package ships speak — a copy button, a placeholder, the
+/// labels of the editor's "/" menu — and an application that never wrote those
+/// keys would otherwise read English. Its own file always wins, so overriding
+/// one string means writing it, not copying the rest.
+class FastEdgyAssetLoader extends AssetLoader {
+  final bool useOnlyLangCode;
+
+  const FastEdgyAssetLoader({this.useOnlyLangCode = true});
+
+  static const String _packagePath =
+      'packages/flutter_fastedgy/assets/translations';
+
+  @override
+  Future<Map<String, dynamic>?> load(String path, Locale locale) async {
+    final name = useOnlyLangCode
+        ? locale.languageCode
+        : [locale.languageCode, ?locale.countryCode].join('_');
+
+    final framework = await _read('$_packagePath/$name.json');
+    final application = await _read('$path/$name.json');
+
+    if (framework == null && application == null) {
+      return null;
+    }
+
+    return {...?framework, ...?application};
+  }
+
+  /// Null where the file is not there, which is the normal case for a locale
+  /// one side supports and the other does not.
+  Future<Map<String, dynamic>?> _read(String asset) async {
+    try {
+      return jsonDecode(await rootBundle.loadString(asset))
+          as Map<String, dynamic>;
+    } catch (_) {
+      return null;
+    }
+  }
+}
 
 /// Initialize EasyLocalization
 ///
@@ -71,6 +116,7 @@ Widget useI18n({
   return EasyLocalization(
     supportedLocales: supportedLocales,
     path: translationsPath,
+    assetLoader: FastEdgyAssetLoader(useOnlyLangCode: useOnlyLangCode),
     fallbackLocale: fallbackLocale ?? supportedLocales.first,
     useOnlyLangCode: useOnlyLangCode,
     useFallbackTranslations: useFallbackTranslations,

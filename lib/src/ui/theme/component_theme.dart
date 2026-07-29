@@ -5,6 +5,8 @@
 
 import 'package:flutter/widgets.dart';
 
+import 'theme.dart';
+
 /// What a package declares when it needs more than the tokens to draw itself.
 ///
 /// The convention every implementation follows — the framework cannot enforce
@@ -58,10 +60,15 @@ class ComponentTheme<T extends ComponentThemeData> extends InheritedTheme {
 
   /// The theme of type [T] in scope, or null when the application said nothing
   /// about it — the first term of every package's resolution order.
+  ///
+  /// A subtree's own first, then what the ambient theme carries: an application
+  /// declares its whole design once in [FastEdgyThemeData.components], and
+  /// wraps a `ComponentTheme` only where a subtree wants something else.
   static T? maybeOf<T extends ComponentThemeData>(BuildContext context) {
     return context
-        .dependOnInheritedWidgetOfExactType<ComponentTheme<T>>()
-        ?.data;
+            .dependOnInheritedWidgetOfExactType<ComponentTheme<T>>()
+            ?.data ??
+        FastEdgyTheme.maybeOf(context)?.component<T>();
   }
 
   @override

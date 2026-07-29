@@ -8,6 +8,7 @@ import 'dart:ui' show lerpDouble;
 import 'package:flutter/widgets.dart';
 
 import 'color_scheme.dart';
+import 'component_theme.dart';
 import 'scaling.dart';
 import 'typography.dart';
 
@@ -32,6 +33,15 @@ class FastEdgyThemeData {
   final AdaptiveScaling scaling;
   final Density density;
 
+  /// What each package that draws something is drawn with, keyed by its type.
+  ///
+  /// Here rather than one inherited widget per theme: an application supplies
+  /// its whole design in the same breath as its tokens, instead of nesting a
+  /// `ComponentTheme` per package and finding out it forgot one when something
+  /// comes out plain. `ComponentTheme<T>` stays for what it is actually for —
+  /// a subtree that wants its own.
+  final Map<Type, ComponentThemeData> components;
+
   const FastEdgyThemeData({
     this.colors = ColorRoles.fallback,
     this.typography = TypographyRoles.fallback,
@@ -39,7 +49,11 @@ class FastEdgyThemeData {
     this.spacing = 4.0,
     this.scaling = AdaptiveScaling.desktop,
     this.density = Density.standard,
+    this.components = const {},
   });
+
+  /// The theme declared for [T], or null where the application declared none.
+  T? component<T extends ComponentThemeData>() => components[T] as T?;
 
   /// A floor, not a look. Every role resolves to something legible with nothing
   /// supplied, so a package is usable on day one — and it is deliberately
@@ -53,6 +67,7 @@ class FastEdgyThemeData {
     double? spacing,
     AdaptiveScaling? scaling,
     Density? density,
+    Map<Type, ComponentThemeData>? components,
   }) {
     return FastEdgyThemeData(
       colors: colors ?? this.colors,
@@ -61,6 +76,7 @@ class FastEdgyThemeData {
       spacing: spacing ?? this.spacing,
       scaling: scaling ?? this.scaling,
       density: density ?? this.density,
+      components: components ?? this.components,
     );
   }
 
@@ -77,6 +93,9 @@ class FastEdgyThemeData {
       scaling: AdaptiveScaling.lerp(a.scaling, b.scaling, t),
       // Discrete: an interpolated density would be a fourth value nobody named.
       density: t < 0.5 ? a.density : b.density,
+      // Discrete too: a package theme knows how to interpolate itself or does
+      // not, and the engine cannot know which.
+      components: t < 0.5 ? a.components : b.components,
     );
   }
 
@@ -92,10 +111,19 @@ class FastEdgyThemeData {
         other.radius == radius &&
         other.spacing == spacing &&
         other.scaling == scaling &&
-        other.density == density;
+        other.density == density &&
+        other.components.length == components.length &&
+        other.components.entries.every((e) => components[e.key] == e.value);
   }
 
   @override
-  int get hashCode =>
-      Object.hash(colors, typography, radius, spacing, scaling, density);
+  int get hashCode => Object.hash(
+    colors,
+    typography,
+    radius,
+    spacing,
+    scaling,
+    density,
+    components.length,
+  );
 }
