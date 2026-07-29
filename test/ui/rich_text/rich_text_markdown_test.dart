@@ -33,7 +33,7 @@ void main() {
 
   /// The blocks the view is drawing, straight from the state it holds.
   List<Node> blocks(WidgetTester tester) => tester
-      .widget<RichTextView>(find.byType(RichTextView))
+      .widget<RichTextViewer>(find.byType(RichTextViewer))
       .editorState
       .document
       .root

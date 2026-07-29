@@ -36,11 +36,11 @@ void main() {
       tester,
       ListView(
         children: [
-          RichTextView(
+          RichTextViewer(
             editorState: textOf('Premier message'),
             features: defaultRichTextFeatures,
           ),
-          RichTextView(
+          RichTextViewer(
             editorState: textOf('Second message'),
             features: defaultRichTextFeatures,
           ),
@@ -56,7 +56,7 @@ void main() {
   testWidgets('mounts none of the editor', (tester) async {
     await pump(
       tester,
-      RichTextView(
+      RichTextViewer(
         editorState: textOf('Rendu'),
         features: defaultRichTextFeatures,
       ),
@@ -74,7 +74,7 @@ void main() {
   ) async {
     await pump(
       tester,
-      RichTextView(
+      RichTextViewer(
         features: defaultRichTextFeatures,
         editorState: stateOf([
           paragraphNode(delta: Delta()..insert('Avant')),
@@ -95,13 +95,13 @@ void main() {
       tester,
       Align(
         alignment: Alignment.topLeft,
-        child: RichTextView(
+        child: RichTextViewer(
           editorState: textOf('Une ligne'),
           features: defaultRichTextFeatures,
         ),
       ),
     );
 
-    expect(tester.getSize(find.byType(RichTextView)).height, lessThan(120));
+    expect(tester.getSize(find.byType(RichTextViewer)).height, lessThan(120));
   });
 }

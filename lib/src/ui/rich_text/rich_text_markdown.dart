@@ -12,11 +12,11 @@ import 'rich_text_codec.dart';
 import 'rich_text_diff.dart';
 import 'rich_text_feature.dart';
 import 'rich_text_theme.dart';
-import 'rich_text_view.dart';
+import 'rich_text_viewer.dart';
 
 /// Markdown drawn as the rich text it stands for.
 ///
-/// [RichTextView] renders a document; this holds one for a caller that has only
+/// [RichTextViewer] renders a document; this holds one for a caller that has only
 /// the text — a message off the wire, a value an agent proposes to write.
 ///
 /// Text arriving in pieces — an answer streaming in — is taken in as a diff
@@ -118,7 +118,7 @@ class _RichTextMarkdownState extends State<RichTextMarkdown> {
   }
 
   @override
-  Widget build(BuildContext context) => RichTextView(
+  Widget build(BuildContext context) => RichTextViewer(
     editorState: _editorState,
     features: widget.features,
     textStyle: widget.textStyle ?? RichTextTheme.of(context).fieldText,

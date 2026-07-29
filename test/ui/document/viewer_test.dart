@@ -38,11 +38,11 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
 
-    await pump(tester, DocumentView(editorState: stateOf('Une description')));
+    await pump(tester, DocumentViewer(editorState: stateOf('Une description')));
 
     expect(find.text('Une description', findRichText: true), findsOneWidget);
     expect(
-      tester.getSize(find.byType(RichTextView)).width,
+      tester.getSize(find.byType(RichTextViewer)).width,
       DocumentLayout.standard.contentWidth,
     );
   });
@@ -56,13 +56,13 @@ void main() {
       tester,
       SizedBox(
         width: width,
-        child: DocumentView(editorState: stateOf('À l’étroit')),
+        child: DocumentViewer(editorState: stateOf('À l’étroit')),
       ),
     );
 
     expect(tester.takeException(), isNull);
     expect(
-      tester.getSize(find.byType(RichTextView)).width,
+      tester.getSize(find.byType(RichTextViewer)).width,
       width - 2 * DocumentLayout.standard.horizontalPadding,
     );
   });
@@ -72,7 +72,7 @@ void main() {
   ) async {
     await pump(
       tester,
-      DocumentView(
+      DocumentViewer(
         editorState: stateOf('Corps'),
         header: const Text('En-tête'),
         footer: const Text('Pied'),
@@ -87,7 +87,7 @@ void main() {
     await pump(
       tester,
       ListView(
-        children: [DocumentView(editorState: stateOf('Dans une liste'))],
+        children: [DocumentViewer(editorState: stateOf('Dans une liste'))],
       ),
     );
 

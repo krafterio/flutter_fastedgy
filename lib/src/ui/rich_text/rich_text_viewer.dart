@@ -29,7 +29,7 @@ import 'rich_text_theme.dart';
 /// The [editorState] is taken over: its renderer, its style and its read-only
 /// flag are set here. Give each view its own rather than sharing one with an
 /// editor.
-class RichTextView extends StatefulWidget {
+class RichTextViewer extends StatefulWidget {
   final EditorState editorState;
   final RichTextFeatures features;
   final EdgeInsets padding;
@@ -41,7 +41,7 @@ class RichTextView extends StatefulWidget {
   /// message passes its field text so a thread reads at the app's body size.
   final TextStyle? textStyle;
 
-  const RichTextView({
+  const RichTextViewer({
     required this.editorState,
     required this.features,
     super.key,
@@ -51,10 +51,10 @@ class RichTextView extends StatefulWidget {
   });
 
   @override
-  State<RichTextView> createState() => _RichTextViewState();
+  State<RichTextViewer> createState() => _RichTextViewerState();
 }
 
-class _RichTextViewState extends State<RichTextView> {
+class _RichTextViewerState extends State<RichTextViewer> {
   @override
   void initState() {
     super.initState();
@@ -71,7 +71,7 @@ class _RichTextViewState extends State<RichTextView> {
   }
 
   @override
-  void didUpdateWidget(RichTextView oldWidget) {
+  void didUpdateWidget(RichTextViewer oldWidget) {
     super.didUpdateWidget(oldWidget);
 
     if (oldWidget.editorState != widget.editorState) {

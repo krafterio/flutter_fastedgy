@@ -208,7 +208,7 @@ void main() {
         MaterialApp(
           home: Scaffold(
             body: reading
-                ? RichTextView(
+                ? RichTextViewer(
                     editorState: state,
                     features: defaultRichTextFeatures,
                   )
@@ -758,7 +758,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
-            body: RichTextView(
+            body: RichTextViewer(
               editorState: state,
               features: defaultRichTextFeatures,
             ),
@@ -796,7 +796,7 @@ void main() {
         // could not use showing as a margin down the right-hand side.
         await pump(tester, _pixel);
 
-        final column = tester.getSize(find.byType(RichTextView)).width;
+        final column = tester.getSize(find.byType(RichTextViewer)).width;
         final drawn = tester.widget<Image>(find.byType(Image));
 
         expect(drawn.width, column);
@@ -824,7 +824,7 @@ void main() {
           home: Scaffold(
             body: SizedBox(
               width: 200,
-              child: RichTextView(
+              child: RichTextViewer(
                 editorState: state,
                 features: defaultRichTextFeatures,
               ),
@@ -949,7 +949,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
-            body: RichTextView(
+            body: RichTextViewer(
               editorState: state,
               features: defaultRichTextFeatures,
             ),

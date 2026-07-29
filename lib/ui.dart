@@ -76,7 +76,7 @@ export 'src/ui/rich_text/rich_text_theme.dart' show RichTextTheme;
 export 'src/ui/rich_text/rich_text_toolbar.dart';
 export 'src/ui/rich_text/rich_text_touch_menu.dart';
 export 'src/ui/rich_text/rich_text_toolbar_theme.dart';
-export 'src/ui/rich_text/rich_text_view.dart';
+export 'src/ui/rich_text/rich_text_viewer.dart';
 
 // Images
 export 'src/ui/image/fullscreen_image_viewer.dart';
@@ -86,4 +86,4 @@ export 'src/ui/document/document_cover.dart';
 export 'src/ui/document/document_editor.dart';
 export 'src/ui/document/document_gutter.dart';
 export 'src/ui/document/document_layout.dart' show DocumentLayout;
-export 'src/ui/document/document_view.dart';
+export 'src/ui/document/document_viewer.dart';

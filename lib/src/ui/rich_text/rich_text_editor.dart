@@ -43,7 +43,7 @@ import 'rich_text_touch_menu.dart';
 ///
 /// It is still the whole editor though: a focus scope, an overlay, a scroll
 /// controller, and a pass to measure it all. To display many at once — every
-/// message of a conversation — use [RichTextView], which renders the same
+/// message of a conversation — use [RichTextViewer], which renders the same
 /// blocks with none of that.
 class RichTextEditor extends StatefulWidget {
   final EditorState editorState;

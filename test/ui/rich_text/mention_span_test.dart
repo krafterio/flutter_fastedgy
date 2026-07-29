@@ -297,7 +297,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: RichTextView(
+          body: RichTextViewer(
             editorState: state,
             textStyle: RichTextTheme.fallback.fieldText,
             features: const RichTextFeatures([LinkFeature(), MentionFeature()]),
@@ -322,7 +322,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: RichTextView(
+          body: RichTextViewer(
             editorState: state,
             features: const RichTextFeatures([LinkFeature(), MentionFeature()]),
           ),
