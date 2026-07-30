@@ -87,7 +87,14 @@ class RichTextToolbarTheme extends ComponentThemeData {
   /// still gets one that matches everything else it floats — and metrics that
   /// match how it is going to be aimed at.
   factory RichTextToolbarTheme.from(RichTextTheme theme, {bool? docked}) {
-    final touch = docked ?? _touchPlatform;
+    // How it is aimed, which only the platform answers: a thumb is a thumb
+    // whether the strip floats over the words or sits under them. A field that
+    // asks for a floating strip on a phone — to keep the page from jumping as
+    // words are selected — still gets buttons a finger can hit.
+    final touch = _touchPlatform;
+
+    // Where it sits, which the caller may have a view on.
+    final flush = docked ?? _touchPlatform;
 
     return RichTextToolbarTheme(
       height: touch ? 52 : 36,
@@ -97,7 +104,7 @@ class RichTextToolbarTheme extends ComponentThemeData {
       contentGap: touch ? 16 : 0,
       activeColor: theme.ink,
       iconColor: theme.mutedText,
-      surface: touch
+      surface: flush
           ? BoxDecoration(
               color: theme.surface,
               border: Border(top: BorderSide(color: theme.subtleBorder)),

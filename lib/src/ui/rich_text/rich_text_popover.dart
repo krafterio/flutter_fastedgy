@@ -9,6 +9,7 @@ import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 
+import '../theme/component_theme.dart';
 import 'rich_text_style.dart';
 import 'rich_text_toolbar_theme.dart';
 import 'rich_text_theme.dart';
@@ -243,8 +244,13 @@ class RichTextSurface extends StatelessWidget {
 /// The editor's own placement is a desktop one: it cuts the editor in thirds
 /// and hangs the toolbar off the left edge of the selection without ever asking
 /// how wide the toolbar is. On a phone it runs off the screen and half its
-/// items cannot be reached — which is one of the reasons a touch platform docks
-/// the strip instead (see [RichTextDockedToolbar]) and never comes here.
+/// items cannot be reached — which is why the placement goes through the same
+/// delegate as every other floating surface, and why a strip a field asked to
+/// float on a touch platform lands where it can be read.
+///
+/// [theme] is resolved by the caller and handed over rather than looked up: the
+/// toolbar is built into an overlay, where a theme scoped around the editor —
+/// the one saying it floats at all — is nowhere to be found.
 ///
 /// One caveat comes from the editor and cannot be answered here: it drops the
 /// toolbar entirely when the selection sits in the top few pixels of the
@@ -252,8 +258,9 @@ class RichTextSurface extends StatelessWidget {
 Widget placeRichTextToolbar(
   BuildContext context,
   EditorState editorState,
-  Widget bar,
-) {
+  Widget bar, {
+  required RichTextToolbarTheme theme,
+}) {
   final rects = editorState.selectionRects();
   final editorBox = editorState.renderBox;
 
@@ -261,13 +268,18 @@ Widget placeRichTextToolbar(
     return const SizedBox.shrink();
   }
 
-  final theme = RichTextToolbarTheme.of(context);
   final editor = editorBox.localToGlobal(Offset.zero) & editorBox.size;
 
-  final strip = RichTextSurface(
-    padding: theme.padding,
-    decoration: theme.surface,
-    child: bar,
+  // Put back around everything it holds, not only used for the surface: the
+  // buttons read their own size from it, and in an overlay they would otherwise
+  // find whatever the application declared for a strip that docks.
+  final strip = ComponentTheme<RichTextToolbarTheme>(
+    data: theme,
+    child: RichTextSurface(
+      padding: theme.padding,
+      decoration: theme.surface,
+      child: bar,
+    ),
   );
 
   // The first line of the selection that is on screen: a selection running past

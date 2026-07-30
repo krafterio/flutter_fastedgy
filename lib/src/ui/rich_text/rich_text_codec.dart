@@ -63,7 +63,7 @@ class MarkdownRichTextCodec extends RichTextCodec {
   String encode(Document document) => RichTextCodec.isCleared(document)
       ? ''
       : encodeNestedMarkdown(
-          features.beforeMarkdown(document),
+          features.beforeMarkdown(_spaceOutsideMarks(document)),
           (block) => documentToMarkdown(
             Document.blank()..insert([0], [block]),
             customParsers: features.markdownEncoders,
@@ -121,4 +121,94 @@ class JsonRichTextCodec extends RichTextCodec {
 
     return document.root.children.isEmpty ? RichTextCodec.blank : document;
   }
+}
+
+/// What a mark is written with in markdown, and what a space next to it kills.
+const _markKeys = {'bold', 'italic', 'underline', 'strikethrough', 'code'};
+
+final _leading = RegExp(r'^\s+');
+final _trailing = RegExp(r'\s+$');
+
+/// Takes the blanks out of what is marked, and puts them back around it.
+///
+/// Markdown opens a mark on the character that follows it, and `** x**` opens
+/// nothing at all: the parser wants a non-blank on the inside. Bold a run a
+/// writer selected with the space before it — which is what a double tap gives
+/// — and the markers land against that space, so the text comes back with its
+/// stars in it and no bold anywhere. It reads as a broken editor, and it is the
+/// round trip that is broken.
+///
+/// `**` around ` x ` becomes ` **x** `: the same words, the same emphasis, and
+/// markdown able to say it.
+Document _spaceOutsideMarks(Document document) {
+  final json =
+      jsonDecode(jsonEncode(document.toJson())) as Map<String, dynamic>;
+
+  void walk(Object? node) {
+    if (node is! Map) {
+      return;
+    }
+
+    final data = node['data'];
+    final delta = data is Map ? data['delta'] : null;
+
+    if (delta is List) {
+      data['delta'] = [for (final operation in delta) ..._spaced(operation)];
+    }
+
+    final children = node['children'];
+
+    if (children is List) {
+      children.forEach(walk);
+    }
+  }
+
+  walk(json['document']);
+
+  return Document.fromJson(json);
+}
+
+/// One run as the blanks around its words leave it: up to three, and itself
+/// when there is nothing to move.
+List<Object?> _spaced(Object? operation) {
+  if (operation is! Map ||
+      operation['insert'] is! String ||
+      operation['attributes'] is! Map) {
+    return [operation];
+  }
+
+  final attributes = operation['attributes'] as Map;
+
+  if (!attributes.keys.any(_markKeys.contains)) {
+    return [operation];
+  }
+
+  final text = operation['insert'] as String;
+  final lead = _leading.stringMatch(text) ?? '';
+  final trail = text.length > lead.length
+      ? _trailing.stringMatch(text) ?? ''
+      : '';
+  final core = text.substring(lead.length, text.length - trail.length);
+
+  if (lead.isEmpty && trail.isEmpty) {
+    return [operation];
+  }
+
+  // What the blanks keep: a link still covers them, a mark no longer does —
+  // marking a space says nothing and costs a pair of markers.
+  final around = {
+    for (final entry in attributes.entries)
+      if (!_markKeys.contains(entry.key)) entry.key: entry.value,
+  };
+
+  Map<String, Object?> run(String insert, Map<Object?, Object?> carried) => {
+    'insert': insert,
+    if (carried.isNotEmpty) 'attributes': carried,
+  };
+
+  return [
+    if (lead.isNotEmpty) run(lead, around),
+    if (core.isNotEmpty) run(core, attributes),
+    if (trail.isNotEmpty) run(trail, around),
+  ];
 }

@@ -383,4 +383,66 @@ void main() {
       expect(json.encode(document), isNot(''));
     });
   });
+
+  group('les blancs autour de ce qui est marqué', () {
+    const codec = MarkdownRichTextCodec(features: defaultRichTextFeatures);
+
+    List<TextInsert> runsOf(String markdown) => codec
+        .decode(markdown)
+        .root
+        .children
+        .first
+        .delta!
+        .toList()
+        .cast<TextInsert>();
+
+    Document paragraphOf(Delta delta) =>
+        Document.blank()..insert([0], [paragraphNode(delta: delta)]);
+
+    test('un blanc pris dans la sélection sort des marqueurs', () {
+      final markdown = codec.encode(
+        paragraphOf(
+          Delta()
+            ..insert('Coucou')
+            ..insert(' toi !', attributes: {'bold': true, 'italic': true}),
+        ),
+      );
+
+      // `**` ouvre sur ce qui suit : contre un blanc il n'ouvre rien, et le
+      // texte revenait avec ses étoiles et aucun gras.
+      expect(markdown, 'Coucou ***toi !***');
+
+      final runs = runsOf(markdown);
+
+      expect(runs.map((run) => run.text), ['Coucou ', 'toi !']);
+      expect(runs.last.attributes?['bold'], isTrue);
+      expect(runs.last.attributes?['italic'], isTrue);
+    });
+
+    test('rien à déplacer laisse le passage tel quel', () {
+      final markdown = codec.encode(
+        paragraphOf(
+          Delta()
+            ..insert('Un ')
+            ..insert('mot', attributes: {'bold': true})
+            ..insert(' gras'),
+        ),
+      );
+
+      expect(markdown, 'Un **mot** gras');
+    });
+
+    test('un passage qui n\'est que du blanc perd ses marqueurs', () {
+      final markdown = codec.encode(
+        paragraphOf(
+          Delta()
+            ..insert('Avant')
+            ..insert(' ', attributes: {'bold': true})
+            ..insert('après'),
+        ),
+      );
+
+      expect(markdown, 'Avant après');
+    });
+  });
 }

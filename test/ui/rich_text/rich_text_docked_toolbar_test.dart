@@ -281,6 +281,58 @@ void main() {
     });
   });
 
+  group('la place que la barre laisse au système', () {
+    const inset = 34.0;
+
+    /// La barre debout sur un écran qui a un bord réservé sous elle.
+    Future<double> heightWith(
+      WidgetTester tester,
+      RichTextToolbarSlots given, {
+      double bottom = inset,
+    }) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      tester.view.viewInsets = FakeViewPadding.zero;
+      tester.view.viewPadding = FakeViewPadding(bottom: bottom);
+      addTearDown(tester.view.reset);
+
+      await pump(
+        tester,
+        visibility: RichTextToolbarVisibility.always,
+        slots: given,
+      );
+
+      return tester.getSize(find.byType(RichTextSurface)).height;
+    }
+
+    testWidgets('un champ dans un formulaire ne réserve rien', (tester) async {
+      // Ce que le système demande n'est à personne au milieu d'une page : sous
+      // la barre il y a les commandes de l'application, pas le bord de l'écran.
+      final held = await heightWith(
+        tester,
+        const RichTextToolbarSlots(reachesBottomEdge: false),
+      );
+      final bare = await heightWith(tester, RichTextToolbarSlots.none);
+
+      expect(bare - held, inset);
+    });
+
+    testWidgets('et rien à réserver ne change rien', (tester) async {
+      final held = await heightWith(
+        tester,
+        const RichTextToolbarSlots(reachesBottomEdge: false),
+        bottom: 0,
+      );
+      final bare = await heightWith(
+        tester,
+        RichTextToolbarSlots.none,
+        bottom: 0,
+      );
+
+      expect(held, bare);
+    });
+  });
+
   group('ce que la barre reprend avant d\'agir', () {
     testWidgets('le curseur d\'avant l\'appui, pas celui d\'après', (
       tester,

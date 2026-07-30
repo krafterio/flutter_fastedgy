@@ -41,18 +41,36 @@ void main() {
     });
 
     test('les cibles grandissent au doigt', () {
-      final touch = RichTextToolbarTheme.from(
-        RichTextTheme.fallback,
-        docked: true,
-      );
-      final pointer = RichTextToolbarTheme.from(
-        RichTextTheme.fallback,
-        docked: false,
-      );
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      final touch = RichTextToolbarTheme.from(RichTextTheme.fallback);
+
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      final pointer = RichTextToolbarTheme.from(RichTextTheme.fallback);
 
       expect(touch.itemSize, greaterThan(pointer.itemSize));
       expect(touch.iconSize, greaterThan(pointer.iconSize));
       expect(touch.height, greaterThan(pointer.height));
+    });
+
+    test('flottante sur un téléphone, elle garde les cibles du doigt', () {
+      // Ce qui vise l'écran ne change pas parce que la barre a changé de place :
+      // un champ qui demande une barre flottante pour que sa page ne saute pas
+      // sous les doigts veut encore des boutons qu'un doigt atteint.
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+
+      final floating = RichTextToolbarTheme.from(
+        RichTextTheme.fallback,
+        docked: false,
+      );
+      final docked = RichTextToolbarTheme.from(
+        RichTextTheme.fallback,
+        docked: true,
+      );
+
+      expect(floating.itemSize, docked.itemSize);
+      expect(floating.iconSize, docked.iconSize);
+      expect(floating.height, docked.height);
+      expect(floating.surface, RichTextTheme.fallback.floatingSurface);
     });
 
     test('elle est ancrée sur mobile, flottante ailleurs', () {

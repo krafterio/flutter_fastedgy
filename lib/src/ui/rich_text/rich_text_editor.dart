@@ -109,6 +109,14 @@ class RichTextEditor extends StatefulWidget {
   /// The menu that "/" opens. Off leaves the character to be typed.
   final bool slashMenu;
 
+  /// What blocks that menu offers, from the package's own. Null takes them all;
+  /// an empty list leaves the menu to the features alone — a field that holds
+  /// prose and mentions, and no heading, no table, no rule.
+  ///
+  /// The features' items are appended either way, the way [actions] works: what
+  /// a feature carries is what it carries.
+  final List<SelectionMenuItem>? menuItems;
+
   /// What an empty document reads as while nothing is focused. Null leaves it
   /// blank.
   final String? emptyPlaceholder;
@@ -155,6 +163,7 @@ class RichTextEditor extends StatefulWidget {
     this.toolbarVisibility,
     this.toolbarSlots = RichTextToolbarSlots.none,
     this.slashMenu = true,
+    this.menuItems,
     this.emptyPlaceholder,
     this.hintPlaceholder,
     this.resetWhenEmpty = false,
@@ -179,6 +188,13 @@ class RichTextEditorState extends State<RichTextEditor> {
   /// Everything the page ends on, footer included: what a tap under the
   /// document must not be mistaken for.
   final _pageEndKey = GlobalKey();
+
+  /// The window a capped field scrolls its blocks behind (see [_revealCaret]).
+  final _viewportKey = GlobalKey();
+
+  /// The state whose caret is being followed, to stop following the one it is
+  /// swapped for.
+  EditorState? _watched;
 
   StreamSubscription<EditorTransactionValue>? _edits;
 
@@ -224,9 +240,71 @@ class RichTextEditorState extends State<RichTextEditor> {
 
   void _watchEdits() {
     unawaited(_edits?.cancel());
-    _edits = widget.resetWhenEmpty
-        ? widget.editorState.transactionStream.listen((_) => _resetIfEmpty())
+
+    // The caret also moves without a transaction — a tap, an arrow key, a
+    // selection put back by hand — and a field that scrolls has to follow it
+    // there too.
+    _watched?.selectionNotifier.removeListener(_revealCaret);
+    _watched = widget.editorState..selectionNotifier.addListener(_revealCaret);
+
+    _edits = widget.resetWhenEmpty || _capped
+        ? widget.editorState.transactionStream.listen((_) {
+            if (widget.resetWhenEmpty) {
+              _resetIfEmpty();
+            }
+
+            _revealCaret();
+          })
         : null;
+  }
+
+  /// Whether the field scrolls behind a window of its own.
+  bool get _capped => !widget.scrollable && widget.maxHeight != null;
+
+  /// Brings the caret back into that window.
+  ///
+  /// A page follows its own: the editor owns the scroll view and scrolls it.
+  /// A field with a height of its own does not — the scroll view is the one
+  /// wrapped around it below, which nothing inside the editor knows about. So
+  /// the line that takes the text past the cap is written out of sight, and the
+  /// caret with it.
+  ///
+  /// After the frame: the line that has just been typed has no size until it is
+  /// laid out, and there is nothing to bring back into view before that.
+  void _revealCaret() {
+    if (!_capped) {
+      return;
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+
+      final controller = scrollController.scrollController;
+      final caret = _caretRect();
+      final box = _viewportKey.currentContext?.findRenderObject();
+
+      if (!controller.hasClients ||
+          caret == null ||
+          box is! RenderBox ||
+          !box.attached) {
+        return;
+      }
+
+      final window = box.localToGlobal(Offset.zero) & box.size;
+      final below = caret.bottom - window.bottom;
+      final above = window.top - caret.top;
+      final by = below > 0 ? below : (above > 0 ? -above : 0.0);
+
+      if (by == 0) {
+        return;
+      }
+
+      controller.jumpTo(
+        (controller.offset + by).clamp(0, controller.position.maxScrollExtent),
+      );
+    });
   }
 
   /// Whether the document is back to what an untouched field holds.
@@ -255,6 +333,7 @@ class RichTextEditorState extends State<RichTextEditor> {
   @override
   void dispose() {
     unawaited(_edits?.cancel());
+    _watched?.selectionNotifier.removeListener(_revealCaret);
     _slash.dispose();
 
     // A frame late, and it has to be: the list under the editor answers a
@@ -326,7 +405,11 @@ class RichTextEditorState extends State<RichTextEditor> {
 
     if (hasHoverPointer) {
       return customSlashCommand(
-        richTextSlashMenuItems(widget.features, icons: widget.menuIcons),
+        richTextSlashMenuItems(
+          widget.features,
+          icons: widget.menuIcons,
+          blocks: widget.menuItems,
+        ),
         style: style,
       );
     }
@@ -396,7 +479,11 @@ class RichTextEditorState extends State<RichTextEditor> {
 
       _slash.open(
         widget.editorState,
-        richTextSlashMenuItems(widget.features, icons: widget.menuIcons),
+        richTextSlashMenuItems(
+          widget.features,
+          icons: widget.menuIcons,
+          blocks: widget.menuItems,
+        ),
         trigger: trigger,
         at: _caretRect(),
       );
@@ -632,6 +719,7 @@ class RichTextEditorState extends State<RichTextEditor> {
                 trailing: widget.toolbarSlots.trailing,
               ),
             ),
+            theme: toolbarTheme,
           ),
       editorState: widget.editorState,
       editorScrollController: scrollController,
@@ -758,6 +846,7 @@ class RichTextEditorState extends State<RichTextEditor> {
       return ConstrainedBox(
         constraints: BoxConstraints(maxHeight: maxHeight),
         child: SingleChildScrollView(
+          key: _viewportKey,
           controller: scrollController.scrollController,
           child: IntrinsicHeight(child: whole),
         ),

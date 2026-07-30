@@ -62,18 +62,33 @@ class RichTextToolbarSlots {
   /// end up flush against the buttons.
   final Widget? underContent;
 
+  /// Whether the strip ends the screen.
+  ///
+  /// True unless said otherwise: a docked strip usually does, and the last
+  /// pixels of the screen belong to the system — which is what the band under
+  /// its buttons is for.
+  ///
+  /// A field says false. A composer in a sheet, a description in a form: the
+  /// application has controls of its own under it, the system's edge is
+  /// somebody else's problem, and the band reserved for it lands in the middle
+  /// of the page as a gap nothing explains.
+  final bool reachesBottomEdge;
+
   const RichTextToolbarSlots({
     this.leading,
     this.trailing,
     this.above,
     this.below,
     this.underContent,
+    this.reachesBottomEdge = true,
   });
 
   /// What a caller that asked for nothing gets.
   static const none = RichTextToolbarSlots();
 
-  bool get holdsBottom => below != null;
+  /// Whether the room the system asks for at the bottom is spoken for — by a
+  /// band of the caller's own, or by whatever it put the strip above.
+  bool get holdsBottom => below != null || !reachesBottomEdge;
 
   /// The strip with its bands, or the strip alone when there are none.
   Widget around(Widget bar) => above == null && below == null

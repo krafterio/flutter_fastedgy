@@ -27,8 +27,9 @@ String richTextMenuLabel(String upstreamName) =>
 List<SelectionMenuItem> richTextSlashMenuItems(
   RichTextFeatures features, {
   Map<String, IconData> icons = const {},
+  List<SelectionMenuItem>? blocks,
 }) => [
-  for (final item in standardSelectionMenuItems)
+  for (final item in blocks ?? standardSelectionMenuItems)
     if (!features.replacedMenuItems.contains(item.name))
       _translated(item, icons[item.name]),
   ...features.menuItems,
