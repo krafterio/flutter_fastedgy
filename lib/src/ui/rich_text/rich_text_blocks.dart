@@ -27,6 +27,7 @@ Map<String, BlockComponentBuilder> richTextBlocks({
   ShowPlaceholder? showPlaceholder,
   String Function(Node node)? placeholderText,
   BlockComponentBuilder? pageBuilder,
+  EdgeInsets listItemPadding = const EdgeInsets.symmetric(vertical: 3),
 }) {
   final builders = {...standardBlockComponentBuilderMap, ...features.builders};
 
@@ -61,7 +62,9 @@ Map<String, BlockComponentBuilder> richTextBlocks({
     builders[type] = builder;
 
     builder.configuration = builder.configuration.copyWith(
-      padding: (_) => const EdgeInsets.symmetric(vertical: 3),
+      padding: (_) => _listTypes.contains(type)
+          ? listItemPadding
+          : const EdgeInsets.symmetric(vertical: 3),
       placeholderText: type == ParagraphBlockKeys.type ? placeholderText : null,
     );
     // Nothing hangs in a cell's margin: the table has handles of its own for
@@ -103,6 +106,15 @@ class _ScopedBlockComponentBuilder extends BlockComponentBuilder {
     return builder.build(blockComponentContext);
   }
 }
+
+/// The blocks that wear [RichTextTheme.listItemPadding] instead of the shared
+/// rhythm: a list's items sit flush under one another at the document's own
+/// padding, so they alone take the one the theme names for them.
+final Set<String> _listTypes = {
+  BulletedListBlockKeys.type,
+  NumberedListBlockKeys.type,
+  TodoListBlockKeys.type,
+};
 
 /// Whether a block is part of a table rather than of the page itself — a cell,
 /// or the paragraph a cell holds.

@@ -85,6 +85,12 @@ class RichTextTheme extends ComponentThemeData {
   final BorderRadius chipRadius;
   final EdgeInsets blockPadding;
 
+  /// What a list item wears around itself — a bulleted, numbered or to-do
+  /// entry. Every other block keeps the document's own rhythm; lists are the
+  /// one place an application tends to want more air, so they carry a padding
+  /// of their own.
+  final EdgeInsets listItemPadding;
+
   /// What anything floating over the document wears — the toolbar, an editing
   /// card, a menu.
   ///
@@ -113,6 +119,7 @@ class RichTextTheme extends ComponentThemeData {
     required this.blockRadius,
     required this.chipRadius,
     required this.blockPadding,
+    required this.listItemPadding,
     required this.floatingSurface,
     this.monoFontFamily,
   });
@@ -157,6 +164,9 @@ class RichTextTheme extends ComponentThemeData {
         horizontal: theme.spacing * 3,
         vertical: theme.spacing * 2,
       ),
+      // The vertical rhythm every block is laid at: lists follow it unless the
+      // application asks for airier ones.
+      listItemPadding: const EdgeInsets.symmetric(vertical: 3),
       floatingSurface: BoxDecoration(
         color: colors.surface,
         borderRadius: BorderRadius.circular(theme.radius),
@@ -211,6 +221,7 @@ class RichTextTheme extends ComponentThemeData {
     BorderRadius? blockRadius,
     BorderRadius? chipRadius,
     EdgeInsets? blockPadding,
+    EdgeInsets? listItemPadding,
     BoxDecoration? floatingSurface,
   }) {
     return RichTextTheme(
@@ -235,6 +246,7 @@ class RichTextTheme extends ComponentThemeData {
       blockRadius: blockRadius ?? this.blockRadius,
       chipRadius: chipRadius ?? this.chipRadius,
       blockPadding: blockPadding ?? this.blockPadding,
+      listItemPadding: listItemPadding ?? this.listItemPadding,
       floatingSurface: floatingSurface ?? this.floatingSurface,
     );
   }
@@ -267,6 +279,7 @@ class RichTextTheme extends ComponentThemeData {
         other.blockRadius == blockRadius &&
         other.chipRadius == chipRadius &&
         other.blockPadding == blockPadding &&
+        other.listItemPadding == listItemPadding &&
         other.floatingSurface == floatingSurface;
   }
 
@@ -293,6 +306,7 @@ class RichTextTheme extends ComponentThemeData {
     blockRadius,
     chipRadius,
     blockPadding,
+    listItemPadding,
     floatingSurface,
   ]);
 }

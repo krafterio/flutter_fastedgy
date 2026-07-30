@@ -167,7 +167,11 @@ class RichTextEditor extends StatefulWidget {
 
 class RichTextEditorState extends State<RichTextEditor> {
   late final EditorScrollController scrollController;
-  late final Map<String, BlockComponentBuilder> _builders;
+
+  /// Lazily, at first access — which happens while building, where the theme
+  /// the builders dress with can be looked up. In initState it cannot.
+  late final Map<String, BlockComponentBuilder> _builders =
+      _buildBlockComponentBuilders();
 
   /// The footer, as one item of the page: what [revealFooter] scrolls to.
   final _footerKey = GlobalKey();
@@ -205,7 +209,6 @@ class RichTextEditorState extends State<RichTextEditor> {
       editorState: widget.editorState,
       shrinkWrap: !widget.scrollable,
     );
-    _builders = _buildBlockComponentBuilders();
     _watchEdits();
   }
 
@@ -282,6 +285,7 @@ class RichTextEditorState extends State<RichTextEditor> {
   _buildBlockComponentBuilders() => richTextBlocks(
     features: widget.features,
     blockActions: widget.blockActions,
+    listItemPadding: RichTextTheme.of(context).listItemPadding,
     placeholderText: _paragraphPlaceholder,
     // The package shows a paragraph's placeholder only while the cursor sits in
     // it; a blank document keeps showing its own with no selection at all.

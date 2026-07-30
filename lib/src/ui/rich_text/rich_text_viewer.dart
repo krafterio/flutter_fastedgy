@@ -103,20 +103,25 @@ class _RichTextViewerState extends State<RichTextViewer> {
 
   /// What the editor would otherwise set up on its own.
   void _adopt() {
+    final theme = RichTextTheme.of(context);
+
     widget.editorState
       ..editable = false
       // The decorator comes with the style, never without it: a mention is
       // stored as one placeholder character and drawn by the decorator, so a
       // view mounted without it renders the mention as nothing at all.
       ..editorStyle = RichTextStyle.editor(
-        RichTextTheme.of(context),
+        theme,
         padding: widget.padding,
         maxWidth: widget.maxWidth,
         text: widget.textStyle,
         textSpanDecorator: widget.features.textSpanDecorator,
       )
       ..renderer = BlockComponentRenderer(
-        builders: richTextBlocks(features: widget.features),
+        builders: richTextBlocks(
+          features: widget.features,
+          listItemPadding: theme.listItemPadding,
+        ),
       );
   }
 
