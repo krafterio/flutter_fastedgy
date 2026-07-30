@@ -47,6 +47,7 @@ export 'src/ui/rich_text/features/mention/mention_preview.dart';
 export 'src/ui/rich_text/features/mention/mention_source.dart';
 export 'src/ui/rich_text/features/mention/mention_span.dart';
 export 'src/ui/rich_text/features/paragraph_feature.dart';
+export 'src/ui/rich_text/features/plus_underline_feature.dart';
 export 'src/ui/rich_text/features/table/table_component.dart';
 export 'src/ui/rich_text/features/table/table_feature.dart';
 export 'src/ui/rich_text/features/table/table_handle.dart';

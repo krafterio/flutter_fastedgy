@@ -81,6 +81,7 @@ class MarkdownRichTextCodec extends RichTextCodec {
       (markdown) => markdownToDocument(
         markdown,
         markdownParsers: features.markdownDecoders,
+        inlineSyntaxes: features.markdownInlineSyntaxes,
       ).root.children.toList(),
     );
 

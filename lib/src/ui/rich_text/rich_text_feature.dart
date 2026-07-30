@@ -4,6 +4,7 @@
  */
 
 import 'package:appflowy_editor/appflowy_editor.dart';
+import 'package:markdown/markdown.dart' as md;
 
 import 'rich_text_action.dart';
 import 'package:flutter/painting.dart' show TextSpan;
@@ -75,6 +76,13 @@ abstract class RichTextFeature {
   /// block, and what was saved comes back as nothing — the encoder alone is
   /// only half a round trip.
   List<CustomMarkdownParser> get markdownDecoders => const [];
+
+  /// Spellings the parser is taught to read *inside* a block, where
+  /// [markdownDecoders] only ever sees whole ones.
+  ///
+  /// Offered before the package's own, so a syntax declared here is tried first
+  /// wherever the two could both match.
+  List<md.InlineSyntax> get markdownInlineSyntaxes => const [];
 
   /// A last pass over the whole document before it is written to markdown, for
   /// what a node parser cannot reach — dropping what the format already says
@@ -181,6 +189,10 @@ class RichTextFeatures {
 
   List<CustomMarkdownParser> get markdownDecoders => [
     for (final feature in features) ...feature.markdownDecoders,
+  ];
+
+  List<md.InlineSyntax> get markdownInlineSyntaxes => [
+    for (final feature in features) ...feature.markdownInlineSyntaxes,
   ];
 
   Document beforeMarkdown(Document document) => features.fold(
