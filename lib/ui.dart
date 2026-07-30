@@ -68,6 +68,7 @@ export 'src/ui/icons.dart';
 export 'src/ui/interaction.dart';
 export 'src/ui/rich_text/rich_text_nesting.dart';
 export 'src/ui/rich_text/rich_text_paste.dart';
+export 'src/ui/rich_text/rich_text_plain.dart';
 export 'src/ui/rich_text/rich_text_popover.dart';
 export 'src/ui/rich_text/rich_text_markdown.dart';
 export 'src/ui/rich_text/rich_text_menu.dart';
