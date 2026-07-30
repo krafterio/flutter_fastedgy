@@ -73,4 +73,36 @@ void main() {
       state.dispose();
     });
   });
+
+  group('RichTextPopoverLayout', () {
+    const editor = Rect.fromLTWH(35, 0, 332, 800);
+    const selection = Rect.fromLTWH(60, 400, 40, 20);
+
+    Offset positionOf(Size childSize) => const RichTextPopoverLayout(
+      selection: selection,
+      editor: editor,
+    ).getPositionForChild(const Size(402, 874), childSize);
+
+    test('une carte plus large que l\'éditeur se cale contre son bord', () {
+      // Une barre de boutons est plus large qu'un téléphone : il n'y a pas de
+      // place où elle commence et finit dans l'éditeur, et borner entre deux
+      // bornes croisées lève une ArgumentError qui emportait tout l'éditeur.
+      final position = positionOf(const Size(320, 52));
+
+      expect(position.dx, greaterThanOrEqualTo(editor.left));
+      expect(position.dx, lessThan(selection.left));
+    });
+
+    test('et une carte qui tient suit la sélection', () {
+      final position = positionOf(const Size(120, 52));
+
+      expect(position.dx, selection.left);
+    });
+
+    test('sans jamais dépasser le bord droit', () {
+      final position = positionOf(const Size(280, 52));
+
+      expect(position.dx + 280, lessThanOrEqualTo(editor.right));
+    });
+  });
 }

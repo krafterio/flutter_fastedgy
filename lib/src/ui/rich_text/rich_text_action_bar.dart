@@ -3,11 +3,14 @@
  * MIT License (see LICENSE file).
  */
 
+import 'dart:async' show unawaited;
+
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/widgets.dart';
 
 import '../icons.dart';
 import 'rich_text_action.dart';
+import 'rich_text_clipboard.dart';
 import 'rich_text_controls.dart';
 import 'rich_text_popover.dart';
 import 'rich_text_theme.dart';
@@ -117,6 +120,10 @@ class RichTextActionBar extends StatefulWidget {
   /// Padding around the row of buttons.
   final EdgeInsets padding;
 
+  /// Called once an action has run, for a strip that stands only as long as
+  /// what raised it — the one a held press brings up over a bare caret.
+  final VoidCallback? onRun;
+
   const RichTextActionBar({
     required this.editorState,
     required this.actions,
@@ -124,6 +131,7 @@ class RichTextActionBar extends StatefulWidget {
     this.leading,
     this.trailing,
     this.padding = EdgeInsets.zero,
+    this.onRun,
   });
 
   @override
@@ -147,57 +155,75 @@ class _RichTextActionBarState extends State<RichTextActionBar> {
   EditorState get editorState => widget.editorState;
 
   @override
+  void initState() {
+    super.initState();
+
+    // As the strip appears, and again whenever the caret moves: whoever copied
+    // something did it between two of those, and asking is cheap and silent
+    // (see refreshRichTextClipboard).
+    unawaited(refreshRichTextClipboard());
+    editorState.selectionNotifier.addListener(_onSelectionMoved);
+  }
+
+  @override
   void dispose() {
+    editorState.selectionNotifier.removeListener(_onSelectionMoved);
     _scroll.dispose();
     super.dispose();
   }
+
+  void _onSelectionMoved() => unawaited(refreshRichTextClipboard());
 
   @override
   Widget build(BuildContext context) {
     final theme = RichTextToolbarTheme.of(context);
 
-    // Rebuilt as the selection moves: what is on and what is reachable are read
-    // from where the caret is.
-    return ValueListenableBuilder<Selection?>(
-      valueListenable: editorState.selectionNotifier,
-      builder: (context, selection, child) {
-        return SizedBox(
-          height: theme.height,
-          // A longer list than the room it was given slides sideways rather
-          // than spilling out of it — the usual case on a phone.
-          //
-          // Moved by hand, from the raw pointer, for the reason the buttons are
-          // pressed that way: the strip hangs in an overlay above an editor
-          // that claims what it can, and a drag recognizer here has to win an
-          // arena to move anything. It lost on a real device while winning in
-          // every harness. Nothing is arbitrated now — a finger that travels
-          // carries the strip with it.
-          child: Listener(
-            onPointerDown: (event) {
-              _lastX = event.position.dx;
-              _snapshot = editorState.selection;
-            },
-            onPointerMove: _onMove,
-            onPointerUp: (_) => _lastX = null,
-            onPointerCancel: (_) => _lastX = null,
-            child: ScrollConfiguration(
-              behavior: ScrollConfiguration.of(
-                context,
-              ).copyWith(scrollbars: false, overscroll: false),
-              child: SingleChildScrollView(
-                controller: _scroll,
-                physics: const NeverScrollableScrollPhysics(),
-                scrollDirection: Axis.horizontal,
-                padding: widget.padding,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: _children(context),
+    // Rebuilt as the selection moves and as the clipboard fills: what is on and
+    // what is reachable are read from where the caret is and from what there is
+    // to paste into it.
+    return ValueListenableBuilder<bool>(
+      valueListenable: richTextClipboardHasContent,
+      builder: (context, _, _) => ValueListenableBuilder<Selection?>(
+        valueListenable: editorState.selectionNotifier,
+        builder: (context, selection, child) {
+          return SizedBox(
+            height: theme.height,
+            // A longer list than the room it was given slides sideways rather
+            // than spilling out of it — the usual case on a phone.
+            //
+            // Moved by hand, from the raw pointer, for the reason the buttons are
+            // pressed that way: the strip hangs in an overlay above an editor
+            // that claims what it can, and a drag recognizer here has to win an
+            // arena to move anything. It lost on a real device while winning in
+            // every harness. Nothing is arbitrated now — a finger that travels
+            // carries the strip with it.
+            child: Listener(
+              onPointerDown: (event) {
+                _lastX = event.position.dx;
+                _snapshot = editorState.selection;
+              },
+              onPointerMove: _onMove,
+              onPointerUp: (_) => _lastX = null,
+              onPointerCancel: (_) => _lastX = null,
+              child: ScrollConfiguration(
+                behavior: ScrollConfiguration.of(
+                  context,
+                ).copyWith(scrollbars: false, overscroll: false),
+                child: SingleChildScrollView(
+                  controller: _scroll,
+                  physics: const NeverScrollableScrollPhysics(),
+                  scrollDirection: Axis.horizontal,
+                  padding: widget.padding,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: _children(context),
+                  ),
                 ),
               ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 
@@ -252,6 +278,8 @@ class _RichTextActionBarState extends State<RichTextActionBar> {
     }
 
     await action.run(editorState);
+
+    widget.onRun?.call();
   }
 }
 

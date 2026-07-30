@@ -180,11 +180,11 @@ void main() {
     });
   });
 
-  group('the menu a held press gets', () {
+  group('la barre qu\'un appui long lève', () {
     tearDown(() => AppFlowyClipboard.mockSetData(null));
 
-    /// The override has to be undone before the body returns — the framework
-    /// checks the foundation's debug flags there.
+    /// L'override doit être défait avant la fin du corps — le framework
+    /// vérifie les drapeaux de debug de la fondation là.
     Future<void> onTouch(Future<void> Function() body) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
 
@@ -195,7 +195,10 @@ void main() {
       }
     }
 
-    Future<EditorState> pump(WidgetTester tester) async {
+    /// Flottante, la barre n'existe que sur une sélection : c'est là que
+    /// l'appui long a quelque chose à lever. Ancrée, elle tient déjà sur le
+    /// curseur et n'a besoin de personne.
+    Future<EditorState> pump(WidgetTester tester, {required bool docked}) async {
       final state = EditorState(
         document: Document.blank()
           ..insert([0], [paragraphNode(delta: Delta()..insert('Bonjour'))]),
@@ -205,9 +208,17 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
-            body: RichTextEditor(
-              features: defaultRichTextFeatures,
-              editorState: state,
+            body: Builder(
+              builder: (context) => ComponentTheme<RichTextToolbarTheme>(
+                data: RichTextToolbarTheme.from(
+                  RichTextTheme.of(context),
+                  docked: docked,
+                ),
+                child: RichTextEditor(
+                  features: defaultRichTextFeatures,
+                  editorState: state,
+                ),
+              ),
             ),
           ),
         ),
@@ -217,81 +228,85 @@ void main() {
       return state;
     }
 
-    /// A point over the first block: the editor draws its text through spans of
-    /// its own, which no text finder reaches.
+    /// Un point sur le premier bloc : l'éditeur dessine son texte avec des
+    /// spans à lui, qu'aucun finder de texte n'atteint.
     Offset onTheText(WidgetTester tester) =>
         tester.getTopLeft(find.byType(RichTextEditor)) + const Offset(40, 20);
 
-    testWidgets('offers what the editor never offered a finger', (
+    Finder pasteButton() =>
+        find.byIcon(FastEdgyIcons.material[FastEdgyGlyph.paste]);
+
+    testWidgets('offre au doigt ce que l\'éditeur ne lui offrait pas', (
       tester,
     ) async {
       await onTouch(() async {
-        await pump(tester);
+        final state = await pump(tester, docked: false);
 
-        expect(find.text('Paste'), findsNothing);
+        expect(pasteButton(), findsNothing);
 
+        state.selection = Selection.collapsed(Position(path: [0], offset: 3));
         await tester.longPressAt(onTheText(tester));
         await tester.pumpAndSettle();
 
-        expect(find.text('Paste'), findsOneWidget);
-        expect(find.text('Select all'), findsOneWidget);
+        expect(pasteButton(), findsOneWidget);
       });
     });
 
-    testWidgets('and takes no more room than its own words', (tester) async {
+    testWidgets('et colle le markdown qu\'on y prend', (tester) async {
       await onTouch(() async {
-        await pump(tester);
-
-        await tester.longPressAt(onTheText(tester));
-        await tester.pumpAndSettle();
-
-        final card = tester.getSize(
-          find.ancestor(
-            of: find.text('Paste'),
-            matching: find.byType(RichTextSurface),
-          ),
-        );
-        final words = tester.getSize(
-          find.ancestor(of: find.text('Paste'), matching: find.byType(Wrap)),
-        );
-
-        // A callout, not a card: the shared width every editing surface takes
-        // would put a white slab across the page for a handful of words.
-        expect(card.width, lessThan(richTextPopoverWidth));
-        expect(card.width - words.width, lessThan(16));
-        expect(card.height - words.height, lessThan(16));
-      });
-    });
-
-    testWidgets('and pastes markdown from it', (tester) async {
-      await onTouch(() async {
-        final state = await pump(tester);
+        final state = await pump(tester, docked: false);
 
         AppFlowyClipboard.mockSetData(
           const AppFlowyClipboardData(text: '# Titre\n\n- un\n- deux'),
         );
 
+        state.selection = Selection.collapsed(Position(path: [0], offset: 3));
         await tester.longPressAt(onTheText(tester));
         await tester.pumpAndSettle();
 
-        await tester.tap(find.text('Paste'));
+        // La barre défile : le presse-papier est en bout de rangée, derrière
+        // tout ce que l'écriture demande d'abord.
+        await tester.ensureVisible(pasteButton());
+        await tester.pumpAndSettle();
+
+        await tester.tap(pasteButton());
         await tester.pumpAndSettle();
 
         expect([
           for (final node in state.document.root.children) node.type,
         ], contains(HeadingBlockKeys.type));
-        expect(find.text('Paste'), findsNothing);
+        expect(pasteButton(), findsNothing);
       });
     });
 
-    testWidgets('a plain tap leaves it alone', (tester) async {
+    testWidgets('une barre ancrée la porte déjà, rien n\'est levé', (
+      tester,
+    ) async {
       await onTouch(() async {
-        await pump(tester);
+        final state = await pump(tester, docked: true);
+
+        state.selection = Selection.collapsed(Position(path: [0], offset: 3));
+        await tester.pumpAndSettle();
+
+        // Elle est là, mais parce que la barre ancrée tient sur le curseur —
+        // pas parce qu'un appui long l'a levée.
+        expect(pasteButton(), findsOneWidget);
+
+        await tester.longPressAt(onTheText(tester));
+        await tester.pumpAndSettle();
+
+        expect(pasteButton(), findsOneWidget);
+      });
+    });
+
+    testWidgets('un simple tap ne la lève pas', (tester) async {
+      await onTouch(() async {
+        await pump(tester, docked: false);
 
         await tester.tapAt(onTheText(tester));
         await tester.pumpAndSettle();
 
-        expect(find.text('Paste'), findsNothing);
+        expect(pasteButton(), findsNothing);
       });
     });
   });

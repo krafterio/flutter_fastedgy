@@ -389,4 +389,62 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   });
+
+  group('ce que l\'historique retient', () {
+    testWidgets('un tableau qui se met en forme n\'est pas une frappe', (
+      tester,
+    ) async {
+      // Un tableau stocké sans ses largeurs de colonnes les écrit dans le
+      // document en se posant. Le document s'ouvrait alors avec un bouton
+      // annuler vivant, prêt à défaire ce qui venait d'être chargé.
+      const codec = MarkdownRichTextCodec(features: defaultRichTextFeatures);
+      final state = EditorState(
+        document: codec.decode('| A | B |\n|---|---|\n| 1 | 2 |'),
+      );
+      addTearDown(state.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: RichTextEditor(
+              features: defaultRichTextFeatures,
+              editorState: state,
+              scrollable: true,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(state.undoManager.undoStack.isEmpty, isTrue);
+    });
+
+    testWidgets('ce qui est tapé, si', (tester) async {
+      const codec = MarkdownRichTextCodec(features: defaultRichTextFeatures);
+      final state = EditorState(document: codec.decode('Bonjour'));
+      addTearDown(state.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: RichTextEditor(
+              features: defaultRichTextFeatures,
+              editorState: state,
+              scrollable: true,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      state.selection = Selection.collapsed(Position(path: [0], offset: 7));
+      await state.apply(
+        state.transaction
+          ..insertText(state.document.root.children.first, 7, ' Monde'),
+      );
+      await tester.pumpAndSettle();
+
+      expect(state.undoManager.undoStack.isNonEmpty, isTrue);
+    });
+  });
 }

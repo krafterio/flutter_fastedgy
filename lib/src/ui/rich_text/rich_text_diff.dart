@@ -41,7 +41,15 @@ Future<bool> applyRichTextDiff(
   editorState.editable = true;
 
   try {
-    await editorState.apply(transaction, isRemote: isRemote);
+    // Not on the undo stack, and that is the point: nobody wrote this. Undo
+    // takes back what the writer did, and a note that has just been loaded — or
+    // a description the server rewrote on save — must not arrive with a live
+    // undo button offering to take the content itself away.
+    await editorState.apply(
+      transaction,
+      isRemote: isRemote,
+      options: const ApplyOptions(recordUndo: false),
+    );
   } finally {
     editorState.editable = editable;
   }

@@ -7,6 +7,9 @@ import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter_fastedgy/flutter_fastedgy.dart' show t;
 
 import '../icons.dart';
+import 'rich_text_clipboard.dart';
+import 'rich_text_feature.dart';
+import 'rich_text_paste.dart';
 
 /// One thing a formatting strip can do, said without drawing anything.
 ///
@@ -137,10 +140,73 @@ class RichTextAction {
       editorState.selection != null;
 }
 
+/// Whether there are words under the selection, rather than a bare caret.
+bool _hasSelection(EditorState editorState) {
+  final selection = editorState.selection;
+
+  return selection != null && !selection.isCollapsed;
+}
+
 /// What a formatting strip offers, in groups meant to be picked from — the
 /// same list whatever draws it, and whatever it is drawn on.
 class RichTextActions {
   RichTextActions._();
+
+  /// What the system offers over its own text fields, which it does not offer
+  /// here: the editor is a document, not a field the platform draws a callout
+  /// for, and it takes cut, copy and paste from the keyboard alone.
+  ///
+  /// Cut and copy stand down with nothing selected, where they would say
+  /// nothing; paste and select all are always there, which is the whole point
+  /// — pasting happens with a bare caret far more often than into a selection.
+  ///
+  /// Last on the strip: what a writer reaches for while writing is the marks,
+  /// and they belong under the thumb rather than pushed off the right edge.
+  ///
+  /// [features] because what is pasted comes back as the blocks this document
+  /// knows how to hold, rather than as the characters it was.
+  static List<RichTextAction> clipboard(RichTextFeatures features) => [
+    RichTextAction(
+      id: 'cut',
+      glyph: FastEdgyGlyph.cut,
+      getLabel: () => t('Cut'),
+      group: 6,
+      isActive: (_) => false,
+      isEnabled: _hasSelection,
+      run: (editorState) async => cutCommand.handler(editorState),
+    ),
+    RichTextAction(
+      id: 'copy',
+      glyph: FastEdgyGlyph.copy,
+      getLabel: () => t('Copy'),
+      group: 6,
+      isActive: (_) => false,
+      isEnabled: _hasSelection,
+      run: (editorState) async => copyCommand.handler(editorState),
+    ),
+    RichTextAction(
+      id: 'paste',
+      glyph: FastEdgyGlyph.paste,
+      getLabel: () => t('Paste'),
+      group: 6,
+      isActive: (_) => false,
+      // Live only when the platform says there is text to paste — see
+      // refreshRichTextClipboard for why it is asked that way.
+      isEnabled: (editorState) =>
+          RichTextAction._hasCaret(editorState) &&
+          richTextClipboardHasContent.value,
+      run: (editorState) => pasteRichText(editorState, features: features),
+    ),
+    RichTextAction(
+      id: 'select_all',
+      glyph: FastEdgyGlyph.selectAll,
+      getLabel: () => t('Select all'),
+      group: 6,
+      isActive: (_) => false,
+      isEnabled: RichTextAction._hasCaret,
+      run: (editorState) async => selectAllCommand.handler(editorState),
+    ),
+  ];
 
   /// Marks carried by the text itself.
   static List<RichTextAction> get marks => [

@@ -350,11 +350,16 @@ class RichTextPopoverLayout extends SingleChildLayoutDelegate {
 
   @override
   Offset getPositionForChild(Size size, Size childSize) {
-    final maxLeft = editor.right - childSize.width - _gap;
-    final left = selection.left.clamp(
-      editor.left + _gap,
-      maxLeft > editor.left ? maxLeft : editor.left,
-    );
+    // Where the card may start and still end inside the editor. Narrower than
+    // the card itself and there is no such place: it is pinned to the left gap
+    // and hangs off the other edge, which is what a strip of buttons wider than
+    // a phone does. Clamping between crossed bounds throws outright, and it
+    // took the whole editor down with it.
+    final leftMost = editor.left + _gap;
+    final rightMost = editor.right - childSize.width - _gap;
+    final left = rightMost <= leftMost
+        ? leftMost
+        : selection.left.clamp(leftMost, rightMost);
 
     // The toolbar sits right above the selection, and drops below it when the
     // selection is too close to the top to fit — the same test it makes itself.

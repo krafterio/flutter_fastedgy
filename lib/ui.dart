@@ -57,6 +57,7 @@ export 'src/ui/rich_text/rich_text_action.dart';
 export 'src/ui/rich_text/rich_text_action_bar.dart';
 export 'src/ui/rich_text/rich_text_blank.dart';
 export 'src/ui/rich_text/rich_text_blocks.dart';
+export 'src/ui/rich_text/rich_text_clipboard.dart';
 export 'src/ui/rich_text/rich_text_codec.dart';
 export 'src/ui/rich_text/rich_text_controls.dart';
 export 'src/ui/rich_text/rich_text_diff.dart';

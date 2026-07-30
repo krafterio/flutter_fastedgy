@@ -20,6 +20,10 @@ enum FastEdgyGlyph {
   /// The copy button in the instant after it was pressed.
   copied,
 
+  cut,
+  paste,
+  selectAll,
+
   /// The field holding a link's visible text.
   title,
 
@@ -105,6 +109,9 @@ const Map<FastEdgyGlyph, IconData> _material = {
   FastEdgyGlyph.check: Icons.check,
   FastEdgyGlyph.copy: Icons.copy,
   FastEdgyGlyph.copied: Icons.check,
+  FastEdgyGlyph.cut: Icons.content_cut,
+  FastEdgyGlyph.paste: Icons.content_paste,
+  FastEdgyGlyph.selectAll: Icons.select_all,
   FastEdgyGlyph.title: Icons.title,
   FastEdgyGlyph.link: Icons.link,
   FastEdgyGlyph.openExternal: Icons.open_in_new,

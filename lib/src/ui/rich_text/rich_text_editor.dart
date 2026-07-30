@@ -247,15 +247,46 @@ class RichTextEditorState extends State<RichTextEditor> {
     _watched?.selectionNotifier.removeListener(_revealCaret);
     _watched = widget.editorState..selectionNotifier.addListener(_revealCaret);
 
-    _edits = widget.resetWhenEmpty || _capped
-        ? widget.editorState.transactionStream.listen((_) {
-            if (widget.resetWhenEmpty) {
-              _resetIfEmpty();
-            }
+    _edits = widget.editorState.transactionStream.listen((_) {
+      _forgetUntouched();
 
-            _revealCaret();
-          })
-        : null;
+      if (widget.resetWhenEmpty) {
+        _resetIfEmpty();
+      }
+
+      _revealCaret();
+    });
+  }
+
+  /// Drops from the history what nobody did.
+  ///
+  /// A block may write into itself to be drawn — a table stored without its
+  /// column widths fills them in as it lays out — and that lands on the undo
+  /// stack like anything else. A document then opens with a live undo button
+  /// offering to take apart what was only just loaded.
+  ///
+  /// Told apart by the caret: nothing can be typed, pressed or pasted without
+  /// one, so a transaction that arrives while there is no selection is not the
+  /// writer's. Everything they do afterwards is theirs, and stays undoable.
+  ///
+  /// The caret is read now and the stack emptied a microtask later, because the
+  /// editor records the item *after* it has announced the transaction (see
+  /// `EditorState.apply`) and moves the caret after that again: waiting reads a
+  /// caret the transaction itself put there, and clearing now clears nothing.
+  void _forgetUntouched() {
+    if (widget.editorState.selection != null) {
+      return;
+    }
+
+    scheduleMicrotask(() {
+      if (!mounted) {
+        return;
+      }
+
+      widget.editorState.undoManager
+        ..undoStack.clear()
+        ..redoStack.clear();
+    });
   }
 
   /// Whether the field scrolls behind a window of its own.
@@ -466,6 +497,37 @@ class RichTextEditorState extends State<RichTextEditor> {
         : box.localToGlobal(Offset.zero) & box.size;
   }
 
+  /// Whether the strip is already up with nothing selected, which is what a
+  /// held press would otherwise be for.
+  ///
+  /// A docked strip usually is: it stays on the caret, so cut, copy and paste
+  /// are a thumb away without asking. A floating one never is — it hangs off
+  /// selected words and there are none — and a docked strip told to wait for a
+  /// selection is in the same position.
+  bool _stripCoversCaret(BuildContext context) {
+    if (!widget.toolbar || !RichTextToolbarTheme.of(context).isDocked) {
+      return false;
+    }
+
+    final visibility =
+        widget.toolbarVisibility ?? RichTextToolbarVisibility.caret;
+
+    return visibility != RichTextToolbarVisibility.selection;
+  }
+
+  /// What the strip offers, wherever it is raised from — the row over a
+  /// selection and the one a held press brings up on a bare caret are the same
+  /// strip, and there is only one place saying what is on it.
+  List<RichTextAction> get _actions => [
+    ...widget.actions ?? RichTextActions.standard,
+    ...widget.features.actions,
+    // Where there is no pointer to right-click with, the strip is the only
+    // place cut, copy and paste can be reached: the platform draws its callout
+    // for its own fields, and a document is not one. Last, behind everything
+    // the writing itself needs.
+    if (!hasHoverPointer) ...RichTextActions.clipboard(widget.features),
+  ];
+
   /// Puts the block list on the caret, however it was asked for.
   ///
   /// A frame late: what it hangs from is the caret's rectangle, and the caret
@@ -665,10 +727,7 @@ class RichTextEditorState extends State<RichTextEditor> {
     RichTextToolbarTheme toolbarTheme,
     Widget editor,
   ) {
-    final actions = [
-      ...widget.actions ?? RichTextActions.standard,
-      ...widget.features.actions,
-    ];
+    final actions = _actions;
     final themed = Theme(
       data: RichTextStyle.overlayTheme(context, theme),
       child: editor,
@@ -805,15 +864,16 @@ class RichTextEditorState extends State<RichTextEditor> {
       footer: _footer(toolbarTheme),
     );
 
-    // The menu a right-click gets is the package's; the one a held press gets
-    // is ours, and only where there is no pointer to right-click with.
+    // The menu a right-click gets is the package's; the strip a held press
+    // raises is ours, and only where there is no pointer to right-click with
+    // and no strip already standing over the caret.
     final page = widget.editable
         ? _underContent(
-            hasHoverPointer
+            hasHoverPointer || _stripCoversCaret(context)
                 ? editor
                 : RichTextTouchMenu(
                     editorState: widget.editorState,
-                    features: widget.features,
+                    actions: _actions,
                     child: editor,
                   ),
           )

@@ -3,44 +3,47 @@
  * MIT License (see LICENSE file).
  */
 
-import 'dart:async' show Timer, unawaited;
+import 'dart:async' show Timer;
 
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/gestures.dart' show kLongPressTimeout, kTouchSlop;
 import 'package:flutter/material.dart';
-import 'package:flutter_fastedgy/flutter_fastedgy.dart' show t;
 
-import 'rich_text_controls.dart';
-import 'rich_text_feature.dart';
-import 'rich_text_paste.dart';
+import '../theme/component_theme.dart';
+import 'rich_text_action.dart';
+import 'rich_text_action_bar.dart';
 import 'rich_text_popover.dart';
-import 'rich_text_theme.dart';
+import 'rich_text_toolbar_theme.dart';
 
 /// All the room four short labels may claim; the card takes the width of what
 /// it actually holds and wraps rather than run past this.
 const _menuWidth = 320.0;
 
-/// The menu a finger gets on a held press: cut, copy, paste, select all.
+/// The formatting strip, raised by a held press on a bare caret.
 ///
-/// The editor underneath offers those on a right-click and nowhere else, and it
-/// speaks to the keyboard itself rather than through the field the system draws
-/// its own callout for — so on a touch screen there was no way to paste at all.
+/// The same strip a selection raises, and deliberately: one row, one set of
+/// actions, one place to look. What a held press adds is the case a selection
+/// cannot reach — cut, copy and paste live on that strip, and pasting happens
+/// with nothing selected far more often than into a selection.
+///
+/// Only on a bare caret, for the same reason: with words selected the strip is
+/// already up, and raising a second one over it would be two of the same thing.
 ///
 /// Held press then release, as the platform does it: the press itself belongs
 /// to the editor, which puts the caret where the finger is and shows a
-/// magnifier while it travels. The menu is what the release leaves behind.
+/// magnifier while it travels. The strip is what the release leaves behind.
 class RichTextTouchMenu extends StatefulWidget {
   final EditorState editorState;
 
-  /// What the document can hold, so pasted markdown comes back as the blocks
-  /// this editor knows how to write.
-  final RichTextFeatures features;
+  /// The strip's own, handed over rather than built here: what it offers is
+  /// decided in one place (see RichTextEditor).
+  final List<RichTextAction> actions;
 
   final Widget child;
 
   const RichTextTouchMenu({
     required this.editorState,
-    required this.features,
+    required this.actions,
     required this.child,
     super.key,
   });
@@ -100,9 +103,14 @@ class _RichTextTouchMenuState extends State<RichTextTouchMenu> {
   void _show() {
     final selection = widget.editorState.selection;
 
-    if (!mounted || selection == null) {
+    // With words selected the strip is already up on its own.
+    if (!mounted || selection == null || !selection.isCollapsed) {
       return;
     }
+
+    // Read here and handed over: the strip is built into an overlay, where a
+    // theme scoped around the editor is nowhere to be found.
+    final theme = RichTextToolbarTheme.of(context);
 
     showRichTextPopover(
       context,
@@ -111,10 +119,13 @@ class _RichTextTouchMenuState extends State<RichTextTouchMenu> {
       width: _menuWidth,
       fitsContent: true,
       padding: const EdgeInsets.all(4),
-      builder: (context, dismiss) => _Actions(
-        editorState: widget.editorState,
-        features: widget.features,
-        onDone: dismiss,
+      builder: (context, dismiss) => ComponentTheme<RichTextToolbarTheme>(
+        data: theme,
+        child: RichTextActionBar(
+          editorState: widget.editorState,
+          actions: widget.actions,
+          onRun: dismiss,
+        ),
       ),
     );
   }
@@ -128,59 +139,4 @@ class _RichTextTouchMenuState extends State<RichTextTouchMenu> {
     onPointerCancel: _onUp,
     child: widget.child,
   );
-}
-
-class _Actions extends StatelessWidget {
-  final EditorState editorState;
-  final RichTextFeatures features;
-  final VoidCallback onDone;
-
-  const _Actions({
-    required this.editorState,
-    required this.features,
-    required this.onDone,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final selection = editorState.selection;
-    final selected = selection != null && !selection.isCollapsed;
-
-    return Wrap(
-      children: [
-        if (selected)
-          _action(context, t('Cut'), () => cutCommand.handler(editorState)),
-        if (selected)
-          _action(context, t('Copy'), () => copyCommand.handler(editorState)),
-        _action(
-          context,
-          t('Paste'),
-          () => unawaited(pasteRichText(editorState, features: features)),
-        ),
-        _action(
-          context,
-          t('Select all'),
-          () => selectAllCommand.handler(editorState),
-        ),
-      ],
-    );
-  }
-
-  Widget _action(BuildContext context, String label, VoidCallback run) {
-    final theme = RichTextTheme.of(context);
-
-    return RichTextControls.of(context).tappable(
-      context,
-      RichTextTapSpec(
-        onTap: () {
-          run();
-          onDone();
-        },
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          child: Text(label, style: TextStyle(color: theme.ink, fontSize: 14)),
-        ),
-      ),
-    );
-  }
 }

@@ -161,6 +161,17 @@ void main() {
       expect(shapeOf(state), ['One', 'attachment:12', 'Third', 'Four', 'Five']);
     });
 
+    test('ce qui arrive d\'ailleurs ne se défait pas', () async {
+      // Charger une note, ou recevoir la description que le serveur a réécrite
+      // en sauvant, n'est pas une frappe : le bouton annuler doit rester mort.
+      final state = stateOf([text('Avant')]);
+
+      await applyRichTextDiff(state, documentOf([text('Après')]));
+
+      expect(state.undoManager.undoStack.isEmpty, isTrue);
+      expect(shapeOf(state), ['Après']);
+    });
+
     test('a nested block only touches the child that changed', () async {
       final state = stateOf([
         bulletedListNode(
