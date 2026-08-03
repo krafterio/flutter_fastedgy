@@ -5,6 +5,7 @@
 
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_fastedgy/flutter_fastedgy.dart' show t;
 
 import 'rich_text_feature.dart';
 
@@ -21,6 +22,17 @@ typedef RichTextBlockActionsBuilder =
 ///
 /// Shared by the editor and the view so a block looks and behaves identically
 /// whether it is being written or merely read.
+/// What an empty heading reads as while the caret sits in it.
+///
+/// The package hangs `Heading 1` off it, in English, from a string written into
+/// its own source — the one label in the editor no application could reach.
+String _headingPlaceholder(Node node) =>
+    switch (node.attributes[HeadingBlockKeys.level]) {
+      1 => t('Heading 1'),
+      2 => t('Heading 2'),
+      _ => t('Heading 3'),
+    };
+
 Map<String, BlockComponentBuilder> richTextBlocks({
   required RichTextFeatures features,
   RichTextBlockActionsBuilder? blockActions,
@@ -65,7 +77,11 @@ Map<String, BlockComponentBuilder> richTextBlocks({
       padding: (_) => _listTypes.contains(type)
           ? listItemPadding
           : const EdgeInsets.symmetric(vertical: 3),
-      placeholderText: type == ParagraphBlockKeys.type ? placeholderText : null,
+      placeholderText: switch (type) {
+        ParagraphBlockKeys.type => placeholderText,
+        HeadingBlockKeys.type => _headingPlaceholder,
+        _ => null,
+      },
     );
     // Nothing hangs in a cell's margin: the table has handles of its own for
     // its rows and columns, and ours were landing on top of them — a cell has
