@@ -320,6 +320,14 @@ class RichTextDockedToolbar extends StatefulWidget {
   /// Which edge it sits on.
   final RichTextToolbarEdge edge;
 
+  /// Whether it stands over what scrolls.
+  ///
+  /// A page keeps the room for it at the foot of its content, so the words pass
+  /// behind it on the way there and it needs a surface of its own. A field with
+  /// a ceiling gives it a band nothing else is in, and there a surface of its
+  /// own covers the field's — its background, its border and its corners.
+  final bool overContent;
+
   /// The editor it is docked to.
   final Widget child;
 
@@ -336,6 +344,7 @@ class RichTextDockedToolbar extends StatefulWidget {
     this.visibility = RichTextToolbarVisibility.caret,
     this.slots = RichTextToolbarSlots.none,
     this.edge = RichTextToolbarEdge.bottom,
+    this.overContent = true,
     this.measured,
   });
 
@@ -434,29 +443,33 @@ class _RichTextDockedToolbarState extends State<RichTextDockedToolbar>
 
   bool get _atTop => widget.edge == RichTextToolbarEdge.top;
 
-  /// The surface with its rule on the side the words are on.
+  /// The surface the strip sits on, dressed for where it stands.
   ///
-  /// A docked strip carries one line telling it apart from what it sits beside,
-  /// and the theme draws it for a strip under them. Over them it belongs on the
-  /// other side.
+  /// Its rule and nothing else where nothing passes behind it: a field draws
+  /// its own background, its own border and its own corners, and a second
+  /// surface painted over the first covered all three — a rounded field read as
+  /// ending at the rule rather than around the buttons.
+  ///
+  /// The rule follows the words. A docked strip carries one line telling it
+  /// apart from them, and the theme draws it for a strip standing under them.
   BoxDecoration _surface(RichTextToolbarTheme theme) {
     final border = theme.surface.border;
+    final rule = _atTop && border is Border
+        ? Border(top: border.bottom, bottom: border.top)
+        : border;
 
-    if (!_atTop || border is! Border) {
-      return theme.surface;
-    }
-
-    return theme.surface.copyWith(
-      border: Border(top: border.bottom, bottom: border.top),
-    );
+    return widget.overContent
+        ? theme.surface.copyWith(border: rule)
+        : BoxDecoration(border: rule);
   }
 
-  /// The strip at the height the theme gives it, bands and system edge aside:
-  /// what the content owes it before anything has been measured.
+  /// The strip at the height it is drawn at, bands and system edge aside: what
+  /// the content owes it before anything has been measured.
   double get _declared {
     final theme = RichTextToolbarTheme.of(context);
+    final row = widget.overContent ? theme.height : theme.itemSize;
 
-    return theme.height + theme.padding.vertical;
+    return row + theme.padding.vertical;
   }
 
   /// Whether the strip is up, as the last build left it. Read by the measuring,
@@ -530,13 +543,13 @@ class _RichTextDockedToolbarState extends State<RichTextDockedToolbar>
                     decoration: _surface(theme),
                     child: widget.slots.around(
                       ComponentTheme<RichTextToolbarTheme>(
-                        // Its buttons and nothing more at the head of a field:
-                        // the row is taller than they are, which at the foot of
-                        // the screen reads as breathing room and under a rule
-                        // reads as a band of nothing.
-                        data: _atTop
-                            ? theme.copyWith(height: theme.itemSize)
-                            : theme,
+                        // Its buttons and nothing more where it stands in a
+                        // band of its own: the row is taller than they are,
+                        // which over a page reads as breathing room and inside
+                        // a field reads as a band of nothing.
+                        data: widget.overContent
+                            ? theme
+                            : theme.copyWith(height: theme.itemSize),
                         child: RichTextActionBar(
                           editorState: widget.editorState,
                           actions: widget.actions,

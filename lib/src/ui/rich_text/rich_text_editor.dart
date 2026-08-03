@@ -795,6 +795,7 @@ class RichTextEditorState extends State<RichTextEditor> {
         editorState: widget.editorState,
         measured: _stripHeight,
         edge: widget.toolbarEdge,
+        overContent: _reservesInContent(toolbarTheme),
         // The "/" first, and only here: a keyboard types the character, a thumb
         // has no key for it and would otherwise have no way to reach the list
         // of blocks at all. Its own group, so a rule sets it apart from the
@@ -1041,9 +1042,9 @@ class RichTextEditorState extends State<RichTextEditor> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Less the room the words keep at their head: under a strip they
-            // are already clear of what is above them, and the field's own
-            // padding read as a gap between the two.
+            // Less the room the words keep on that side: beside a strip they
+            // are already clear of what is past it, and the field's own padding
+            // read as a gap between the two.
             if (widget.toolbarEdge == RichTextToolbarEdge.top)
               SizedBox(height: max(0, reserved - widget.padding.top)),
             Flexible(
@@ -1060,7 +1061,7 @@ class RichTextEditorState extends State<RichTextEditor> {
               ),
             ),
             if (widget.toolbarEdge == RichTextToolbarEdge.bottom)
-              SizedBox(height: reserved),
+              SizedBox(height: max(0, reserved - widget.padding.bottom)),
           ],
         ),
       );

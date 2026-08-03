@@ -206,8 +206,17 @@ void main() {
       final strip = tester.getRect(find.byType(RichTextActionBar));
 
       // Le plafond est celui des mots : ce qu'on peut lire du champ ne change
-      // pas quand la barre se lève, c'est le champ qui grandit d'autant.
-      expect(field.height - before.height, closeTo(strip.height, 1));
+      // pas quand la barre se lève, c'est le champ qui grandit d'autant — moins
+      // la marge que les mots ne gardent plus de ce côté, la barre l'étant.
+      final surface = tester.getRect(find.byType(RichTextSurface).first);
+      final padding = tester
+          .widget<RichTextEditor>(find.byType(RichTextEditor))
+          .padding;
+
+      expect(
+        field.height - before.height,
+        closeTo(surface.height - padding.bottom, 1),
+      );
 
       // Le champ plafonné met ses blocs dans un scroll view, et une barre à
       // l'intérieur se posait au pied de tout ce qui est écrit : hors du champ,
