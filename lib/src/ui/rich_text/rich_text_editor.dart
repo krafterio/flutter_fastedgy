@@ -4,7 +4,6 @@
  */
 
 import 'dart:async';
-import 'dart:math' show max;
 
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/gestures.dart' show kTouchSlop;
@@ -14,7 +13,6 @@ import 'package:provider/provider.dart';
 
 import '../icons.dart';
 import '../interaction.dart';
-import '../theme/component_theme.dart';
 import 'rich_text_blank.dart';
 import 'rich_text_action.dart';
 import 'rich_text_action_bar.dart';
@@ -93,6 +91,18 @@ class RichTextEditor extends StatefulWidget {
   final Widget? header;
   final Widget? footer;
 
+  /// Standing at either side of the words, outside what scrolls them.
+  ///
+  /// A composer's own controls — an attachment to pick, a message to send. They
+  /// belong to the editor rather than beside it so that it is the whole width
+  /// of the field: a docked strip spans what the editor spans, and a field that
+  /// kept its controls outside had one boxed in between them.
+  ///
+  /// At the foot of the field, where a control that answers to what is written
+  /// stays put as more of it is.
+  final Widget? leading;
+  final Widget? trailing;
+
   /// Affordances in each block's left margin. None by default: they belong to
   /// a page, not to a field.
   final RichTextBlockActionsBuilder? blockActions;
@@ -111,6 +121,13 @@ class RichTextEditor extends StatefulWidget {
   /// strip on [RichTextToolbarVisibility.caret], which is what makes it survive
   /// its own block actions and its own undo.
   final RichTextToolbarVisibility? toolbarVisibility;
+
+  /// Room kept between a docked strip and the words, on top of the field's own
+  /// padding.
+  ///
+  /// Zero leaves them as close as the padding puts them, which is right where
+  /// the strip carries a rule of its own and wrong where it does not.
+  final double toolbarGap;
 
   /// Which edge a docked strip sits on.
   ///
@@ -177,11 +194,14 @@ class RichTextEditor extends StatefulWidget {
     this.textStyle,
     this.header,
     this.footer,
+    this.leading,
+    this.trailing,
     this.blockActions,
     this.toolbar = true,
     this.actions,
     this.toolbarVisibility,
     this.toolbarEdge = RichTextToolbarEdge.bottom,
+    this.toolbarGap = 0,
     this.toolbarSlots = RichTextToolbarSlots.none,
     this.slashMenu = true,
     this.menuItems,
@@ -823,15 +843,10 @@ class RichTextEditorState extends State<RichTextEditor> {
       );
     }
 
-    // Its buttons and nothing more, the way a docked strip stands in a field:
-    // a card hanging off two words is read as one row of controls, and the room
-    // the theme leaves around them at the foot of a screen reads as slack here.
-    final tight = toolbarTheme.copyWith(height: toolbarTheme.itemSize);
-
     return FloatingToolbar(
       items: const [],
-      style: RichTextStyle.toolbar(tight),
-      floatingToolbarHeight: tight.height,
+      style: RichTextStyle.toolbar(toolbarTheme),
+      floatingToolbarHeight: toolbarTheme.height,
       toolbarBuilder: (context, _, onDismiss, isMetricsChanged) =>
           ValueListenableBuilder<bool>(
             valueListenable: _contextMenuOpen,
@@ -840,18 +855,15 @@ class RichTextEditorState extends State<RichTextEditor> {
                 : placeRichTextToolbar(
                     context,
                     widget.editorState,
-                    ComponentTheme<RichTextToolbarTheme>(
-                      data: tight,
-                      child: widget.toolbarSlots.around(
-                        RichTextActionBar(
-                          editorState: widget.editorState,
-                          actions: actions,
-                          leading: widget.toolbarSlots.leading,
-                          trailing: widget.toolbarSlots.trailing,
-                        ),
+                    widget.toolbarSlots.around(
+                      RichTextActionBar(
+                        editorState: widget.editorState,
+                        actions: actions,
+                        leading: widget.toolbarSlots.leading,
+                        trailing: widget.toolbarSlots.trailing,
                       ),
                     ),
-                    theme: tight,
+                    theme: toolbarTheme,
                   ),
           ),
       editorState: widget.editorState,
@@ -876,8 +888,12 @@ class RichTextEditorState extends State<RichTextEditor> {
     final docked =
         _reservesInContent(toolbarTheme) &&
         widget.toolbarEdge == RichTextToolbarEdge.bottom;
+    // Inside the window rather than under it, for the reason [_header] gives.
+    final gap = widget.toolbarEdge == RichTextToolbarEdge.bottom
+        ? widget.toolbarGap
+        : 0.0;
 
-    if (under == null && !docked) {
+    if (under == null && !docked && gap == 0) {
       return footer == null
           ? null
           : KeyedSubtree(key: _pageEndKey, child: footer);
@@ -890,6 +906,7 @@ class RichTextEditorState extends State<RichTextEditor> {
         mainAxisSize: MainAxisSize.min,
         children: [
           ?footer,
+          if (gap > 0) SizedBox(height: gap),
           // Exactly what the strip stands in — its buttons, the bands the
           // application put around them, and the room the system asks for at
           // the bottom of the screen — so the last line can always be scrolled
@@ -919,9 +936,21 @@ class RichTextEditorState extends State<RichTextEditor> {
       (widget.scrollable || widget.maxHeight == null);
 
   /// The caller's header, over the room a strip docked at the head takes.
+  ///
+  /// [RichTextEditor.toolbarGap] is kept here rather than outside the window
+  /// the words scroll behind, and it has to be: outside, it pushes that window
+  /// down and the words are cut short of the strip. Inside, the cut is at the
+  /// strip's own edge and the gap is what stands between it and the first line
+  /// — until the words are scrolled up under it, which is where they belong.
   Widget? _header(RichTextToolbarTheme toolbarTheme) {
-    if (!_reservesInContent(toolbarTheme) ||
-        widget.toolbarEdge != RichTextToolbarEdge.top) {
+    final band =
+        _reservesInContent(toolbarTheme) &&
+        widget.toolbarEdge == RichTextToolbarEdge.top;
+    final gap = widget.toolbarEdge == RichTextToolbarEdge.top
+        ? widget.toolbarGap
+        : 0.0;
+
+    if (!band && gap == 0) {
       return widget.header;
     }
 
@@ -929,11 +958,13 @@ class RichTextEditorState extends State<RichTextEditor> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
-        ValueListenableBuilder<double>(
-          valueListenable: _stripHeight,
-          builder: (context, height, _) =>
-              SizedBox(height: height + toolbarTheme.contentGap),
-        ),
+        if (band)
+          ValueListenableBuilder<double>(
+            valueListenable: _stripHeight,
+            builder: (context, height, _) =>
+                SizedBox(height: height + toolbarTheme.contentGap),
+          ),
+        if (gap > 0) SizedBox(height: gap),
         ?widget.header,
       ],
     );
@@ -1032,11 +1063,11 @@ class RichTextEditorState extends State<RichTextEditor> {
   /// measured: it takes the height of what it holds wherever it is put.
   Widget _measured(Widget page) {
     if (!widget.editable) {
-      return IntrinsicHeight(child: page);
+      return IntrinsicHeight(child: _beside(page));
     }
 
     if (widget.scrollable) {
-      return page;
+      return _beside(page);
     }
 
     // The arrangement the package asks for when the document lays itself out as
@@ -1058,26 +1089,25 @@ class RichTextEditorState extends State<RichTextEditor> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Less the room the words keep on that side: beside a strip they
-            // are already clear of what is past it, and the field's own padding
-            // read as a gap between the two.
             if (widget.toolbarEdge == RichTextToolbarEdge.top)
-              SizedBox(height: max(0, reserved - widget.padding.top)),
+              SizedBox(height: reserved),
             Flexible(
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  minHeight: widget.minHeight ?? 0,
-                  maxHeight: maxHeight,
-                ),
-                child: SingleChildScrollView(
-                  key: _viewportKey,
-                  controller: scrollController.scrollController,
-                  child: IntrinsicHeight(child: page),
+              child: _beside(
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minHeight: widget.minHeight ?? 0,
+                    maxHeight: maxHeight,
+                  ),
+                  child: SingleChildScrollView(
+                    key: _viewportKey,
+                    controller: scrollController.scrollController,
+                    child: IntrinsicHeight(child: page),
+                  ),
                 ),
               ),
             ),
             if (widget.toolbarEdge == RichTextToolbarEdge.bottom)
-              SizedBox(height: max(0, reserved - widget.padding.bottom)),
+              SizedBox(height: reserved),
           ],
         ),
       );
@@ -1093,13 +1123,31 @@ class RichTextEditorState extends State<RichTextEditor> {
     );
 
     if (widget.minHeight case final minHeight?) {
-      return ConstrainedBox(
-        constraints: BoxConstraints(minHeight: minHeight),
-        child: measured,
+      return _beside(
+        ConstrainedBox(
+          constraints: BoxConstraints(minHeight: minHeight),
+          child: measured,
+        ),
       );
     }
 
-    return measured;
+    return _beside(measured);
+  }
+
+  /// The words with whatever the caller stood at their sides.
+  Widget _beside(Widget words) {
+    if (widget.leading == null && widget.trailing == null) {
+      return words;
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        ?widget.leading,
+        Expanded(child: words),
+        ?widget.trailing,
+      ],
+    );
   }
 }
 

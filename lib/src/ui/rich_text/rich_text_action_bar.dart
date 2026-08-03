@@ -10,7 +10,6 @@ import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/widgets.dart';
 
 import '../icons.dart';
-import '../theme/component_theme.dart';
 import 'rich_text_action.dart';
 import 'rich_text_clipboard.dart';
 import 'rich_text_controls.dart';
@@ -463,13 +462,12 @@ class _RichTextDockedToolbarState extends State<RichTextDockedToolbar>
         : BoxDecoration(border: rule);
   }
 
-  /// The strip at the height it is drawn at, bands and system edge aside: what
-  /// the content owes it before anything has been measured.
+  /// The strip at the height the theme gives it, bands and system edge aside:
+  /// what the content owes it before anything has been measured.
   double get _declared {
     final theme = RichTextToolbarTheme.of(context);
-    final row = widget.overContent ? theme.height : theme.itemSize;
 
-    return row + theme.padding.vertical;
+    return theme.height + theme.padding.vertical;
   }
 
   /// Whether the strip is up, as the last build left it. Read by the measuring,
@@ -528,34 +526,35 @@ class _RichTextDockedToolbarState extends State<RichTextDockedToolbar>
                   bottom: _atTop ? null : _overflow,
                   child: RichTextSurface(
                     key: _stripKey,
-                    padding: theme.padding.copyWith(
-                      // The surface reaches the edge, its buttons do not: pinned
-                      // with the keyboard down, the last strip of the screen
-                      // belongs to the system — on iOS the home indicator takes
-                      // the first tap there. Parked on the editor, or standing
-                      // over the words, there is no edge to leave alone.
-                      bottom:
-                          theme.padding.bottom +
-                          (!_atTop && _pinned && !widget.slots.holdsBottom
-                              ? system
-                              : 0),
-                    ),
+                    // Flush with the field's own edges where it stands in a
+                    // band of its own: the room the theme leaves at its sides
+                    // is for a card floating over a page, and inside a field it
+                    // read as the strip starting short of it.
+                    padding:
+                        (widget.overContent
+                                ? theme.padding
+                                : theme.padding.copyWith(left: 0, right: 0))
+                            .copyWith(
+                              // The surface reaches the edge, its buttons do not: pinned
+                              // with the keyboard down, the last strip of the screen
+                              // belongs to the system — on iOS the home indicator takes
+                              // the first tap there. Parked on the editor, or standing
+                              // over the words, there is no edge to leave alone.
+                              bottom:
+                                  theme.padding.bottom +
+                                  (!_atTop &&
+                                          _pinned &&
+                                          !widget.slots.holdsBottom
+                                      ? system
+                                      : 0),
+                            ),
                     decoration: _surface(theme),
                     child: widget.slots.around(
-                      ComponentTheme<RichTextToolbarTheme>(
-                        // Its buttons and nothing more where it stands in a
-                        // band of its own: the row is taller than they are,
-                        // which over a page reads as breathing room and inside
-                        // a field reads as a band of nothing.
-                        data: widget.overContent
-                            ? theme
-                            : theme.copyWith(height: theme.itemSize),
-                        child: RichTextActionBar(
-                          editorState: widget.editorState,
-                          actions: widget.actions,
-                          leading: widget.slots.leading,
-                          trailing: widget.slots.trailing,
-                        ),
+                      RichTextActionBar(
+                        editorState: widget.editorState,
+                        actions: widget.actions,
+                        leading: widget.slots.leading,
+                        trailing: widget.slots.trailing,
                       ),
                     ),
                   ),
