@@ -390,6 +390,61 @@ void main() {
     });
   });
 
+  group('ce que le paquet fait planter', () {
+    testWidgets('un déclencheur ne lit pas au-delà de sa ligne', (
+      tester,
+    ) async {
+      final state = stateOf('Mars');
+      await pump(
+        tester,
+        RichTextEditor(features: defaultRichTextFeatures, editorState: state),
+      );
+
+      // Le service de saisie applique ce qui est tapé sur un debounce, donc le
+      // curseur a pu bouger quand le déclencheur tourne. Il lisait la ligne
+      // jusqu'au curseur avec `substring`, qui lève au lieu de dire non.
+      state.selection = Selection.collapsed(Position(path: [0], offset: 12));
+
+      final trigger = tester
+          .widget<AppFlowyEditor>(find.byType(AppFlowyEditor))
+          .characterShortcutEvents
+          .firstWhere(
+            (event) => event.key.startsWith(formatAsteriskToBulletedList.key),
+          );
+
+      expect(await trigger.handler(state), isFalse);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('une page a toujours de quoi chercher sous un doigt', (
+      tester,
+    ) async {
+      final state = stateOf('Mars');
+      await pump(
+        tester,
+        SizedBox(
+          height: 300,
+          child: RichTextEditor(
+            features: defaultRichTextFeatures,
+            editorState: state,
+            scrollable: true,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // La recherche du bloc sous le doigt finit sur `clamp(premier, dernier)`,
+      // et une page ne dit rien de visible tant que sa liste n'a pas répondu :
+      // dernier valait -1, et clamp lève.
+      final range = tester
+          .state<RichTextEditorState>(find.byType(RichTextEditor))
+          .scrollController
+          .visibleRangeNotifier;
+
+      expect(range.value.$2, greaterThanOrEqualTo(0));
+    });
+  });
+
   group('ce que la frappe met en forme', () {
     testWidgets('un dièse reste un dièse', (tester) async {
       // Un « # » est un caractère qu'on écrit — un numéro, un mot-clé — et le

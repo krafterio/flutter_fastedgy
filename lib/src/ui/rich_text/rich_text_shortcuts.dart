@@ -6,6 +6,42 @@
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/widgets.dart' show KeyEventResult;
 
+/// [event] declined where the caret stands past the end of the line it is in.
+///
+/// A markdown trigger reads that line up to the caret to decide what it opens,
+/// and reads it with `substring`: an offset past the end throws a range error
+/// rather than being told no. The two are apart often enough to matter — the
+/// input service applies what was typed on a debounce, and the selection has
+/// moved by the time the trigger runs — and what comes of it is a crash on a
+/// keystroke, where declining would have written the character.
+CharacterShortcutEvent withinTheLine(CharacterShortcutEvent event) {
+  bool reaches(EditorState editorState) {
+    final selection = editorState.selection;
+
+    if (selection == null) {
+      return true;
+    }
+
+    final node = editorState.getNodeAtPath(selection.end.path);
+    final length = node?.delta?.toPlainText().length;
+
+    return length == null || selection.end.offset <= length;
+  }
+
+  return CharacterShortcutEvent(
+    key: '${event.key} - within the line',
+    character: event.character,
+    regExp: event.regExp,
+    handler: (editorState) async =>
+        reaches(editorState) && await event.handler(editorState),
+    handlerWithCharacter: event.handlerWithCharacter == null
+        ? null
+        : (editorState, character) async =>
+              reaches(editorState) &&
+              await event.handlerWithCharacter!(editorState, character),
+  );
+}
+
 /// What the package cannot do for a block holding no text of its own — a
 /// picture, a table, a divider.
 ///

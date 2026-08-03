@@ -276,6 +276,34 @@ class RichTextEditorState extends State<RichTextEditor> {
       shrinkWrap: !widget.scrollable,
     );
     _watchEdits();
+
+    if (widget.scrollable) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _seedVisibleRange());
+    }
+  }
+
+  /// Says the whole document is on screen until the list says otherwise.
+  ///
+  /// A tap is answered by searching the visible blocks for the one under it,
+  /// and the search ends on `clamp(first, last)` — where nothing is visible
+  /// yet, last is -1 and clamp throws rather than saying there is nothing
+  /// there. A page reports nothing visible until its list has laid out and
+  /// called back, which is exactly when somebody taps the page they just
+  /// opened.
+  ///
+  /// Once, and only where there is something to point at: the list overwrites
+  /// this the moment it knows, and it is the one that knows.
+  void _seedVisibleRange() {
+    if (!mounted) {
+      return;
+    }
+
+    final range = scrollController.visibleRangeNotifier;
+    final blocks = widget.editorState.document.root.children.length;
+
+    if (range.value.$2 < 0 && blocks > 0) {
+      range.value = (0, blocks - 1);
+    }
   }
 
   @override
@@ -477,9 +505,13 @@ class RichTextEditorState extends State<RichTextEditor> {
   /// punctuation nobody starts a sentence with; a heading is made from the
   /// strip or the "/" menu, where nothing is taken for anything.
   List<CharacterShortcutEvent> get _characterShortcuts => [
-    ...widget.features.characterShortcuts,
+    // A feature's own reads the line the same way — ours opens a code block on
+    // three backquotes through the very helper that throws (see
+    // [withinTheLine]).
+    ...widget.features.characterShortcuts.map(withinTheLine),
     ...standardCharacterShortcutEvents
         .where((event) => event != slashCommand && event != formatSignToHeading)
+        .map(withinTheLine)
         .map(widget.features.guard),
     if (widget.slashMenu) widget.features.guard(_slashCommand()),
   ];
