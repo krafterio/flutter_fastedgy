@@ -192,12 +192,32 @@ class _RichTextTouchCalloutState extends State<_RichTextTouchCallout> {
           label: action.isActive(widget.editorState)
               ? '${action.getLabel()} ✓'
               : action.getLabel(),
-          onPressed: () {
-            unawaited(action.run(widget.editorState));
-            widget.onDone();
-          },
+          onPressed: () => unawaited(_run(action)),
         ),
   ];
+
+  /// What a menu closes on: taking the words somewhere else, or bringing
+  /// something in. What is left behind is not what was selected, so a menu
+  /// standing on it would be standing on nothing.
+  static const _closing = {'cut', 'copy', 'paste'};
+
+  /// Runs one, and leaves the menu up unless there is nothing left for it.
+  ///
+  /// A mark is rarely the only one wanted, and reopening a menu between bold
+  /// and italic is two gestures for one thought.
+  ///
+  /// Left exactly as it stands, ticks included: a selection toolbar turns back
+  /// to its first page the moment its labels change — both platforms do it in
+  /// `didUpdateWidget`, and the page they are on is theirs to know. Adding the
+  /// tick would take the panel out from under the finger that had just found
+  /// it, so what it says is what was true when it opened.
+  Future<void> _run(RichTextAction action) async {
+    await action.run(widget.editorState);
+
+    if (_closing.contains(action.id)) {
+      widget.onDone();
+    }
+  }
 
   /// Where the selection stands *now*.
   ///

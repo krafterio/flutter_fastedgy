@@ -328,6 +328,11 @@ void main() {
         await tester.tap(find.text('Bold'));
         await tester.pumpAndSettle();
 
+        expect(
+          state.getNodeAtPath([0])?.delta?.first.attributes?['bold'],
+          isTrue,
+        );
+
         state.selection = Selection.single(
           path: [0],
           startOffset: 0,
@@ -335,8 +340,6 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        // Un menu de libellés ne peut rien laisser d'enfoncé : ce qui est posé
-        // le dit d'une coche.
         expect(find.text('Bold ✓'), findsOneWidget);
       } finally {
         debugDefaultTargetPlatformOverride = null;
