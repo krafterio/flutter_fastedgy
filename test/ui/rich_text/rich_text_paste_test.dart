@@ -184,20 +184,30 @@ void main() {
   group('le menu du presse-papier', () {
     tearDown(() => AppFlowyClipboard.mockSetData(null));
 
-    Future<EditorState> pump(WidgetTester tester) async {
+    Future<EditorState> pump(WidgetTester tester, {bool? docked}) async {
       final state = EditorState(
         document: Document.blank()
           ..insert([0], [paragraphNode(delta: Delta()..insert('Bonjour'))]),
       );
       addTearDown(state.dispose);
 
+      final editor = RichTextEditor(
+        features: defaultRichTextFeatures,
+        editorState: state,
+      );
+
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
-            body: RichTextEditor(
-              features: defaultRichTextFeatures,
-              editorState: state,
-            ),
+            body: docked == null
+                ? editor
+                : ComponentTheme<RichTextToolbarTheme>(
+                    data: RichTextToolbarTheme.from(
+                      RichTextTheme.fallback,
+                      docked: docked,
+                    ),
+                    child: editor,
+                  ),
           ),
         ),
       );
@@ -288,6 +298,46 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(find.byType(AdaptiveTextSelectionToolbar), findsNothing);
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+
+    testWidgets('le formatage passe dans le menu, coché quand il est posé', (
+      tester,
+    ) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+
+      try {
+        clipboardHolds(tester, something: true);
+
+        final state = await pump(tester, docked: false);
+
+        state.selection = Selection.single(
+          path: [0],
+          startOffset: 0,
+          endOffset: 7,
+        );
+        await tester.pumpAndSettle();
+
+        // Sous un doigt et sans barre ancrée, il n'y a plus de carte à nous
+        // à côté du menu : ce qu'elle offrait, le menu le porte.
+        expect(find.byType(RichTextActionBar), findsNothing);
+        expect(find.text('Bold'), findsOneWidget);
+
+        await tester.tap(find.text('Bold'));
+        await tester.pumpAndSettle();
+
+        state.selection = Selection.single(
+          path: [0],
+          startOffset: 0,
+          endOffset: 7,
+        );
+        await tester.pumpAndSettle();
+
+        // Un menu de libellés ne peut rien laisser d'enfoncé : ce qui est posé
+        // le dit d'une coche.
+        expect(find.text('Bold ✓'), findsOneWidget);
       } finally {
         debugDefaultTargetPlatformOverride = null;
       }

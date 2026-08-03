@@ -14,6 +14,7 @@ import 'package:provider/provider.dart';
 
 import '../icons.dart';
 import '../interaction.dart';
+import '../theme/component_theme.dart';
 import 'rich_text_blank.dart';
 import 'rich_text_action.dart';
 import 'rich_text_action_bar.dart';
@@ -822,10 +823,15 @@ class RichTextEditorState extends State<RichTextEditor> {
       );
     }
 
+    // Its buttons and nothing more, the way a docked strip stands in a field:
+    // a card hanging off two words is read as one row of controls, and the room
+    // the theme leaves around them at the foot of a screen reads as slack here.
+    final tight = toolbarTheme.copyWith(height: toolbarTheme.itemSize);
+
     return FloatingToolbar(
       items: const [],
-      style: RichTextStyle.toolbar(toolbarTheme),
-      floatingToolbarHeight: toolbarTheme.height,
+      style: RichTextStyle.toolbar(tight),
+      floatingToolbarHeight: tight.height,
       toolbarBuilder: (context, _, onDismiss, isMetricsChanged) =>
           ValueListenableBuilder<bool>(
             valueListenable: _contextMenuOpen,
@@ -834,15 +840,18 @@ class RichTextEditorState extends State<RichTextEditor> {
                 : placeRichTextToolbar(
                     context,
                     widget.editorState,
-                    widget.toolbarSlots.around(
-                      RichTextActionBar(
-                        editorState: widget.editorState,
-                        actions: actions,
-                        leading: widget.toolbarSlots.leading,
-                        trailing: widget.toolbarSlots.trailing,
+                    ComponentTheme<RichTextToolbarTheme>(
+                      data: tight,
+                      child: widget.toolbarSlots.around(
+                        RichTextActionBar(
+                          editorState: widget.editorState,
+                          actions: actions,
+                          leading: widget.toolbarSlots.leading,
+                          trailing: widget.toolbarSlots.trailing,
+                        ),
                       ),
                     ),
-                    theme: toolbarTheme,
+                    theme: tight,
                   ),
           ),
       editorState: widget.editorState,
@@ -991,18 +1000,25 @@ class RichTextEditorState extends State<RichTextEditor> {
     // the scroll notifications rising past it. Mounted under the scroll view of
     // a capped field, none of them ever reached it — the menu went on the first
     // scroll and never came back.
+    // What a thumb reaches for over a selection, and where a floating strip
+    // would have been: the menu the platform draws takes the formatting on as
+    // items of its own rather than a card of ours hanging beside it. Two
+    // surfaces over the same words is one of them covering the other, and the
+    // words are what is being aimed at.
+    final inMenu = widget.toolbar && !hasHoverPointer && !toolbarTheme.isDocked;
     final body = widget.editable && !hasHoverPointer
         ? RichTextTouchMenu(
             editorState: widget.editorState,
             scrollController: scrollController,
             features: widget.features,
+            actions: inMenu ? _actions : const [],
             reserved: _stripHeight,
             edge: widget.toolbarEdge,
             child: _measured(page),
           )
         : _measured(page);
 
-    return widget.editable && widget.toolbar
+    return widget.editable && widget.toolbar && !inMenu
         ? _toolbar(context, theme, toolbarTheme, body)
         : body;
   }

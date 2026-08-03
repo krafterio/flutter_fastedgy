@@ -37,6 +37,10 @@ class RichTextTouchMenu extends StatelessWidget {
   /// What a paste is folded back into, which the document decides.
   final RichTextFeatures features;
 
+  /// Formatting to offer alongside the clipboard, for a field that draws no
+  /// strip of its own — see [_RichTextTouchCalloutState._items].
+  final List<RichTextAction> actions;
+
   /// How much room the formatting strip is taking, and which edge it took it
   /// on.
   ///
@@ -53,6 +57,7 @@ class RichTextTouchMenu extends StatelessWidget {
     required this.features,
     required this.child,
     super.key,
+    this.actions = const [],
     this.reserved,
     this.edge = RichTextToolbarEdge.bottom,
   });
@@ -66,6 +71,7 @@ class RichTextTouchMenu extends StatelessWidget {
       toolbarBuilder: (context, anchor, close) => _RichTextTouchCallout(
         editorState: editorState,
         features: features,
+        actions: actions,
         anchor: anchor,
         reserved: reserved,
         edge: edge,
@@ -86,6 +92,9 @@ class _RichTextTouchCallout extends StatefulWidget {
 
   final RichTextFeatures features;
 
+  /// Formatting offered alongside the clipboard.
+  final List<RichTextAction> actions;
+
   /// The top of the selection, where the toolbar points — as it was when the
   /// package raised this. Read again on every build (see [_RichTextTouchCalloutState._anchor]).
   final Offset anchor;
@@ -99,6 +108,7 @@ class _RichTextTouchCallout extends StatefulWidget {
   const _RichTextTouchCallout({
     required this.editorState,
     required this.features,
+    required this.actions,
     required this.anchor,
     required this.onDone,
     required this.edge,
@@ -157,6 +167,38 @@ class _RichTextTouchCalloutState extends State<_RichTextTouchCallout> {
     });
   }
 
+  /// What the menu offers: the clipboard first, where the platform's own puts
+  /// it, then whatever formatting the field handed over.
+  ///
+  /// One list and no pages of our own: the toolbar drawn from it pushes what it
+  /// cannot fit onto a second panel behind an arrow, which is where a phone
+  /// keeps the rest of a selection menu anyway.
+  ///
+  /// A tick on what is already applied. It is the only thing a menu of labels
+  /// can say about state — there is no button to leave pressed — and it is said
+  /// where it does not move the label's first letter, so a column of them still
+  /// reads down its left edge.
+  List<ContextMenuButtonItem> _items() => [
+    for (final action in [
+      ...RichTextActions.clipboard(widget.features),
+      ...widget.actions,
+    ])
+      if (action.isEnabled(widget.editorState))
+        ContextMenuButtonItem(
+          type: _types[action.id] ?? ContextMenuButtonType.custom,
+          // The application's wording rather than the platform's: the rest of
+          // the editor speaks in it, and it is translated wherever the toolbar
+          // is not.
+          label: action.isActive(widget.editorState)
+              ? '${action.getLabel()} ✓'
+              : action.getLabel(),
+          onPressed: () {
+            unawaited(action.run(widget.editorState));
+            widget.onDone();
+          },
+        ),
+  ];
+
   /// Where the selection stands *now*.
   ///
   /// The package anchors this once, on the frame it raises it, and the words
@@ -208,21 +250,7 @@ class _RichTextTouchCalloutState extends State<_RichTextTouchCallout> {
     return ValueListenableBuilder<bool>(
       valueListenable: richTextClipboardHasContent,
       builder: (context, _, _) {
-        final items = <ContextMenuButtonItem>[
-          for (final action in RichTextActions.clipboard(widget.features))
-            if (action.isEnabled(widget.editorState))
-              ContextMenuButtonItem(
-                type: _types[action.id] ?? ContextMenuButtonType.custom,
-                // The application's wording rather than the platform's: the
-                // rest of the editor speaks in it, and it is translated
-                // wherever the toolbar is not.
-                label: action.getLabel(),
-                onPressed: () {
-                  unawaited(action.run(widget.editorState));
-                  widget.onDone();
-                },
-              ),
-        ];
+        final items = _items();
 
         // Nothing to offer is nothing to draw, rather than a bar hanging off
         // the words with one empty row in it.
