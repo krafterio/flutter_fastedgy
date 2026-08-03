@@ -154,14 +154,15 @@ class RichTextActions {
 
   /// What the system offers over its own text fields, which it does not offer
   /// here: the editor is a document, not a field the platform draws a callout
-  /// for, and it takes cut, copy and paste from the keyboard alone.
+  /// for, and the package wires a menu on the desktop side alone.
+  ///
+  /// Not for the formatting strip, which offers formatting: these are drawn
+  /// where the platform draws them — the selection toolbar a held press raises
+  /// (see `RichTextTouchMenu`), the menu a right-click opens.
   ///
   /// Cut and copy stand down with nothing selected, where they would say
-  /// nothing; paste and select all are always there, which is the whole point
-  /// — pasting happens with a bare caret far more often than into a selection.
-  ///
-  /// Last on the strip: what a writer reaches for while writing is the marks,
-  /// and they belong under the thumb rather than pushed off the right edge.
+  /// nothing; paste stands down with an empty clipboard, and select all is
+  /// there as long as there is a caret to select from.
   ///
   /// [features] because what is pasted comes back as the blocks this document
   /// knows how to hold, rather than as the characters it was.
@@ -312,12 +313,16 @@ class RichTextActions {
   ];
 
   /// The two ways back.
+  ///
+  /// At the head of the strip rather than its tail: they are what a writer
+  /// reaches for the instant something goes wrong, and a strip that scrolls
+  /// would have put them where nobody can see them until they scroll to look.
   static List<RichTextAction> get history => [
     RichTextAction(
       id: 'undo',
       glyph: FastEdgyGlyph.undo,
       getLabel: () => t('Undo'),
-      group: 5,
+      group: 0,
       isActive: (_) => false,
       isEnabled: (editorState) => editorState.undoManager.undoStack.isNonEmpty,
       run: (editorState) async => editorState.undoManager.undo(),
@@ -326,7 +331,7 @@ class RichTextActions {
       id: 'redo',
       glyph: FastEdgyGlyph.redo,
       getLabel: () => t('Redo'),
-      group: 5,
+      group: 0,
       isActive: (_) => false,
       isEnabled: (editorState) => editorState.undoManager.redoStack.isNonEmpty,
       run: (editorState) async => editorState.undoManager.redo(),
@@ -335,10 +340,10 @@ class RichTextActions {
 
   /// What a strip offers unless it is told otherwise.
   static List<RichTextAction> get standard => [
+    ...history,
     ...marks,
     ...lists,
     ...blockTypes,
     ...insert,
-    ...history,
   ];
 }
