@@ -20,9 +20,9 @@ import 'mention_source.dart';
 const _width = 300.0;
 const _maxHeight = 260.0;
 
-/// What a row is written at, from the text of the editor it was opened from: a
-/// page offers its suggestions at a page's size, a field at a field's, and
-/// neither has to say so.
+/// What a row is written at: a field's text, wherever the list was opened from.
+/// A menu is chrome rather than content, and it reads at the size the rest of
+/// the application's menus do.
 TextStyle menuLabel(TextStyle text) =>
     text.copyWith(fontWeight: FontWeight.w500, height: 1.3);
 
@@ -95,7 +95,9 @@ void showMentionMenu(
         ),
         child: _MentionMenu(
           controller: controller,
-          textStyle: editorState.editorStyle.textStyleConfiguration.text,
+          // A field's text, for the reason the "/" list uses it: a menu reads
+          // at the size the rest of the application's menus do.
+          textStyle: RichTextTheme.of(context).fieldText,
         ),
       ),
     ),

@@ -333,7 +333,11 @@ void showRichTextSlashMenu(
         child: _SlashMenu(
           controller: controller,
           editorState: editorState,
-          style: editorState.editorStyle.textStyleConfiguration.text,
+          // A field's text, never the document's: this is a menu, and a menu
+          // reads the size the rest of the application's do. Taken from what it
+          // is being written into, a list opened on a page came up in a page's
+          // type — a card of headlines beside an application of labels.
+          style: RichTextTheme.of(context).fieldText,
         ),
       ),
     ),
