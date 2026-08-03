@@ -3,11 +3,13 @@
  * MIT License (see LICENSE file).
  */
 
+import '../../rich_text_action.dart';
 import '../../rich_text_feature.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_fastedgy/flutter_fastedgy.dart' show t;
 
+import '../../../icons.dart';
 import 'image_component.dart';
 import 'image_markdown.dart';
 import 'image_menu.dart';
@@ -55,6 +57,49 @@ class ImageFeature extends RichTextFeature {
 
   @override
   Set<String> get replacesMenuItems => const {'Image'};
+
+  /// Beside the blocks a button already turns the line into, because a picture
+  /// is the one thing on the "/" menu somebody looks for on the strip: it is
+  /// reached far more often than a rule, and on a phone the menu costs a
+  /// character typed and a list read.
+  @override
+  List<RichTextAction> get actions => [
+    RichTextAction(
+      id: 'image',
+      glyph: FastEdgyGlyph.image,
+      getLabel: () => t('Image'),
+      group: 3,
+      isActive: (_) => false,
+      isEnabled: (editorState) => editorState.selection != null,
+      run: (editorState) async {
+        final selection = editorState.selection;
+
+        if (selection == null) {
+          return;
+        }
+
+        // The block's own context, and not the one the strip was drawn with:
+        // the card opens in the root overlay either way, and this one is sure
+        // to be under the editor's themes.
+        final context = editorState
+            .getNodeAtPath(selection.start.path)
+            ?.key
+            .currentContext;
+
+        if (context == null || !context.mounted) {
+          return;
+        }
+
+        showImageEditor(
+          context,
+          editorState,
+          selection,
+          store: store,
+          pickFile: pickFile,
+        );
+      },
+    ),
+  ];
 
   @override
   List<SelectionMenuItem> get menuItems => [

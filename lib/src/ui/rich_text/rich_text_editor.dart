@@ -541,10 +541,23 @@ class RichTextEditorState extends State<RichTextEditor> {
   /// The strip offers formatting and nothing else: cut, copy and paste belong
   /// where the platform puts them — the callout a held press raises, the menu a
   /// right-click opens — not on a row somebody is aiming at to write in bold.
-  List<RichTextAction> get _actions => [
-    ...widget.actions ?? RichTextActions.standard,
-    ...widget.features.actions,
-  ];
+  ///
+  /// A feature's own actions land in the group they declare rather than piling
+  /// up past the end of the strip: a picture belongs beside the blocks a button
+  /// already makes, not behind the rule that closes them.
+  List<RichTextAction> get _actions {
+    final actions = [...widget.actions ?? RichTextActions.standard];
+
+    for (final action in widget.features.actions) {
+      final after = actions.lastIndexWhere(
+        (other) => other.group <= action.group,
+      );
+
+      actions.insert(after + 1, action);
+    }
+
+    return actions;
+  }
 
   /// Puts the block list on the caret, however it was asked for.
   ///

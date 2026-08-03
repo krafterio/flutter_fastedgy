@@ -103,6 +103,49 @@ void main() {
     });
   });
 
+  group('ce qu\'une feature ajoute à la barre', () {
+    test('image n\'est offert que là où la feature est montée', () {
+      expect(
+        const RichTextFeatures([
+          ImageFeature(),
+        ]).actions.map((action) => action.id),
+        contains('image'),
+      );
+      expect(const RichTextFeatures([ParagraphFeature()]).actions, isEmpty);
+    });
+
+    testWidgets('et se range après la citation, avant la règle', (
+      tester,
+    ) async {
+      final state = EditorState(
+        document: Document.blank()
+          ..insert([0], [paragraphNode(delta: Delta()..insert('Mars'))]),
+      );
+      addTearDown(state.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: RichTextEditor(
+              features: defaultRichTextFeatures,
+              editorState: state,
+              scrollable: true,
+            ),
+          ),
+        ),
+      );
+
+      state.selection = Selection.collapsed(Position(path: [0], offset: 4));
+      await tester.pumpAndSettle();
+
+      double xOf(FastEdgyGlyph glyph) =>
+          tester.getTopLeft(find.byIcon(FastEdgyIcons.material[glyph])).dx;
+
+      expect(xOf(FastEdgyGlyph.quote), lessThan(xOf(FastEdgyGlyph.image)));
+      expect(xOf(FastEdgyGlyph.image), lessThan(xOf(FastEdgyGlyph.rule)));
+    });
+  });
+
   group('ce que dessine la barre', () {
     Future<void> pump(WidgetTester tester, EditorState state) =>
         tester.pumpWidget(
