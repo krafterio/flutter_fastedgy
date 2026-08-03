@@ -49,21 +49,18 @@ class RefreshTokenLock {
   /// Whether a redirect/logout is in progress
   bool get isRedirecting => _isRedirecting;
 
+  bool _isAborted(_QueueItem item) =>
+      item.cancelToken != null && item.cancelToken!.isCancelled;
+
   /// Process the queue after refresh completes
   /// Resolves or rejects all pending requests
+  ///
+  /// Aborted requests are settled too (with false): dropping them without
+  /// completing would leave their caller awaiting a future nobody will ever
+  /// complete, and the interceptor chain pending for the life of the app.
   void _processQueue([Object? error]) {
-    final activeQueue = _failedQueue
-        .where(
-          (item) => item.cancelToken == null || !item.cancelToken!.isCancelled,
-        )
-        .toList();
-
-    for (final item in activeQueue) {
-      if (error != null) {
-        item.completer.complete(false);
-      } else {
-        item.completer.complete(true);
-      }
+    for (final item in _failedQueue) {
+      item.completer.complete(error == null && !_isAborted(item));
     }
 
     _failedQueue.clear();
@@ -72,9 +69,12 @@ class RefreshTokenLock {
   /// Clean up aborted requests from the queue
   void _cleanupAbortedRequests() {
     if (_failedQueue.isNotEmpty) {
-      _failedQueue.removeWhere(
-        (item) => item.cancelToken != null && item.cancelToken!.isCancelled,
-      );
+      final aborted = _failedQueue.where(_isAborted).toList();
+      _failedQueue.removeWhere(_isAborted);
+
+      for (final item in aborted) {
+        item.completer.complete(false);
+      }
     }
   }
 

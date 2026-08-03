@@ -162,16 +162,13 @@ class DefaultAuthProvider<TUser> implements AuthProvider<TUser> {
 
   // Single-flight refresh shared across callers, so concurrent reconnects can't
   // trigger two refreshes at once (which would rotate the refresh token and race).
-  Future<bool>? _validationRefresh;
+  Future<bool>? _pendingRefresh;
 
   @override
   Future<String?> getValidatedAccessToken() async {
     if (await _tokenStorage.isTokenExpired() &&
         await _tokenStorage.canRefreshToken()) {
-      _validationRefresh ??= refreshToken().whenComplete(
-        () => _validationRefresh = null,
-      );
-      await _validationRefresh;
+      await refreshToken();
     }
     return getAccessToken();
   }
@@ -181,8 +178,22 @@ class DefaultAuthProvider<TUser> implements AuthProvider<TUser> {
     return _tokenStorage.getRefreshToken();
   }
 
+  /// Refresh the access token, sharing a single in-flight call across every
+  /// caller: the HTTP path (RefreshTokenLock) and the direct token reads
+  /// ([getValidatedAccessToken], used by WebSocket handshakes) both land here.
+  /// On wake-up they fire together, and without this the same refresh token
+  /// would be spent by two concurrent `/auth/refresh` calls.
+  ///
+  /// Subclasses override [performRefreshToken], never this method.
   @override
-  Future<bool> refreshToken() async {
+  Future<bool> refreshToken() {
+    return _pendingRefresh ??= performRefreshToken().whenComplete(
+      () => _pendingRefresh = null,
+    );
+  }
+
+  /// Actual refresh call, without the single-flight guard.
+  Future<bool> performRefreshToken() async {
     final refreshToken = await _tokenStorage.getRefreshToken();
     if (refreshToken == null) {
       _logger.warning('No refresh token available');
