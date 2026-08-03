@@ -80,6 +80,8 @@ enum FastEdgyGlyph {
   strikethrough,
   heading1,
   heading2,
+  heading3,
+  table,
   quote,
   bulletedList,
   numberedList,
@@ -103,6 +105,8 @@ const Map<FastEdgyGlyph, IconData> _material = {
   // heading at all. An application with its own set draws the two apart.
   FastEdgyGlyph.heading1: Icons.title,
   FastEdgyGlyph.heading2: Icons.format_size,
+  FastEdgyGlyph.heading3: Icons.text_fields,
+  FastEdgyGlyph.table: Icons.table_chart_outlined,
   FastEdgyGlyph.quote: Icons.format_quote,
   FastEdgyGlyph.bulletedList: Icons.format_list_bulleted,
   FastEdgyGlyph.numberedList: Icons.format_list_numbered,

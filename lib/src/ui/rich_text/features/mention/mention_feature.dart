@@ -45,7 +45,8 @@ class MentionFeature extends RichTextFeature {
   ///
   /// A document wanting either takes the standard features less this one and
   /// adds its own — `standardRichTextFeatures.without` this feature, `.and` a
-  /// configured one — which puts it back at the end, where it has to be.
+  /// configured one. Where that leaves it in the list no longer matters: its
+  /// "/" entries are placed by [menuGroup].
   const MentionFeature({this.sources, this.options = MentionOptions.none});
 
   final MentionSources? sources;
@@ -79,6 +80,11 @@ class MentionFeature extends RichTextFeature {
 
   /// A mention is an inline object in the editor and an ordinary link on the
   /// wire — markdown has no inline objects, and the field is read by the agent.
+  /// Under the blocks, always: a mention is not one, and a set composed with a
+  /// feature added late would otherwise show that one under them.
+  @override
+  int get menuGroup => 1;
+
   @override
   Document beforeMarkdown(Document document) => mentionsAsLinks(document);
 

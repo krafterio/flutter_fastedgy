@@ -26,6 +26,15 @@ abstract class RichTextFeature {
   /// What it adds to the "/" menu.
   List<SelectionMenuItem> get menuItems => const [];
 
+  /// Where those entries sit among the other features', lowest first.
+  ///
+  /// A block is something the document holds, and they come in the order the
+  /// set was composed in. A mention points at something outside it, and belongs
+  /// under them however the set was composed — an application binding a feature
+  /// late (a picture that needs the record to store it against) appends it, and
+  /// it would otherwise land past the mentions.
+  int get menuGroup => 0;
+
   /// Entries of the package's own "/" menu this feature stands in for, by the
   /// label the package ships ('Image'). Without this the two would sit side by
   /// side, one of them opening the block we replaced.
@@ -128,8 +137,25 @@ class RichTextFeatures {
   };
 
   List<SelectionMenuItem> get menuItems => [
-    for (final feature in features) ...feature.menuItems,
+    for (final feature in _byMenuGroup) ...feature.menuItems,
   ];
+
+  /// The features in the order their "/" entries are offered in: by group, and
+  /// within one by the order they were declared in.
+  ///
+  /// Sorted on the position rather than with `sort`, which Dart does not
+  /// promise to keep stable — two features of the same group could then swap
+  /// places from one call to the next.
+  List<RichTextFeature> get _byMenuGroup {
+    final ordered = features.indexed.toList()
+      ..sort((a, b) {
+        final byGroup = a.$2.menuGroup.compareTo(b.$2.menuGroup);
+
+        return byGroup != 0 ? byGroup : a.$1.compareTo(b.$1);
+      });
+
+    return [for (final (_, feature) in ordered) feature];
+  }
 
   Set<String> get replacedMenuItems => {
     for (final feature in features) ...feature.replacesMenuItems,

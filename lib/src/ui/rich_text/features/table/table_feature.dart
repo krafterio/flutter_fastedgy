@@ -3,9 +3,12 @@
  * MIT License (see LICENSE file).
  */
 
+import '../../rich_text_action.dart';
 import '../../rich_text_feature.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
+import 'package:flutter_fastedgy/flutter_fastedgy.dart' show t;
 
+import '../../../icons.dart';
 import '../../rich_text_theme.dart';
 import 'table_component.dart';
 import 'table_handle.dart';
@@ -38,6 +41,55 @@ class TableFeature extends RichTextFeature {
       menuBuilder: tableActionHandle,
     ),
   };
+
+  /// Beside the blocks a button already makes: a table is reached about as
+  /// often as a picture, and the "/" menu costs a character typed and a list
+  /// read on a phone.
+  @override
+  List<RichTextAction> get actions => [
+    RichTextAction(
+      id: 'table',
+      glyph: FastEdgyGlyph.table,
+      getLabel: () => t('Table'),
+      group: 3,
+      isActive: (_) => false,
+      // Only on a line of its own: a table is not something a paragraph turns
+      // into, it is something written between two of them.
+      isEnabled: (editorState) => editorState.selection?.isCollapsed ?? false,
+      run: (editorState) async {
+        final selection = editorState.selection;
+        final node = selection == null
+            ? null
+            : editorState.getNodeAtPath(selection.end.path);
+
+        if (selection == null || node == null || !selection.isCollapsed) {
+          return;
+        }
+
+        final table = TableNode.fromList([
+          ['', ''],
+          ['', ''],
+        ]);
+        final transaction = editorState.transaction;
+        // An empty line is where it goes, rather than something to keep above
+        // it — which is what the "/" menu leaves behind on that line.
+        final blank = node.delta?.isEmpty ?? false;
+        final at = blank ? selection.end.path : selection.end.path.next;
+
+        transaction.insertNode(at, table.node);
+
+        if (blank) {
+          transaction.deleteNode(node);
+        }
+
+        transaction.afterSelection = Selection.collapsed(
+          Position(path: at + [0, 0]),
+        );
+
+        await editorState.apply(transaction);
+      },
+    ),
+  ];
 
   @override
   List<NodeParser> get markdownEncoders => const [WholeTableNodeParser()];

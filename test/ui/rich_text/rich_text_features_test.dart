@@ -26,6 +26,30 @@ void main() {
     return state;
   }
 
+  group('l\'ordre du menu « / »', () {
+    test('les mentions passent sous les blocs, quoi qu\'on compose', () {
+      // Une feature liée tard — une image qui a besoin du record où la stocker
+      // — s'ajoute en fin de liste, et atterrissait sous les mentions.
+      final sources = MentionSources()
+        ..register(
+          MentionSource(
+            trigger: '@',
+            model: 'member',
+            getLabel: () => 'Mention a member',
+            icon: Icons.alternate_email,
+            search: (query, options) async => const [],
+          ),
+        );
+      final features = RichTextFeatures([
+        MentionFeature(sources: sources),
+      ]).and([const ImageFeature()]);
+
+      final names = features.menuItems.map((item) => item.name).toList();
+
+      expect(names, ['Image', 'Mention a member']);
+    });
+  });
+
   group('narrowing the set', () {
     test('without drops a feature and everything it contributes', () {
       const full = defaultRichTextFeatures;

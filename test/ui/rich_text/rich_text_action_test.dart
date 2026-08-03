@@ -84,6 +84,13 @@ void main() {
         expect(state.getNodeAtPath([0])?.type, HeadingBlockKeys.type);
         expect(state.getNodeAtPath([0])?.attributes[HeadingBlockKeys.level], 1);
 
+        await actionOf('heading_3').run(state);
+
+        expect(state.getNodeAtPath([0])?.attributes[HeadingBlockKeys.level], 3);
+        expect(h1.isActive(state), isFalse);
+
+        await h1.run(state);
+
         // Et le sien le ramène, comme n'importe quel bouton de bloc.
         await h1.run(state);
 
@@ -92,6 +99,30 @@ void main() {
         state.dispose();
       },
     );
+
+    test('une case cochée reste une case à cocher', () async {
+      final state = EditorState(
+        document: Document.blank()
+          ..insert(
+            [0],
+            [todoListNode(checked: true, delta: Delta()..insert('Courses'))],
+          ),
+      );
+      state.selection = Selection.collapsed(Position(path: [0], offset: 0));
+
+      final todo = actionOf('todo_list');
+
+      // `checked: false` est ce avec quoi on en crée une, pas ce qui en fait
+      // une : le bouton ne s'allumait que sur les non cochées, et cochait
+      // celles qui l'étaient au lieu de sortir de la liste.
+      expect(todo.isActive(state), isTrue);
+
+      await todo.run(state);
+
+      expect(state.getNodeAtPath([0])?.type, ParagraphBlockKeys.type);
+
+      state.dispose();
+    });
 
     test('une action à cocher porte son attribut', () async {
       final state = stateOf('Courses');

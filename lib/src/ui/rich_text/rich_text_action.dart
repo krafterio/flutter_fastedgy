@@ -86,16 +86,20 @@ class RichTextAction {
   /// Turning the block the caret is in into another kind, and back to a
   /// paragraph when it is already that kind — a list button leaves the list.
   ///
-  /// [attributes] are part of what "that kind" means, not just what it is made
-  /// with: two headings differ by their level alone, and a button reading the
-  /// type would light up on both and take one to a paragraph rather than to the
-  /// other.
+  /// [attributes] are what it is made with. [identity] names those of them that
+  /// also say *which* kind it is, where the type alone does not: two headings
+  /// differ by their level, and a button reading the type would light up on
+  /// both and take one to a paragraph rather than to the other.
+  ///
+  /// Empty by default, and that is the common case: a to-do item is one whether
+  /// it is ticked or not, `checked: false` being only what a new one starts as.
   factory RichTextAction.block({
     required String id,
     required FastEdgyGlyph glyph,
     required String Function() getLabel,
     required String type,
     Map<String, dynamic> attributes = const {},
+    Set<String> identity = const {},
     int group = 0,
   }) => RichTextAction(
     id: id,
@@ -103,7 +107,8 @@ class RichTextAction {
     getLabel: getLabel,
     group: group,
     isEnabled: _hasCaret,
-    isActive: (editorState) => _isBlock(_nodeOf(editorState), type, attributes),
+    isActive: (editorState) =>
+        _isBlock(_nodeOf(editorState), type, attributes, identity),
     run: (editorState) async {
       final selection = editorState.selection;
       final node = _nodeOf(editorState);
@@ -112,7 +117,7 @@ class RichTextAction {
         return;
       }
 
-      final becomes = _isBlock(node, type, attributes)
+      final becomes = _isBlock(node, type, attributes, identity)
           ? ParagraphBlockKeys.type
           : type;
 
@@ -143,12 +148,11 @@ class RichTextAction {
     Node? node,
     String type,
     Map<String, dynamic> attributes,
+    Set<String> identity,
   ) =>
       node != null &&
       node.type == type &&
-      attributes.entries.every(
-        (attribute) => node.attributes[attribute.key] == attribute.value,
-      );
+      identity.every((key) => node.attributes[key] == attributes[key]);
 
   static bool _always(EditorState editorState) => true;
 
@@ -288,9 +292,6 @@ class RichTextActions {
 
   /// Turning the block into a heading, or into a quote.
   ///
-  /// Two levels and no more: a strip is read left to right by somebody about to
-  /// write, and a document that needs a third level of heading is a document
-  /// being written at the "/" menu anyway.
   static List<RichTextAction> get blockTypes => [
     RichTextAction.block(
       id: 'heading_1',
@@ -298,6 +299,7 @@ class RichTextActions {
       getLabel: () => t('Heading 1'),
       type: HeadingBlockKeys.type,
       attributes: const {HeadingBlockKeys.level: 1},
+      identity: const {HeadingBlockKeys.level},
       group: 3,
     ),
     RichTextAction.block(
@@ -306,6 +308,16 @@ class RichTextActions {
       getLabel: () => t('Heading 2'),
       type: HeadingBlockKeys.type,
       attributes: const {HeadingBlockKeys.level: 2},
+      identity: const {HeadingBlockKeys.level},
+      group: 3,
+    ),
+    RichTextAction.block(
+      id: 'heading_3',
+      glyph: FastEdgyGlyph.heading3,
+      getLabel: () => t('Heading 3'),
+      type: HeadingBlockKeys.type,
+      attributes: const {HeadingBlockKeys.level: 3},
+      identity: const {HeadingBlockKeys.level},
       group: 3,
     ),
     RichTextAction.block(
