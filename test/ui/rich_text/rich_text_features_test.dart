@@ -130,7 +130,7 @@ void main() {
         containsAll(RichTextActions.marks.map((action) => action.id)),
       );
       // Narrowing the actions drops the block kinds but never the features'.
-      expect(ids, isNot(contains('heading')));
+      expect(ids, isNot(contains('heading_1')));
 
       debugDefaultTargetPlatformOverride = null;
     });

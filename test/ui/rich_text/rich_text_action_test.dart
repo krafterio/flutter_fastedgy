@@ -66,6 +66,33 @@ void main() {
       state.dispose();
     });
 
+    test(
+      'un titre change de niveau, plutôt que de redevenir un paragraphe',
+      () async {
+        final state = stateOf('Titre');
+        final h1 = actionOf('heading_1');
+        final h2 = actionOf('heading_2');
+
+        await h2.run(state);
+
+        expect(state.getNodeAtPath([0])?.attributes[HeadingBlockKeys.level], 2);
+        expect(h2.isActive(state), isTrue);
+        expect(h1.isActive(state), isFalse);
+
+        await h1.run(state);
+
+        expect(state.getNodeAtPath([0])?.type, HeadingBlockKeys.type);
+        expect(state.getNodeAtPath([0])?.attributes[HeadingBlockKeys.level], 1);
+
+        // Et le sien le ramène, comme n'importe quel bouton de bloc.
+        await h1.run(state);
+
+        expect(state.getNodeAtPath([0])?.type, ParagraphBlockKeys.type);
+
+        state.dispose();
+      },
+    );
+
     test('une action à cocher porte son attribut', () async {
       final state = stateOf('Courses');
 

@@ -78,7 +78,8 @@ enum FastEdgyGlyph {
   italic,
   underline,
   strikethrough,
-  heading,
+  heading1,
+  heading2,
   quote,
   bulletedList,
   numberedList,
@@ -98,7 +99,10 @@ const Map<FastEdgyGlyph, IconData> _material = {
   FastEdgyGlyph.italic: Icons.format_italic,
   FastEdgyGlyph.underline: Icons.format_underlined,
   FastEdgyGlyph.strikethrough: Icons.format_strikethrough,
-  FastEdgyGlyph.heading: Icons.title,
+  // Material ships no H1 and no H2; `title` is the one glyph it has for a
+  // heading at all. An application with its own set draws the two apart.
+  FastEdgyGlyph.heading1: Icons.title,
+  FastEdgyGlyph.heading2: Icons.format_size,
   FastEdgyGlyph.quote: Icons.format_quote,
   FastEdgyGlyph.bulletedList: Icons.format_list_bulleted,
   FastEdgyGlyph.numberedList: Icons.format_list_numbered,
