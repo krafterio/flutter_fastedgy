@@ -9,6 +9,7 @@ import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/foundation.dart'
     show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show SystemChannels;
 import 'package:flutter_fastedgy/ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -180,25 +181,10 @@ void main() {
     });
   });
 
-  group('la barre qu\'un appui long lève', () {
+  group('le menu du presse-papier', () {
     tearDown(() => AppFlowyClipboard.mockSetData(null));
 
-    /// L'override doit être défait avant la fin du corps — le framework
-    /// vérifie les drapeaux de debug de la fondation là.
-    Future<void> onTouch(Future<void> Function() body) async {
-      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
-
-      try {
-        await body();
-      } finally {
-        debugDefaultTargetPlatformOverride = null;
-      }
-    }
-
-    /// Flottante, la barre n'existe que sur une sélection : c'est là que
-    /// l'appui long a quelque chose à lever. Ancrée, elle tient déjà sur le
-    /// curseur et n'a besoin de personne.
-    Future<EditorState> pump(WidgetTester tester, {required bool docked}) async {
+    Future<EditorState> pump(WidgetTester tester) async {
       final state = EditorState(
         document: Document.blank()
           ..insert([0], [paragraphNode(delta: Delta()..insert('Bonjour'))]),
@@ -208,17 +194,9 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
-            body: Builder(
-              builder: (context) => ComponentTheme<RichTextToolbarTheme>(
-                data: RichTextToolbarTheme.from(
-                  RichTextTheme.of(context),
-                  docked: docked,
-                ),
-                child: RichTextEditor(
-                  features: defaultRichTextFeatures,
-                  editorState: state,
-                ),
-              ),
+            body: RichTextEditor(
+              features: defaultRichTextFeatures,
+              editorState: state,
             ),
           ),
         ),
@@ -228,86 +206,119 @@ void main() {
       return state;
     }
 
-    /// Un point sur le premier bloc : l'éditeur dessine son texte avec des
-    /// spans à lui, qu'aucun finder de texte n'atteint.
-    Offset onTheText(WidgetTester tester) =>
-        tester.getTopLeft(find.byType(RichTextEditor)) + const Offset(40, 20);
-
-    Finder pasteButton() =>
-        find.byIcon(FastEdgyIcons.material[FastEdgyGlyph.paste]);
-
-    testWidgets('offre au doigt ce que l\'éditeur ne lui offrait pas', (
-      tester,
-    ) async {
-      await onTouch(() async {
-        final state = await pump(tester, docked: false);
-
-        expect(pasteButton(), findsNothing);
-
-        state.selection = Selection.collapsed(Position(path: [0], offset: 3));
-        await tester.longPressAt(onTheText(tester));
-        await tester.pumpAndSettle();
-
-        expect(pasteButton(), findsOneWidget);
-      });
-    });
-
-    testWidgets('et colle le markdown qu\'on y prend', (tester) async {
-      await onTouch(() async {
-        final state = await pump(tester, docked: false);
-
-        AppFlowyClipboard.mockSetData(
-          const AppFlowyClipboardData(text: '# Titre\n\n- un\n- deux'),
+    /// Ce que la plateforme répond à « y a-t-il quelque chose à coller ? ».
+    void clipboardHolds(WidgetTester tester, {required bool something}) {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async => call.method == 'Clipboard.hasStrings'
+            ? <String, bool>{'value': something}
+            : null,
+      );
+      addTearDown(() {
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
         );
-
-        state.selection = Selection.collapsed(Position(path: [0], offset: 3));
-        await tester.longPressAt(onTheText(tester));
-        await tester.pumpAndSettle();
-
-        // La barre défile : le presse-papier est en bout de rangée, derrière
-        // tout ce que l'écriture demande d'abord.
-        await tester.ensureVisible(pasteButton());
-        await tester.pumpAndSettle();
-
-        await tester.tap(pasteButton());
-        await tester.pumpAndSettle();
-
-        expect([
-          for (final node in state.document.root.children) node.type,
-        ], contains(HeadingBlockKeys.type));
-        expect(pasteButton(), findsNothing);
+        richTextClipboardHasContent.value = true;
       });
-    });
+    }
 
-    testWidgets('une barre ancrée la porte déjà, rien n\'est levé', (
+    testWidgets('la barre de sélection de la plateforme sur les mots', (
       tester,
     ) async {
-      await onTouch(() async {
-        final state = await pump(tester, docked: true);
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
 
-        state.selection = Selection.collapsed(Position(path: [0], offset: 3));
+      try {
+        clipboardHolds(tester, something: true);
+
+        final state = await pump(tester);
+
+        state.selection = Selection.single(
+          path: [0],
+          startOffset: 0,
+          endOffset: 7,
+        );
         await tester.pumpAndSettle();
 
-        // Elle est là, mais parce que la barre ancrée tient sur le curseur —
-        // pas parce qu'un appui long l'a levée.
-        expect(pasteButton(), findsOneWidget);
-
-        await tester.longPressAt(onTheText(tester));
-        await tester.pumpAndSettle();
-
-        expect(pasteButton(), findsOneWidget);
-      });
+        expect(find.byType(AdaptiveTextSelectionToolbar), findsOneWidget);
+        expect(find.text('Cut'), findsOneWidget);
+        expect(find.text('Copy'), findsOneWidget);
+        expect(find.text('Paste'), findsOneWidget);
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
     });
 
-    testWidgets('un simple tap ne la lève pas', (tester) async {
-      await onTouch(() async {
-        await pump(tester, docked: false);
+    testWidgets('sans rien à coller, la ligne n\'y est pas', (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
 
-        await tester.tapAt(onTheText(tester));
+      try {
+        clipboardHolds(tester, something: false);
+
+        final state = await pump(tester);
+
+        state.selection = Selection.single(
+          path: [0],
+          startOffset: 0,
+          endOffset: 7,
+        );
         await tester.pumpAndSettle();
 
-        expect(pasteButton(), findsNothing);
-      });
+        // Pas grisée, absente : c'est ce que fait le système.
+        expect(find.text('Paste'), findsNothing);
+        expect(find.text('Copy'), findsOneWidget);
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+
+    testWidgets('et rien du tout sous un pointeur, qui a le clic droit', (
+      tester,
+    ) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+
+      try {
+        final state = await pump(tester);
+
+        state.selection = Selection.single(
+          path: [0],
+          startOffset: 0,
+          endOffset: 7,
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byType(AdaptiveTextSelectionToolbar), findsNothing);
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+
+    testWidgets('et la barre de formatage n\'en porte rien non plus', (
+      tester,
+    ) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+
+      try {
+        final state = await pump(tester);
+
+        state.selection = Selection.single(
+          path: [0],
+          startOffset: 0,
+          endOffset: 7,
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byIcon(FastEdgyIcons.material[FastEdgyGlyph.paste]),
+          findsNothing,
+        );
+        expect(
+          find.byIcon(FastEdgyIcons.material[FastEdgyGlyph.bold]),
+          findsWidgets,
+        );
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
     });
   });
 

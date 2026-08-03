@@ -59,23 +59,10 @@ class RichTextToolbarSlots {
 
   /// At the foot of what scrolls, under the last block and the footer.
   ///
-  /// The strip itself already takes its room out of the page rather than
-  /// hanging over it, so nothing is ever hidden underneath — this is for the
-  /// breathing room a caller wants on top of that, so the last line does not
-  /// end up flush against the buttons.
+  /// The editor already reserves the strip's own height there, so nothing is
+  /// ever hidden underneath — this is for the breathing room a caller wants on
+  /// top of that, so the last line does not end up flush against the buttons.
   final Widget? underContent;
-
-  /// Whether the strip ends the screen.
-  ///
-  /// True unless said otherwise: a docked strip usually does, and the last
-  /// pixels of the screen belong to the system — which is what the band under
-  /// its buttons is for.
-  ///
-  /// A field says false. A composer in a sheet, a description in a form: the
-  /// application has controls of its own under it, the system's edge is
-  /// somebody else's problem, and the band reserved for it lands in the middle
-  /// of the page as a gap nothing explains.
-  final bool reachesBottomEdge;
 
   const RichTextToolbarSlots({
     this.leading,
@@ -83,15 +70,16 @@ class RichTextToolbarSlots {
     this.above,
     this.below,
     this.underContent,
-    this.reachesBottomEdge = true,
   });
 
   /// What a caller that asked for nothing gets.
   static const none = RichTextToolbarSlots();
 
-  /// Whether the room the system asks for at the bottom is spoken for — by a
-  /// band of the caller's own, or by whatever it put the strip above.
-  bool get holdsBottom => below != null || !reachesBottomEdge;
+  /// Whether the room the system asks for at the bottom of the screen is spoken
+  /// for by a band of the caller's own. Only ever asked while the strip is held
+  /// there — parked on the editor it is nobody's business (see
+  /// [RichTextDockedToolbar]).
+  bool get holdsBottom => below != null;
 
   /// The strip with its bands, or the strip alone when there are none.
   Widget around(Widget bar) => above == null && below == null
@@ -283,7 +271,7 @@ class _RichTextActionBarState extends State<RichTextActionBar> {
   }
 }
 
-/// The strip pinned to the bottom of the editor, above the keyboard.
+/// The strip that sticks to the bottom of the editor.
 ///
 /// Its own widget rather than the editor's floating toolbar given a different
 /// place to stand: that one is wired to the selection — it takes itself away
@@ -291,10 +279,20 @@ class _RichTextActionBarState extends State<RichTextActionBar> {
 /// and every undo leaves behind. Docked, there is nothing to anchor to and
 /// nothing to get out of the way of, so it stays and [visibility] says how long.
 ///
+/// Sticky, in the sense the word has on the web: it sits at the foot of the
+/// editor, and while that foot is below the screen it stays at the screen's
+/// instead — above the keyboard. Scroll far enough for the end of the document
+/// to come up and the strip parks on it and travels with it.
+///
+/// The room it needs is reserved at the foot of the content by the editor (see
+/// `RichTextEditor`), so the last line can always be scrolled clear of it: the
+/// two states then look like one, the strip taking that reserved band when it
+/// parks and passing over it when it is pinned.
+///
 /// Drawn inside the editor rather than in the overlay the floating one uses: an
 /// entry that outlives a selection would also outlive the screen it belongs to
 /// and hang over whatever was pushed on top of it.
-class RichTextDockedToolbar extends StatelessWidget {
+class RichTextDockedToolbar extends StatefulWidget {
   final EditorState editorState;
   final List<RichTextAction> actions;
   final RichTextToolbarVisibility visibility;
@@ -302,9 +300,13 @@ class RichTextDockedToolbar extends StatelessWidget {
   /// What the application wanted room for on the strip.
   final RichTextToolbarSlots slots;
 
-  /// The editor it is docked to. The strip stands at the bottom of it, which is
-  /// the bottom of the screen for a page and of the field for a field.
+  /// The editor it is docked to.
   final Widget child;
+
+  /// Told how tall it turned out, so the content can reserve exactly that at
+  /// its foot — bands and system edge included, which no sum of theme values
+  /// could know.
+  final ValueNotifier<double>? measured;
 
   const RichTextDockedToolbar({
     required this.editorState,
@@ -313,9 +315,97 @@ class RichTextDockedToolbar extends StatelessWidget {
     super.key,
     this.visibility = RichTextToolbarVisibility.caret,
     this.slots = RichTextToolbarSlots.none,
+    this.measured,
   });
 
-  bool _shows(Selection? selection) => switch (visibility) {
+  @override
+  State<RichTextDockedToolbar> createState() => _RichTextDockedToolbarState();
+}
+
+class _RichTextDockedToolbarState extends State<RichTextDockedToolbar>
+    with WidgetsBindingObserver {
+  final _editorKey = GlobalKey();
+  final _stripKey = GlobalKey();
+
+  /// How far the editor's foot runs past the bottom of the screen. Zero once it
+  /// is inside it, which is what parks the strip on the editor rather than on
+  /// the screen.
+  double _overflow = 0;
+
+  /// Whether it is held at the bottom of the screen rather than parked on the
+  /// editor. Not `_overflow > 0`: a page fills the viewport, so its foot lands
+  /// exactly on the screen's — held there, and owing the system its band all
+  /// the same.
+  bool _pinned = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _scheduleMeasure();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// The keyboard coming up moves the screen's bottom, not the editor's.
+  @override
+  void didChangeMetrics() => _scheduleMeasure();
+
+  void _scheduleMeasure() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _measure();
+    });
+  }
+
+  void _measure() {
+    _measureStrip();
+
+    final box = _editorKey.currentContext?.findRenderObject();
+
+    if (box is! RenderBox || !box.attached || !box.hasSize) {
+      return;
+    }
+
+    final media = MediaQuery.of(context);
+    final foot = box.localToGlobal(Offset(0, box.size.height)).dy;
+    final screen = media.size.height - media.viewInsets.bottom;
+    final overflow = foot - screen;
+
+    final settled = overflow > 0 ? overflow : 0.0;
+    final pinned = foot >= screen - 0.5;
+
+    if ((settled - _overflow).abs() > 0.5 || pinned != _pinned) {
+      setState(() {
+        _overflow = settled;
+        _pinned = pinned;
+      });
+    }
+  }
+
+  /// What the strip stands in, for the band the content keeps at its foot.
+  /// Zero while it is not up: there is nothing to keep clear of.
+  void _measureStrip() {
+    final notifier = widget.measured;
+
+    if (notifier == null) {
+      return;
+    }
+
+    final box = _stripKey.currentContext?.findRenderObject();
+    final height = box is RenderBox && box.attached && box.hasSize
+        ? box.size.height
+        : 0.0;
+
+    if ((height - notifier.value).abs() > 0.5) {
+      notifier.value = height;
+    }
+  }
+
+  bool _shows(Selection? selection) => switch (widget.visibility) {
     RichTextToolbarVisibility.always => true,
     RichTextToolbarVisibility.caret => selection != null,
     RichTextToolbarVisibility.selection =>
@@ -325,61 +415,61 @@ class RichTextDockedToolbar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = RichTextToolbarTheme.of(context);
-    // Zero once a Scaffold has resized around the keyboard, which is the usual
-    // case and leaves the editor ending right above it. Where nothing resized,
-    // the editor runs under the keyboard and this is how far up to come.
-    final keyboard = MediaQuery.viewInsetsOf(context).bottom;
     final system = MediaQuery.viewPaddingOf(context).bottom;
+
+    // Measured on every frame the editor lays out again: what is written into
+    // it, what scrolls under it and what the keyboard does to the screen all
+    // move the foot this strip follows.
+    _scheduleMeasure();
 
     // The editor is handed through rather than rebuilt: only the strip answers
     // the caret moving.
-    //
-    // Beside the editor rather than over it: a strip laid over the bottom hides
-    // the last lines of whatever is under it, and no amount of padding at the
-    // foot of the document is ever exactly its height — the bands an
-    // application adds to it are the application's, and their height is not
-    // ours to guess. Taking the room instead of borrowing it makes the question
-    // go away: the editor is laid out in what is left, and scrolls to its own
-    // end inside it.
     return ValueListenableBuilder<Selection?>(
-      valueListenable: editorState.selectionNotifier,
-      child: child,
-      builder: (context, selection, editor) => Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Loose rather than expanded: a page fills what it is given, a field
-          // takes the height of what it holds, and this has to serve both.
-          Flexible(child: editor!),
-          // The surface reaches the edge, its buttons do not: with the keyboard
-          // down the last strip of the screen belongs to the system — on iOS
-          // the home indicator takes the first tap there, and a button sitting
-          // in it reads as dead. Unless the application put something of its
-          // own down there, in which case that space is spoken for.
-          if (_shows(selection))
-            Padding(
-              // Where nothing resized around the keyboard, the column runs
-              // under it and this is how far up to come.
-              padding: EdgeInsets.only(bottom: keyboard),
-              child: RichTextSurface(
-                padding: theme.padding.copyWith(
-                  bottom:
-                      theme.padding.bottom +
-                      (keyboard > 0 || slots.holdsBottom ? 0 : system),
-                ),
-                decoration: theme.surface,
-                child: slots.around(
-                  RichTextActionBar(
-                    editorState: editorState,
-                    actions: actions,
-                    leading: slots.leading,
-                    trailing: slots.trailing,
+      valueListenable: widget.editorState.selectionNotifier,
+      child: KeyedSubtree(key: _editorKey, child: widget.child),
+      builder: (context, selection, editor) =>
+          NotificationListener<ScrollNotification>(
+            onNotification: (_) {
+              _scheduleMeasure();
+
+              return false;
+            },
+            child: Stack(
+              children: [
+                editor!,
+                if (_shows(selection))
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    // Zero parks it on the editor's own foot; anything else holds
+                    // it at the bottom of the screen while that foot is below.
+                    bottom: _overflow,
+                    child: RichTextSurface(
+                      key: _stripKey,
+                      padding: theme.padding.copyWith(
+                        // The surface reaches the edge, its buttons do not: pinned
+                        // with the keyboard down, the last strip of the screen
+                        // belongs to the system — on iOS the home indicator takes
+                        // the first tap there. Parked on the editor there is no
+                        // edge to leave alone, and no band to reserve.
+                        bottom:
+                            theme.padding.bottom +
+                            (_pinned && !widget.slots.holdsBottom ? system : 0),
+                      ),
+                      decoration: theme.surface,
+                      child: widget.slots.around(
+                        RichTextActionBar(
+                          editorState: widget.editorState,
+                          actions: widget.actions,
+                          leading: widget.slots.leading,
+                          trailing: widget.slots.trailing,
+                        ),
+                      ),
+                    ),
                   ),
-                ),
-              ),
+              ],
             ),
-        ],
-      ),
+          ),
     );
   }
 }

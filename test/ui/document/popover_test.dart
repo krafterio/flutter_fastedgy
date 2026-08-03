@@ -6,6 +6,8 @@
 import 'package:flutter_fastedgy/ui.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
 
@@ -197,6 +199,22 @@ void main() {
     setUp(setUpUiTestServices);
     tearDown(resetUiTestServices);
 
+    /// Une carte qu'on remplit est une affordance de bureau — et sous un pouce,
+    /// choisir des mots lève aussi le callout du presse-papier, qui n'a rien à
+    /// voir avec ce qui est vérifié ici.
+    ///
+    /// L'override doit être défait avant la fin du corps : le framework vérifie
+    /// les drapeaux de debug de la fondation là.
+    Future<void> onDesktop(Future<void> Function() body) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+
+      try {
+        await body();
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    }
+
     /// Opens a card on a selection the editor is holding the focus for, the way
     /// the link button does.
     Future<EditorState> openOverSelection(
@@ -251,13 +269,15 @@ void main() {
       // The editor keeps its focus node primary while a card is up, so the card
       // is handed no key at all: Escape reaches the editor, which answers by
       // dropping its selection and leaving the card standing.
-      await openOverSelection(tester, body: const Text('carte'));
-      expect(find.text('carte'), findsOneWidget);
+      await onDesktop(() async {
+        await openOverSelection(tester, body: const Text('carte'));
+        expect(find.text('carte'), findsOneWidget);
 
-      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-      await tester.pumpAndSettle();
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
 
-      expect(find.text('carte'), findsNothing);
+        expect(find.text('carte'), findsNothing);
+      });
     });
 
     testWidgets('lets a field of its own take the focus from it', (
@@ -269,33 +289,87 @@ void main() {
       final field = FocusNode(debugLabel: 'card field');
       addTearDown(field.dispose);
 
-      await openOverSelection(
-        tester,
-        body: TextField(focusNode: field, autofocus: true),
-      );
+      await onDesktop(() async {
+        await openOverSelection(
+          tester,
+          body: TextField(focusNode: field, autofocus: true),
+        );
 
-      expect(field.hasPrimaryFocus, isTrue);
+        expect(field.hasPrimaryFocus, isTrue);
 
-      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-      await tester.pumpAndSettle();
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
 
-      expect(find.byType(TextField), findsNothing);
+        expect(find.byType(TextField), findsNothing);
+      });
+    });
+
+    testWidgets('un callout qui ne prend pas le focus ne le rend pas non plus', (
+      tester,
+    ) async {
+      await onDesktop(() async {
+        final state = EditorState(
+          document: Document.blank()
+            ..insert([0], [paragraphNode(delta: Delta()..insert('Texte'))]),
+        );
+        addTearDown(state.dispose);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: SizedBox(
+                height: 300,
+                child: RichTextEditor(
+                  features: defaultRichTextFeatures,
+                  editorState: state,
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        state.selection = Selection.single(
+          path: [0],
+          startOffset: 0,
+          endOffset: 5,
+        );
+        state.service.keyboardService?.enable();
+        await tester.pumpAndSettle();
+
+        final before = FocusManager.instance.primaryFocus;
+
+        showRichTextPopover(
+          tester.element(find.byType(RichTextEditor)),
+          state,
+          state.selection!,
+          takesFocus: false,
+          builder: (context, dismiss) => const Text('callout'),
+        );
+        await tester.pumpAndSettle();
+
+        // L'éditeur garde le focus tout du long : le lui rendre le ferait
+        // ramener son curseur dans la vue, et la page sauterait sous le doigt.
+        expect(FocusManager.instance.primaryFocus, before);
+      });
     });
 
     testWidgets('hands the focus back to the editor when it closes', (
       tester,
     ) async {
-      await openOverSelection(tester, body: const Text('carte'));
-      final onTheCard = FocusManager.instance.primaryFocus;
+      await onDesktop(() async {
+        await openOverSelection(tester, body: const Text('carte'));
+        final onTheCard = FocusManager.instance.primaryFocus;
 
-      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-      await tester.pumpAndSettle();
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
 
-      expect(FocusManager.instance.primaryFocus, isNot(onTheCard));
-      expect(
-        FocusManager.instance.primaryFocus?.debugLabel,
-        contains('keyboard service'),
-      );
+        expect(FocusManager.instance.primaryFocus, isNot(onTheCard));
+        expect(
+          FocusManager.instance.primaryFocus?.debugLabel,
+          contains('keyboard service'),
+        );
+      });
     });
   });
 

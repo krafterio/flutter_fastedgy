@@ -105,4 +105,30 @@ void main() {
       expect(position.dx + 280, lessThanOrEqualTo(editor.right));
     });
   });
+
+  group('la place laissée au callout', () {
+    const editor = Rect.fromLTWH(0, 0, 390, 844);
+    const selection = Rect.fromLTWH(60, 400, 40, 20);
+
+    double topOf({required double reserveAbove}) => RichTextPopoverLayout(
+      selection: selection,
+      editor: editor,
+      avoidToolbar: false,
+      preferAbove: true,
+      reserveAbove: reserveAbove,
+    ).getPositionForChild(const Size(390, 844), const Size(320, 52)).dy;
+
+    test('une barre qui doit passer au-dessus monte d\'autant', () {
+      // Sous un pouce, le callout du presse-papier prend la place juste
+      // au-dessus des mots ; la barre se pose par-dessus lui, pas dessus eux.
+      expect(
+        topOf(reserveAbove: 0) - topOf(reserveAbove: 48),
+        closeTo(48, 0.5),
+      );
+    });
+
+    test('et rien à réserver la laisse contre les mots', () {
+      expect(topOf(reserveAbove: 0) + 52, lessThanOrEqualTo(selection.top));
+    });
+  });
 }

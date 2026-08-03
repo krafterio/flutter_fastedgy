@@ -17,6 +17,7 @@ import 'rich_text_blank.dart';
 import 'rich_text_action.dart';
 import 'rich_text_action_bar.dart';
 import 'rich_text_blocks.dart';
+import 'rich_text_clipboard_menu.dart';
 import 'rich_text_caret.dart';
 import 'rich_text_feature.dart';
 import 'rich_text_menu.dart';
@@ -26,8 +27,8 @@ import 'rich_text_shortcuts.dart';
 import 'rich_text_slash_menu.dart';
 import 'rich_text_style.dart';
 import 'rich_text_theme.dart';
-import 'rich_text_toolbar_theme.dart';
 import 'rich_text_touch_menu.dart';
+import 'rich_text_toolbar_theme.dart';
 
 /// Rich text on the app's design system (appflowy_editor, MPL-2.0): floating
 /// toolbar on the selection, "/" menu to insert blocks, and whatever the
@@ -192,11 +193,20 @@ class RichTextEditorState extends State<RichTextEditor> {
   /// The window a capped field scrolls its blocks behind (see [_revealCaret]).
   final _viewportKey = GlobalKey();
 
+  /// How tall the docked strip turned out, so the content can reserve exactly
+  /// that at its foot (see [_footer]).
+  final _stripHeight = ValueNotifier<double>(0);
+
   /// The state whose caret is being followed, to stop following the one it is
   /// swapped for.
   EditorState? _watched;
 
   StreamSubscription<EditorTransactionValue>? _edits;
+
+  /// Whether the menu a right-click opened is up. The strip stands down while
+  /// it is: two surfaces over the same words, offering different things, is one
+  /// too many — and the system never shows both either.
+  final _contextMenuOpen = ValueNotifier<bool>(false);
 
   /// The block list a finger opens, held here because the shortcut and the
   /// toolbar button both open the same one.
@@ -363,6 +373,8 @@ class RichTextEditorState extends State<RichTextEditor> {
 
   @override
   void dispose() {
+    _stripHeight.dispose();
+    _contextMenuOpen.dispose();
     unawaited(_edits?.cancel());
     _watched?.selectionNotifier.removeListener(_revealCaret);
     _slash.dispose();
@@ -497,35 +509,41 @@ class RichTextEditorState extends State<RichTextEditor> {
         : box.localToGlobal(Offset.zero) & box.size;
   }
 
-  /// Whether the strip is already up with nothing selected, which is what a
-  /// held press would otherwise be for.
-  ///
-  /// A docked strip usually is: it stays on the caret, so cut, copy and paste
-  /// are a thumb away without asking. A floating one never is — it hangs off
-  /// selected words and there are none — and a docked strip told to wait for a
-  /// selection is in the same position.
-  bool _stripCoversCaret(BuildContext context) {
-    if (!widget.toolbar || !RichTextToolbarTheme.of(context).isDocked) {
-      return false;
-    }
-
-    final visibility =
-        widget.toolbarVisibility ?? RichTextToolbarVisibility.caret;
-
-    return visibility != RichTextToolbarVisibility.selection;
+  /// Cut, copy, paste and select all, under the pointer that asked for them.
+  Widget _buildContextMenu(
+    BuildContext context,
+    Offset offset,
+    EditorState editorState,
+    VoidCallback dismiss,
+  ) {
+    return Stack(
+      children: [
+        Positioned(
+          left: offset.dx,
+          top: offset.dy,
+          child: _RichTextContextMenu(
+            open: _contextMenuOpen,
+            child: RichTextSurface(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: RichTextClipboardMenu(
+                editorState: editorState,
+                actions: RichTextActions.clipboard(widget.features),
+                direction: Axis.vertical,
+                onDone: dismiss,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
-  /// What the strip offers, wherever it is raised from — the row over a
-  /// selection and the one a held press brings up on a bare caret are the same
-  /// strip, and there is only one place saying what is on it.
+  /// The strip offers formatting and nothing else: cut, copy and paste belong
+  /// where the platform puts them — the callout a held press raises, the menu a
+  /// right-click opens — not on a row somebody is aiming at to write in bold.
   List<RichTextAction> get _actions => [
     ...widget.actions ?? RichTextActions.standard,
     ...widget.features.actions,
-    // Where there is no pointer to right-click with, the strip is the only
-    // place cut, copy and paste can be reached: the platform draws its callout
-    // for its own fields, and a document is not one. Last, behind everything
-    // the writing itself needs.
-    if (!hasHoverPointer) ...RichTextActions.clipboard(widget.features),
   ];
 
   /// Puts the block list on the caret, however it was asked for.
@@ -736,6 +754,7 @@ class RichTextEditorState extends State<RichTextEditor> {
     if (toolbarTheme.isDocked) {
       return RichTextDockedToolbar(
         editorState: widget.editorState,
+        measured: _stripHeight,
         // The "/" first, and only here: a keyboard types the character, a thumb
         // has no key for it and would otherwise have no way to reach the list
         // of blocks at all. Its own group, so a rule sets it apart from the
@@ -767,18 +786,23 @@ class RichTextEditorState extends State<RichTextEditor> {
       style: RichTextStyle.toolbar(toolbarTheme),
       floatingToolbarHeight: toolbarTheme.height,
       toolbarBuilder: (context, _, onDismiss, isMetricsChanged) =>
-          placeRichTextToolbar(
-            context,
-            widget.editorState,
-            widget.toolbarSlots.around(
-              RichTextActionBar(
-                editorState: widget.editorState,
-                actions: actions,
-                leading: widget.toolbarSlots.leading,
-                trailing: widget.toolbarSlots.trailing,
-              ),
-            ),
-            theme: toolbarTheme,
+          ValueListenableBuilder<bool>(
+            valueListenable: _contextMenuOpen,
+            builder: (context, open, _) => open
+                ? const SizedBox.shrink()
+                : placeRichTextToolbar(
+                    context,
+                    widget.editorState,
+                    widget.toolbarSlots.around(
+                      RichTextActionBar(
+                        editorState: widget.editorState,
+                        actions: actions,
+                        leading: widget.toolbarSlots.leading,
+                        trailing: widget.toolbarSlots.trailing,
+                      ),
+                    ),
+                    theme: toolbarTheme,
+                  ),
           ),
       editorState: widget.editorState,
       editorScrollController: scrollController,
@@ -799,11 +823,9 @@ class RichTextEditorState extends State<RichTextEditor> {
       _ => null,
     };
     final under = widget.toolbarSlots.underContent;
-    final gap = widget.editable && widget.toolbar && toolbarTheme.isDocked
-        ? toolbarTheme.contentGap
-        : 0.0;
+    final docked = widget.editable && widget.toolbar && toolbarTheme.isDocked;
 
-    if (under == null && gap == 0) {
+    if (under == null && !docked) {
       return footer == null
           ? null
           : KeyedSubtree(key: _pageEndKey, child: footer);
@@ -816,7 +838,17 @@ class RichTextEditorState extends State<RichTextEditor> {
         mainAxisSize: MainAxisSize.min,
         children: [
           ?footer,
-          SizedBox(height: gap),
+          // Exactly what the strip stands in — its buttons, the bands the
+          // application put around them, and the room the system asks for at
+          // the bottom of the screen — so the last line can always be scrolled
+          // clear of it. Measured rather than added up: what a caller put in
+          // those bands is a widget, and how tall it turns out is its business.
+          if (docked)
+            ValueListenableBuilder<double>(
+              valueListenable: _stripHeight,
+              builder: (context, height, _) =>
+                  SizedBox(height: height + toolbarTheme.contentGap),
+            ),
           ?under,
         ],
       ),
@@ -852,6 +884,10 @@ class RichTextEditorState extends State<RichTextEditor> {
         richTextPasteCommand(features: widget.features),
         ...standardCommandShortcutEvents,
       ],
+      // Only ever called where there is a pointer to right-click with: the
+      // package wires it on the desktop side alone, which is what left a thumb
+      // with no way to paste (see RichTextTouchMenu).
+      contextMenuBuilder: _buildContextMenu,
       editorStyle: RichTextStyle.editor(
         theme,
         padding: widget.padding,
@@ -864,16 +900,17 @@ class RichTextEditorState extends State<RichTextEditor> {
       footer: _footer(toolbarTheme),
     );
 
-    // The menu a right-click gets is the package's; the strip a held press
-    // raises is ours, and only where there is no pointer to right-click with
-    // and no strip already standing over the caret.
+    // The same four actions, raised the way each platform raises them: the
+    // selection toolbar a held press leaves over the words under a thumb, the
+    // menu a right-click opens under a pointer (see _buildContextMenu).
     final page = widget.editable
         ? _underContent(
-            hasHoverPointer || _stripCoversCaret(context)
+            hasHoverPointer
                 ? editor
                 : RichTextTouchMenu(
                     editorState: widget.editorState,
-                    actions: _actions,
+                    scrollController: scrollController,
+                    features: widget.features,
                     child: editor,
                   ),
           )
@@ -969,4 +1006,33 @@ class _PlainPageBlockComponent extends BlockComponentStatelessWidget {
       ],
     );
   }
+}
+
+/// Says whether the menu is up while it is, and stops saying it the moment it
+/// goes: the package takes the overlay away without telling anyone.
+class _RichTextContextMenu extends StatefulWidget {
+  final ValueNotifier<bool> open;
+  final Widget child;
+
+  const _RichTextContextMenu({required this.open, required this.child});
+
+  @override
+  State<_RichTextContextMenu> createState() => _RichTextContextMenuState();
+}
+
+class _RichTextContextMenuState extends State<_RichTextContextMenu> {
+  @override
+  void initState() {
+    super.initState();
+    widget.open.value = true;
+  }
+
+  @override
+  void dispose() {
+    widget.open.value = false;
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }

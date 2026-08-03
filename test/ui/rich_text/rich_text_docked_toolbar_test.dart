@@ -67,6 +67,13 @@ void main() {
 
   final bar = find.byType(RichTextActionBar);
 
+  /// Le presse-papier a son propre callout sur la sélection : la surface qu'on
+  /// mesure ici est celle de la barre ancrée, pas la sienne.
+  final dockedSurface = find.descendant(
+    of: find.byType(RichTextDockedToolbar),
+    matching: find.byType(RichTextSurface),
+  );
+
   group('combien de temps la barre ancrée reste', () {
     testWidgets('par défaut, tant que le curseur est dans le document', (
       tester,
@@ -185,37 +192,10 @@ void main() {
 
       expect(tester.getTopLeft(find.text('tête')).dx, lessThan(before));
     });
-
-    testWidgets('la bande du bas prend le bord à sa charge', (tester) async {
-      const inset = 34.0;
-
-      Future<double> heightWith(RichTextToolbarSlots given) async {
-        tester.view.physicalSize = const Size(390, 844);
-        tester.view.devicePixelRatio = 1;
-        tester.view.viewInsets = FakeViewPadding.zero;
-        tester.view.viewPadding = const FakeViewPadding(bottom: inset);
-        addTearDown(tester.view.reset);
-
-        await pump(
-          tester,
-          visibility: RichTextToolbarVisibility.always,
-          slots: given,
-        );
-
-        return tester.getSize(find.byType(RichTextSurface)).height;
-      }
-
-      final bare = await heightWith(RichTextToolbarSlots.none);
-      final held = await heightWith(
-        const RichTextToolbarSlots(below: SizedBox(height: inset)),
-      );
-
-      expect(held, bare);
-    });
   });
 
   group('la place que la barre prend à la page', () {
-    testWidgets('elle est posée à côté de l\'éditeur, pas dessus', (
+    testWidgets('elle passe dessus, et la page lui garde sa place', (
       tester,
     ) async {
       final state = await pump(tester);
@@ -225,16 +205,13 @@ void main() {
 
       await select(tester, state, wholeLine());
 
-      final strip = tester.getSize(find.byType(RichTextSurface)).height;
-
+      // Rien ne rétrécit : la barre est posée par-dessus, et ce qu'elle
+      // couvrirait est réservé au pied du contenu, où le texte défile.
       expect(tester.getSize(find.byType(RichTextEditor)).height, whole);
+      expect(tester.getSize(find.byType(AppFlowyEditor)).height, before);
       expect(
-        tester.getSize(find.byType(AppFlowyEditor)).height,
-        before - strip,
-      );
-      expect(
-        tester.getBottomLeft(find.byType(AppFlowyEditor)).dy,
-        tester.getTopLeft(find.byType(RichTextSurface)).dy,
+        tester.getRect(dockedSurface).bottom,
+        closeTo(tester.getRect(find.byType(RichTextEditor)).bottom, 0.5),
       );
     });
 
@@ -281,55 +258,100 @@ void main() {
     });
   });
 
-  group('la place que la barre laisse au système', () {
+  group('où la barre se pose', () {
     const inset = 34.0;
+    const screen = Size(390, 844);
 
-    /// La barre debout sur un écran qui a un bord réservé sous elle.
-    Future<double> heightWith(
-      WidgetTester tester,
-      RichTextToolbarSlots given, {
-      double bottom = inset,
+    /// L'éditeur dans une page qui défile, à la hauteur demandée : plus haute
+    /// que l'écran et son pied passe dessous, ce qui colle la barre au bord.
+    Future<EditorState> pumpAt(
+      WidgetTester tester, {
+      required double height,
+      RichTextToolbarSlots slots = RichTextToolbarSlots.none,
     }) async {
-      tester.view.physicalSize = const Size(390, 844);
+      tester.view.physicalSize = screen;
       tester.view.devicePixelRatio = 1;
       tester.view.viewInsets = FakeViewPadding.zero;
-      tester.view.viewPadding = FakeViewPadding(bottom: bottom);
+      tester.view.viewPadding = const FakeViewPadding(bottom: inset);
       addTearDown(tester.view.reset);
 
-      await pump(
-        tester,
-        visibility: RichTextToolbarVisibility.always,
-        slots: given,
+      final state = EditorState(
+        document: Document.blank()
+          ..insert([0], [paragraphNode(delta: Delta()..insert(words))]),
       );
+      addTearDown(state.dispose);
 
-      return tester.getSize(find.byType(RichTextSurface)).height;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: SizedBox(
+                height: height,
+                child: RichTextEditor(
+                  features: defaultRichTextFeatures,
+                  editorState: state,
+                  toolbarVisibility: RichTextToolbarVisibility.always,
+                  toolbarSlots: slots,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      return state;
     }
 
-    testWidgets('un champ dans un formulaire ne réserve rien', (tester) async {
-      // Ce que le système demande n'est à personne au milieu d'une page : sous
-      // la barre il y a les commandes de l'application, pas le bord de l'écran.
-      final held = await heightWith(
-        tester,
-        const RichTextToolbarSlots(reachesBottomEdge: false),
-      );
-      final bare = await heightWith(tester, RichTextToolbarSlots.none);
+    double stripBottom(WidgetTester tester) =>
+        tester.getRect(find.byType(RichTextSurface)).bottom;
 
-      expect(bare - held, inset);
+    double stripHeight(WidgetTester tester) =>
+        tester.getSize(find.byType(RichTextSurface)).height;
+
+    testWidgets('sur le pied de l\'éditeur quand il tient dans l\'écran', (
+      tester,
+    ) async {
+      await pumpAt(tester, height: 400);
+
+      expect(stripBottom(tester), closeTo(400, 0.5));
     });
 
-    testWidgets('et rien à réserver ne change rien', (tester) async {
-      final held = await heightWith(
-        tester,
-        const RichTextToolbarSlots(reachesBottomEdge: false),
-        bottom: 0,
-      );
-      final bare = await heightWith(
-        tester,
-        RichTextToolbarSlots.none,
-        bottom: 0,
-      );
+    testWidgets('au bord de l\'écran quand le pied passe dessous', (
+      tester,
+    ) async {
+      await pumpAt(tester, height: 1200);
 
-      expect(held, bare);
+      expect(stripBottom(tester), closeTo(screen.height, 0.5));
+    });
+
+    testWidgets('et ne garde les derniers pixels que collée au bord', (
+      tester,
+    ) async {
+      await pumpAt(tester, height: 1200);
+      final pinned = stripHeight(tester);
+
+      await pumpAt(tester, height: 400);
+      final parked = stripHeight(tester);
+
+      // Posée sur l'éditeur, il n'y a pas de bord d'écran à laisser au système.
+      expect(pinned - parked, closeTo(inset, 0.5));
+    });
+
+    testWidgets('sauf si l\'application a mis quelque chose là', (
+      tester,
+    ) async {
+      await pumpAt(
+        tester,
+        height: 1200,
+        slots: const RichTextToolbarSlots(below: SizedBox(height: inset)),
+      );
+      final held = stripHeight(tester);
+
+      await pumpAt(tester, height: 1200);
+      final bare = stripHeight(tester);
+
+      expect(held, closeTo(bare, 0.5));
     });
   });
 

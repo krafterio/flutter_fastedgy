@@ -9,7 +9,9 @@ import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 
+import '../interaction.dart';
 import '../theme/component_theme.dart';
+import 'rich_text_clipboard_menu.dart';
 import 'rich_text_style.dart';
 import 'rich_text_toolbar_theme.dart';
 import 'rich_text_theme.dart';
@@ -47,6 +49,10 @@ bool showRichTextPopover(
   double? height,
   EdgeInsets? padding,
   bool fitsContent = false,
+  bool preferAbove = false,
+  bool barrier = true,
+  bool avoidToolbar = true,
+  bool takesFocus = true,
 }) {
   final rects = editorState.selectionRects();
   final editorBox = editorState.renderBox;
@@ -60,6 +66,8 @@ bool showRichTextPopover(
     editor: editorBox.localToGlobal(Offset.zero) & editorBox.size,
     width: width,
     height: height,
+    preferAbove: preferAbove,
+    avoidToolbar: avoidToolbar,
   );
 
   final overlayState = Overlay.of(context, rootOverlay: true);
@@ -83,7 +91,7 @@ bool showRichTextPopover(
     overlay?.remove();
     overlay = null;
 
-    if (held != null && held.context != null) {
+    if (takesFocus && held != null && held.context != null) {
       held.requestFocus();
     }
   }
@@ -93,12 +101,18 @@ bool showRichTextPopover(
     builder: (context) => themes.wrap(
       Stack(
         children: [
-          Positioned.fill(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: dismiss,
+          // A card that edits something owns the screen until it is answered.
+          // A callout hanging off a selection does not: what closes it is the
+          // selection going, and a sheet of glass over the page would swallow
+          // the very taps that move it — including the ones aimed at the strip
+          // standing at the bottom of the same editor.
+          if (barrier)
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: dismiss,
+              ),
             ),
-          ),
           // Fills the overlay so the delegate lays the card out in the same
           // coordinates the selection rect is given in.
           Positioned.fill(
@@ -108,6 +122,7 @@ bool showRichTextPopover(
                 width: fitsContent ? null : width,
                 height: height,
                 padding: padding,
+                takesFocus: takesFocus,
                 onDismiss: dismiss,
                 child: builder(context, dismiss),
               ),
@@ -134,10 +149,14 @@ class _Card extends StatefulWidget {
   final double? height;
   final EdgeInsets? padding;
 
+  /// Whether the card claims the focus as it opens.
+  final bool takesFocus;
+
   const _Card({
     required this.child,
     required this.onDismiss,
     required this.width,
+    required this.takesFocus,
     this.height,
     this.padding,
   });
@@ -163,6 +182,11 @@ class _CardState extends State<_Card> {
   @override
   void initState() {
     super.initState();
+
+    if (!widget.takesFocus) {
+      return;
+    }
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _scope.requestFocus();
     });
@@ -298,6 +322,10 @@ Widget placeRichTextToolbar(
         width: max(0, editor.width - _gap * 2),
         avoidToolbar: false,
         preferAbove: true,
+        // Above the callout rather than under the words: where a thumb picks
+        // words, the clipboard callout takes the room right above them, and two
+        // surfaces wanting the same place is one of them covering the other.
+        reserveAbove: hasHoverPointer ? 0 : richTextCalloutHeight + _gap,
       ),
       child: strip,
     ),
@@ -322,6 +350,10 @@ class RichTextPopoverLayout extends SingleChildLayoutDelegate {
   /// delegate is handed the resulting height either way.
   final double? height;
 
+  /// Room left between the selection and the card, on top of the gap — for
+  /// whatever else is already standing there.
+  final double reserveAbove;
+
   /// Whether to leave the floating toolbar room above the selection.
   ///
   /// The toolbar only ever shows over a *range*, so a surface that opens on the
@@ -342,6 +374,7 @@ class RichTextPopoverLayout extends SingleChildLayoutDelegate {
     this.height,
     this.avoidToolbar = true,
     this.preferAbove = false,
+    this.reserveAbove = 0,
   });
 
   @override
@@ -373,6 +406,7 @@ class RichTextPopoverLayout extends SingleChildLayoutDelegate {
     final ceiling =
         selection.top -
         _gap -
+        reserveAbove -
         (avoidToolbar && !toolbarBelow ? RichTextStyle.toolbarHeight : 0);
     final above = ceiling - childSize.height;
 

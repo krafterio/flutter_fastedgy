@@ -6,6 +6,7 @@
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/material.dart';
 
+import '../interaction.dart';
 import 'rich_text_theme.dart';
 import 'rich_text_toolbar_theme.dart';
 
@@ -29,28 +30,47 @@ class RichTextStyle {
     TextStyle? text,
   }) {
     final blockText = text ?? theme.blockText;
+    final configuration = TextStyleConfiguration(
+      text: blockText,
+      bold: blockText.copyWith(fontWeight: FontWeight.w600),
+      code: blockText.copyWith(
+        fontFamily: theme.monoFontFamily,
+        fontSize: blockText.fontSize == null
+            ? theme.fieldText.fontSize
+            : blockText.fontSize! - _inlineCodeDrop,
+        backgroundColor: theme.subtleSurface,
+      ),
+      href: blockText.copyWith(
+        color: theme.link,
+        decoration: TextDecoration.underline,
+      ),
+    );
 
-    return EditorStyle.desktop(
+    // The two are not two sets of colours: `.desktop` zeroes the magnifier, the
+    // handle balls and the handle width, and turns the haptics off — a document
+    // built with it under a thumb mounts the package's mobile selection service
+    // and then draws every affordance it has at nothing. No handles to drag, no
+    // magnifier to aim with, and a selection that reads as a grey rectangle
+    // somebody moved with a mouse.
+    if (hasHoverPointer) {
+      return EditorStyle.desktop(
+        textSpanDecorator: textSpanDecorator,
+        padding: padding,
+        maxWidth: maxWidth,
+        cursorColor: theme.cursor,
+        selectionColor: theme.selection,
+        textStyleConfiguration: configuration,
+      );
+    }
+
+    return EditorStyle.mobile(
       textSpanDecorator: textSpanDecorator,
       padding: padding,
       maxWidth: maxWidth,
       cursorColor: theme.cursor,
+      dragHandleColor: theme.cursor,
       selectionColor: theme.selection,
-      textStyleConfiguration: TextStyleConfiguration(
-        text: blockText,
-        bold: blockText.copyWith(fontWeight: FontWeight.w600),
-        code: blockText.copyWith(
-          fontFamily: theme.monoFontFamily,
-          fontSize: blockText.fontSize == null
-              ? theme.fieldText.fontSize
-              : blockText.fontSize! - _inlineCodeDrop,
-          backgroundColor: theme.subtleSurface,
-        ),
-        href: blockText.copyWith(
-          color: theme.link,
-          decoration: TextDecoration.underline,
-        ),
-      ),
+      textStyleConfiguration: configuration,
     );
   }
 
