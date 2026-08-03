@@ -211,6 +211,26 @@ class _CachedApiImageState extends State<CachedApiImage> {
     return '${widget.path}|${widthStr}x$heightStr|${widget.mode.value}|$format';
   }
 
+  /// Bytes that are not an image at all: a truncated download, an error page
+  /// answered by a proxy. Without this the codec throws where nothing catches
+  /// it, and the whole app goes down for a broken thumbnail.
+  ///
+  /// The entry is dropped from the cache so the next build downloads again
+  /// instead of failing forever on the same bytes.
+  Widget _onDecodeFailed(
+    BuildContext context,
+    Object error,
+    StackTrace? stackTrace,
+  ) {
+    getService<fastedgy_cache.ImageCache>().clearCache(_getCacheKey());
+
+    if (widget.errorBuilder != null) {
+      return widget.errorBuilder!(context, error, stackTrace);
+    }
+
+    return SizedBox(width: widget.width, height: widget.height);
+  }
+
   Future<void> _loadImage({BoxConstraints? constraints}) async {
     if (!mounted || _isDisposed) return;
 
@@ -395,6 +415,7 @@ class _CachedApiImageState extends State<CachedApiImage> {
           colorBlendMode: widget.colorBlendMode,
           filterQuality: FilterQuality.medium,
           gaplessPlayback: true,
+          errorBuilder: _onDecodeFailed,
         );
 
         // Fade-in animation
