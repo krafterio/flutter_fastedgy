@@ -4,6 +4,7 @@
  */
 
 import 'dart:async';
+import 'dart:math' show max;
 
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/gestures.dart' show kTouchSlop;
@@ -70,8 +71,16 @@ class RichTextEditor extends StatefulWidget {
   /// inside one can afford — the page scrolls. A composer pinned under a thread
   /// cannot: every line typed into it would take one off the thread above.
   ///
-  /// Only for a field ([scrollable] false): a page owns its scrolling already.
+  /// The words alone: a docked strip takes its room on top of this, so what can
+  /// be read of a field never changes for it (see [toolbarEdge]). Only for a
+  /// field ([scrollable] false): a page owns its scrolling already.
   final double? maxHeight;
+
+  /// How tall it stands with nothing written in it — a composer that reads as a
+  /// field rather than as a line.
+  ///
+  /// The words alone, like [maxHeight], and for the same reason.
+  final double? minHeight;
 
   final EdgeInsets padding;
 
@@ -101,6 +110,14 @@ class RichTextEditor extends StatefulWidget {
   /// strip on [RichTextToolbarVisibility.caret], which is what makes it survive
   /// its own block actions and its own undo.
   final RichTextToolbarVisibility? toolbarVisibility;
+
+  /// Which edge a docked strip sits on.
+  ///
+  /// Under the words by default, where a phone puts its own. A field that grows
+  /// with what is written wants it over them: appearing under it takes the
+  /// field's head up by its own height, and the line being written jumps under
+  /// the thumb about to touch it.
+  final RichTextToolbarEdge toolbarEdge;
 
   /// Room on the strip for what the package cannot know about — an
   /// application's own bottom inset under a navigation bar that floats, a
@@ -154,6 +171,7 @@ class RichTextEditor extends StatefulWidget {
     this.scrollable = false,
     this.maxWidth,
     this.maxHeight,
+    this.minHeight,
     this.padding = const EdgeInsets.symmetric(vertical: 4),
     this.textStyle,
     this.header,
@@ -162,6 +180,7 @@ class RichTextEditor extends StatefulWidget {
     this.toolbar = true,
     this.actions,
     this.toolbarVisibility,
+    this.toolbarEdge = RichTextToolbarEdge.bottom,
     this.toolbarSlots = RichTextToolbarSlots.none,
     this.slashMenu = true,
     this.menuItems,
@@ -775,6 +794,7 @@ class RichTextEditorState extends State<RichTextEditor> {
       return RichTextDockedToolbar(
         editorState: widget.editorState,
         measured: _stripHeight,
+        edge: widget.toolbarEdge,
         // The "/" first, and only here: a keyboard types the character, a thumb
         // has no key for it and would otherwise have no way to reach the list
         // of blocks at all. Its own group, so a rule sets it apart from the
@@ -843,7 +863,9 @@ class RichTextEditorState extends State<RichTextEditor> {
       _ => null,
     };
     final under = widget.toolbarSlots.underContent;
-    final docked = widget.editable && widget.toolbar && toolbarTheme.isDocked;
+    final docked =
+        _reservesInContent(toolbarTheme) &&
+        widget.toolbarEdge == RichTextToolbarEdge.bottom;
 
     if (under == null && !docked) {
       return footer == null
@@ -872,6 +894,38 @@ class RichTextEditorState extends State<RichTextEditor> {
           ?under,
         ],
       ),
+    );
+  }
+
+  /// Whether the room for a docked strip is kept inside what scrolls.
+  ///
+  /// Never on a field with a ceiling: there it comes out of the arrangement
+  /// that gives the field its height, and keeping it here as well would reserve
+  /// it twice (see [_measured]).
+  bool _reservesInContent(RichTextToolbarTheme toolbarTheme) =>
+      widget.editable &&
+      widget.toolbar &&
+      toolbarTheme.isDocked &&
+      (widget.scrollable || widget.maxHeight == null);
+
+  /// The caller's header, over the room a strip docked at the head takes.
+  Widget? _header(RichTextToolbarTheme toolbarTheme) {
+    if (!_reservesInContent(toolbarTheme) ||
+        widget.toolbarEdge != RichTextToolbarEdge.top) {
+      return widget.header;
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ValueListenableBuilder<double>(
+          valueListenable: _stripHeight,
+          builder: (context, height, _) =>
+              SizedBox(height: height + toolbarTheme.contentGap),
+        ),
+        ?widget.header,
+      ],
     );
   }
 
@@ -916,41 +970,56 @@ class RichTextEditorState extends State<RichTextEditor> {
         text: widget.textStyle,
       ),
       dropTargetStyle: RichTextStyle.dropTarget(theme),
-      header: widget.header,
+      header: _header(toolbarTheme),
       footer: _footer(toolbarTheme),
     );
 
+    final page = widget.editable ? _underContent(editor) : editor;
+
+    // The strip goes on the outside, and it matters where: a capped field puts
+    // its blocks in a scroll view, and a strip inside that one stood at the
+    // foot of everything written rather than at the foot of the window — off
+    // the bottom of the field, cut in half by its edge, the moment what was
+    // written was taller than the field.
     // The same four actions, raised the way each platform raises them: the
     // selection toolbar a held press leaves over the words under a thumb, the
     // menu a right-click opens under a pointer (see _buildContextMenu).
-    final page = widget.editable
-        ? _underContent(
-            hasHoverPointer
-                ? editor
-                : RichTextTouchMenu(
-                    editorState: widget.editorState,
-                    scrollController: scrollController,
-                    features: widget.features,
-                    child: editor,
-                  ),
+    //
+    // Outside whatever scrolls, and it matters: it takes the menu away while
+    // the words move and puts it back once they settle, and it hears that from
+    // the scroll notifications rising past it. Mounted under the scroll view of
+    // a capped field, none of them ever reached it — the menu went on the first
+    // scroll and never came back.
+    final body = widget.editable && !hasHoverPointer
+        ? RichTextTouchMenu(
+            editorState: widget.editorState,
+            scrollController: scrollController,
+            features: widget.features,
+            reserved: _stripHeight,
+            edge: widget.toolbarEdge,
+            child: _measured(page),
           )
-        : editor;
+        : _measured(page);
 
-    final whole = widget.editable && widget.toolbar
-        ? _toolbar(context, theme, toolbarTheme, page)
-        : page;
+    return widget.editable && widget.toolbar
+        ? _toolbar(context, theme, toolbarTheme, body)
+        : body;
+  }
 
-    // The editor always mounts an Overlay, and an Overlay cannot be laid out
-    // where the height is unbounded — a rendered message in a list. Measuring
-    // the content first is what the package's own example does, and it is the
-    // component's job rather than every caller's. A rendered document is always
-    // measured: it takes the height of what it holds wherever it is put.
+  /// The blocks in whatever arrangement gives them a height.
+  ///
+  /// The editor always mounts an Overlay, and an Overlay cannot be laid out
+  /// where the height is unbounded — a rendered message in a list. Measuring
+  /// the content first is what the package's own example does, and it is the
+  /// component's job rather than every caller's. A rendered document is always
+  /// measured: it takes the height of what it holds wherever it is put.
+  Widget _measured(Widget page) {
     if (!widget.editable) {
-      return IntrinsicHeight(child: whole);
+      return IntrinsicHeight(child: page);
     }
 
     if (widget.scrollable) {
-      return whole;
+      return page;
     }
 
     // The arrangement the package asks for when the document lays itself out as
@@ -960,12 +1029,39 @@ class RichTextEditorState extends State<RichTextEditor> {
     // unbounded height has to be: the editor mounts an Overlay, and an Overlay
     // laid out against infinity asserts outright.
     if (widget.maxHeight case final maxHeight?) {
-      return ConstrainedBox(
-        constraints: BoxConstraints(maxHeight: maxHeight),
-        child: SingleChildScrollView(
-          key: _viewportKey,
-          controller: scrollController.scrollController,
-          child: IntrinsicHeight(child: whole),
+      // The strip stands under the window rather than inside it: [maxHeight] is
+      // how tall the words may grow, and the strip is not words. It takes its
+      // room on top of that, so what can be read of a field never changes for
+      // it — reserved at the foot of what scrolls instead, the strip stood on
+      // the last line as soon as there was more written than the field could
+      // show, and scrolling clear of it meant scrolling past the words.
+      return ValueListenableBuilder<double>(
+        valueListenable: _stripHeight,
+        builder: (context, reserved, _) => Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Less the room the words keep at their head: under a strip they
+            // are already clear of what is above them, and the field's own
+            // padding read as a gap between the two.
+            if (widget.toolbarEdge == RichTextToolbarEdge.top)
+              SizedBox(height: max(0, reserved - widget.padding.top)),
+            Flexible(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: widget.minHeight ?? 0,
+                  maxHeight: maxHeight,
+                ),
+                child: SingleChildScrollView(
+                  key: _viewportKey,
+                  controller: scrollController.scrollController,
+                  child: IntrinsicHeight(child: page),
+                ),
+              ),
+            ),
+            if (widget.toolbarEdge == RichTextToolbarEdge.bottom)
+              SizedBox(height: reserved),
+          ],
         ),
       );
     }
@@ -974,10 +1070,19 @@ class RichTextEditorState extends State<RichTextEditor> {
     // that scrolls. The pass runs the whole subtree twice, which a block laying
     // itself out against its constraints (a picture and its handles) refuses
     // outright, so a field given a height of its own is left alone.
-    return LayoutBuilder(
+    final measured = LayoutBuilder(
       builder: (context, constraints) =>
-          constraints.hasBoundedHeight ? whole : IntrinsicHeight(child: whole),
+          constraints.hasBoundedHeight ? page : IntrinsicHeight(child: page),
     );
+
+    if (widget.minHeight case final minHeight?) {
+      return ConstrainedBox(
+        constraints: BoxConstraints(minHeight: minHeight),
+        child: measured,
+      );
+    }
+
+    return measured;
   }
 }
 

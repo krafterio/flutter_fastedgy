@@ -4,11 +4,13 @@
  */
 
 import 'dart:async' show unawaited;
+import 'dart:math' show max;
 
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/widgets.dart';
 
 import '../icons.dart';
+import '../theme/component_theme.dart';
 import 'rich_text_action.dart';
 import 'rich_text_clipboard.dart';
 import 'rich_text_controls.dart';
@@ -36,6 +38,21 @@ enum RichTextToolbarVisibility {
 
   /// Always, whether the document is being written in or not.
   always,
+}
+
+/// Which edge a docked strip sits on.
+enum RichTextToolbarEdge {
+  /// Under the words, above the keyboard: where a phone puts its own, and where
+  /// a page wants it — the strip stands at the foot of what is being read.
+  bottom,
+
+  /// Over the words.
+  ///
+  /// What a field that grows with what is written wants: a strip appearing
+  /// under it takes the field's foot down, or its head up, by its own height,
+  /// and the line being written jumps under the thumb about to touch it. Above
+  /// them nothing already written moves.
+  top,
 }
 
 /// Room a caller gets on the formatting strip, for what the package has no way
@@ -300,6 +317,9 @@ class RichTextDockedToolbar extends StatefulWidget {
   /// What the application wanted room for on the strip.
   final RichTextToolbarSlots slots;
 
+  /// Which edge it sits on.
+  final RichTextToolbarEdge edge;
+
   /// The editor it is docked to.
   final Widget child;
 
@@ -315,6 +335,7 @@ class RichTextDockedToolbar extends StatefulWidget {
     super.key,
     this.visibility = RichTextToolbarVisibility.caret,
     this.slots = RichTextToolbarSlots.none,
+    this.edge = RichTextToolbarEdge.bottom,
     this.measured,
   });
 
@@ -387,7 +408,12 @@ class _RichTextDockedToolbarState extends State<RichTextDockedToolbar>
   }
 
   /// What the strip stands in, for the band the content keeps at its foot.
-  /// Zero while it is not up: there is nothing to keep clear of.
+  ///
+  /// Zero while it is not up: there is nothing to keep clear of. Never less than
+  /// what the theme gives it while it is — what a caller put in the bands can
+  /// only be measured, but a band that waits for a measurement is zero on the
+  /// frame the strip appears, and the strip stands on the line being written
+  /// until something else asks for another one.
   void _measureStrip() {
     final notifier = widget.measured;
 
@@ -396,14 +422,46 @@ class _RichTextDockedToolbarState extends State<RichTextDockedToolbar>
     }
 
     final box = _stripKey.currentContext?.findRenderObject();
-    final height = box is RenderBox && box.attached && box.hasSize
+    final measured = box is RenderBox && box.attached && box.hasSize
         ? box.size.height
         : 0.0;
+    final height = _showing ? max(measured, _declared) : 0.0;
 
     if ((height - notifier.value).abs() > 0.5) {
       notifier.value = height;
     }
   }
+
+  bool get _atTop => widget.edge == RichTextToolbarEdge.top;
+
+  /// The surface with its rule on the side the words are on.
+  ///
+  /// A docked strip carries one line telling it apart from what it sits beside,
+  /// and the theme draws it for a strip under them. Over them it belongs on the
+  /// other side.
+  BoxDecoration _surface(RichTextToolbarTheme theme) {
+    final border = theme.surface.border;
+
+    if (!_atTop || border is! Border) {
+      return theme.surface;
+    }
+
+    return theme.surface.copyWith(
+      border: Border(top: border.bottom, bottom: border.top),
+    );
+  }
+
+  /// The strip at the height the theme gives it, bands and system edge aside:
+  /// what the content owes it before anything has been measured.
+  double get _declared {
+    final theme = RichTextToolbarTheme.of(context);
+
+    return theme.height + theme.padding.vertical;
+  }
+
+  /// Whether the strip is up, as the last build left it. Read by the measuring,
+  /// which runs after that frame rather than during it.
+  bool _showing = false;
 
   bool _shows(Selection? selection) => switch (widget.visibility) {
     RichTextToolbarVisibility.always => true,
@@ -427,38 +485,59 @@ class _RichTextDockedToolbarState extends State<RichTextDockedToolbar>
     return ValueListenableBuilder<Selection?>(
       valueListenable: widget.editorState.selectionNotifier,
       child: KeyedSubtree(key: _editorKey, child: widget.child),
-      builder: (context, selection, editor) =>
-          NotificationListener<ScrollNotification>(
-            onNotification: (_) {
-              _scheduleMeasure();
+      builder: (context, selection, editor) {
+        // The strip going up or coming down is the whole of what the content
+        // has to keep clear at its foot, and this is the only thing that runs
+        // when it does: the state's own build answers the editor moving, not
+        // the caret. A field that only shows the strip over a selection was
+        // reserving nothing, and the strip stood on the line being written.
+        _showing = _shows(selection);
+        _scheduleMeasure();
 
-              return false;
-            },
-            child: Stack(
-              children: [
-                editor!,
-                if (_shows(selection))
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    // Zero parks it on the editor's own foot; anything else holds
-                    // it at the bottom of the screen while that foot is below.
-                    bottom: _overflow,
-                    child: RichTextSurface(
-                      key: _stripKey,
-                      padding: theme.padding.copyWith(
-                        // The surface reaches the edge, its buttons do not: pinned
-                        // with the keyboard down, the last strip of the screen
-                        // belongs to the system — on iOS the home indicator takes
-                        // the first tap there. Parked on the editor there is no
-                        // edge to leave alone, and no band to reserve.
-                        bottom:
-                            theme.padding.bottom +
-                            (_pinned && !widget.slots.holdsBottom ? system : 0),
-                      ),
-                      decoration: theme.surface,
-                      child: widget.slots.around(
-                        RichTextActionBar(
+        return NotificationListener<ScrollNotification>(
+          onNotification: (_) {
+            _scheduleMeasure();
+
+            return false;
+          },
+          child: Stack(
+            children: [
+              editor!,
+              if (_shows(selection))
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  // Zero parks it on the editor's own foot; anything else holds
+                  // it at the bottom of the screen while that foot is below.
+                  // Nothing to follow at the head: what the keyboard moves is
+                  // the bottom of the screen.
+                  top: _atTop ? 0 : null,
+                  bottom: _atTop ? null : _overflow,
+                  child: RichTextSurface(
+                    key: _stripKey,
+                    padding: theme.padding.copyWith(
+                      // The surface reaches the edge, its buttons do not: pinned
+                      // with the keyboard down, the last strip of the screen
+                      // belongs to the system — on iOS the home indicator takes
+                      // the first tap there. Parked on the editor, or standing
+                      // over the words, there is no edge to leave alone.
+                      bottom:
+                          theme.padding.bottom +
+                          (!_atTop && _pinned && !widget.slots.holdsBottom
+                              ? system
+                              : 0),
+                    ),
+                    decoration: _surface(theme),
+                    child: widget.slots.around(
+                      ComponentTheme<RichTextToolbarTheme>(
+                        // Its buttons and nothing more at the head of a field:
+                        // the row is taller than they are, which at the foot of
+                        // the screen reads as breathing room and under a rule
+                        // reads as a band of nothing.
+                        data: _atTop
+                            ? theme.copyWith(height: theme.itemSize)
+                            : theme,
+                        child: RichTextActionBar(
                           editorState: widget.editorState,
                           actions: widget.actions,
                           leading: widget.slots.leading,
@@ -467,9 +546,11 @@ class _RichTextDockedToolbarState extends State<RichTextDockedToolbar>
                       ),
                     ),
                   ),
-              ],
-            ),
+                ),
+            ],
           ),
+        );
+      },
     );
   }
 }
