@@ -128,6 +128,13 @@ class RichTextFeatures {
       if (feature is! T) feature,
   ]);
 
+  /// The same set less the features of these kinds — [without] said at runtime,
+  /// for a caller naming them in a list rather than in a type argument.
+  RichTextFeatures withoutAll(Set<Type> kinds) => RichTextFeatures([
+    for (final feature in features)
+      if (!kinds.contains(feature.runtimeType)) feature,
+  ]);
+
   /// The same set plus [added], which win any node type they share with it.
   RichTextFeatures and(List<RichTextFeature> added) =>
       RichTextFeatures([...features, ...added]);
