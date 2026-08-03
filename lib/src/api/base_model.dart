@@ -73,11 +73,27 @@ class DynamicSchema<T extends DynamicSchema<T>> {
 
   // ========== Type-specific helpers ==========
 
-  /// Get a String field
-  String? getString(String name) => getField<String>(name);
+  /// Reads a text field, without the halves of surrogate pairs that lost their
+  /// other half.
+  ///
+  /// Such a string cannot be laid out by Skia, and a text field holding one
+  /// crashes the app the moment the platform re-encodes it (a backspace on iOS
+  /// is enough). They come in with the data — a contact name truncated by the
+  /// OS, a title cut by another client — so the guard belongs where the data is
+  /// read, not at each of the screens showing it.
+  String? getString(String name) {
+    final value = getField<String>(name);
+    if (value == null || !_loneSurrogates.hasMatch(value)) return value;
+
+    return value.replaceAll(_loneSurrogates, '');
+  }
 
   /// Set a String field
   T setString(String name, String? value) => setField<String>(name, value);
+
+  static final _loneSurrogates = RegExp(
+    r'[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]',
+  );
 
   /// Get an int field
   int? getInt(String name) => getField<int>(name);
