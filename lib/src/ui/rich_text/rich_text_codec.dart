@@ -64,11 +64,81 @@ class MarkdownRichTextCodec extends RichTextCodec {
       ? ''
       : encodeNestedMarkdown(
           features.beforeMarkdown(_spaceOutsideMarks(document)),
-          (block) => documentToMarkdown(
-            Document.blank()..insert([0], [block]),
-            customParsers: features.markdownEncoders,
-          ).trimRight(),
+          _written,
         );
+
+  /// One block written the way it will be read back.
+  ///
+  /// Markdown gives certain characters a meaning at the head of a line, and a
+  /// paragraph somebody opened with `#` is written `\#` for it: without the
+  /// backslash the words come back a heading the next time the document is
+  /// opened, having been a paragraph on the screen the whole time it was
+  /// written. The same goes for `-`, `>`, `1.`, a fence, a table row.
+  ///
+  /// Which characters those are is never listed anywhere, and deliberately: the
+  /// block is written, read back and compared to itself. What survives is
+  /// stored as it stands, what does not is escaped until it does. A syntax a
+  /// feature teaches the decoder is therefore covered the day it is taught,
+  /// including one nothing here has ever heard of.
+  String _written(Node block) {
+    final markdown = _markdown(block);
+    final escapes = _escapes(block.delta?.toPlainText() ?? '').toList();
+
+    // Nothing a backslash could go in front of is nothing that can be done
+    // about it, whatever reading it back would say — and reading every block
+    // back to find that out is not free.
+    if (escapes.isEmpty || _readsBack(block, markdown)) {
+      return markdown;
+    }
+
+    for (final offsets in escapes) {
+      final escaped = _escapedAt(block, offsets);
+
+      if (escaped == null) {
+        continue;
+      }
+
+      final candidate = _markdown(escaped);
+
+      if (_readsBack(block, candidate)) {
+        return candidate;
+      }
+    }
+
+    // Nothing that could be escaped brought it back whole. Storing it as it
+    // stands is what happened before any of this, and reads at least right.
+    return markdown;
+  }
+
+  String _markdown(Node block) => documentToMarkdown(
+    Document.blank()..insert([0], [block]),
+    customParsers: features.markdownEncoders,
+  ).trimRight();
+
+  /// Whether [markdown] read back is the block it was written from: one block,
+  /// the same kind, the same shape, and the same words.
+  ///
+  /// The words as markdown leaves them, which is why the source is unescaped
+  /// before the two are compared: a feature stores what it must escape already
+  /// escaped — a mention's label carrying an `@` or a bracket — and the reader
+  /// hands those back as the characters they stand for. Comparing the two
+  /// literally would call every one of them a block gone wrong.
+  ///
+  /// What it does catch is a marker eaten: `> # x` comes back one quote, of the
+  /// same shape, having quietly lost the dash on the way.
+  bool _readsBack(Node block, String markdown) {
+    final read = markdownToDocument(
+      markdown,
+      markdownParsers: features.markdownDecoders,
+      inlineSyntaxes: features.markdownInlineSyntaxes,
+    ).root.children;
+
+    return read.length == 1 &&
+        read.first.type == block.type &&
+        read.first.children.length == block.children.length &&
+        read.first.delta?.toPlainText() ==
+            _unescaped(block.delta?.toPlainText() ?? '');
+  }
 
   @override
   Document decode(String? source) {
@@ -121,6 +191,95 @@ class JsonRichTextCodec extends RichTextCodec {
 
     return document.root.children.isEmpty ? RichTextCodec.blank : document;
   }
+}
+
+/// What a backslash is allowed in front of in markdown, which is ASCII
+/// punctuation and nothing else — before anything else it is just a backslash,
+/// and `\1` escapes no more than the `1` did.
+///
+/// A rule of the format, not a list of what opens a block: what opens a block
+/// is never written down here (see [MarkdownRichTextCodec._written]).
+final _punctuation = RegExp(r'[\x21-\x2f\x3a-\x40\x5b-\x60\x7b-\x7e]');
+
+/// A backslash that stands for the character behind it, rather than for
+/// itself. What [_punctuation] is allowed in front of, read the other way.
+final _escape = RegExp(r'\\([\x21-\x2f\x3a-\x40\x5b-\x60\x7b-\x7e])');
+
+/// [text] as markdown will hand it back: the characters an escape stands for,
+/// and the backslashes that stand for nothing left where they are.
+String _unescaped(String text) =>
+    text.replaceAllMapped(_escape, (match) => match[1]!);
+
+final _blank = RegExp(r'\s');
+final _nonBlank = RegExp(r'\S');
+
+/// Where the backslashes could go, cheapest first: the first character markdown
+/// would read something into, then every one of them in the opening word.
+///
+/// Two rounds and no more. One backslash is what `#`, `-`, `>` and `1.` take;
+/// all of them is what a rule or a fence takes, being the same character three
+/// times over. Anything still ambiguous after that is ambiguous.
+Iterable<List<int>> _escapes(String text) sync* {
+  final start = text.indexOf(_nonBlank);
+
+  if (start < 0) {
+    return;
+  }
+
+  final end = text.indexOf(_blank, start);
+  final word = end < 0 ? text.length : end;
+  final offsets = [
+    for (var at = start; at < word; at++)
+      if (_punctuation.hasMatch(text[at])) at,
+  ];
+
+  if (offsets.isEmpty) {
+    return;
+  }
+
+  yield [offsets.first];
+
+  if (offsets.length > 1) {
+    yield offsets;
+  }
+}
+
+/// [block] with a backslash written in at each of [offsets].
+///
+/// Null where they fall outside the first run of the text: what opens a line is
+/// what the first run holds, and rewriting further than that would take the
+/// marks off the words it was carrying.
+Node? _escapedAt(Node block, List<int> offsets) {
+  final delta = block.delta;
+  final first = delta?.first;
+
+  if (delta == null ||
+      first is! TextInsert ||
+      offsets.last >= first.text.length) {
+    return null;
+  }
+
+  final buffer = StringBuffer();
+
+  for (var at = 0; at < first.text.length; at++) {
+    if (offsets.contains(at)) {
+      buffer.write(r'\');
+    }
+
+    buffer.write(first.text[at]);
+  }
+
+  return block.copyWith(
+    attributes: {
+      ...block.attributes,
+      blockComponentDelta: Delta(
+        operations: [
+          TextInsert(buffer.toString(), attributes: first.attributes),
+          ...delta.skip(1),
+        ],
+      ).toJson(),
+    },
+  );
 }
 
 /// What a mark is written with in markdown, and what a space next to it kills.

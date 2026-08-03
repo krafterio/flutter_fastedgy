@@ -429,10 +429,17 @@ class RichTextEditorState extends State<RichTextEditor> {
   /// Every shortcut but a feature's own goes behind the features' guards, so a
   /// block that swallows typing keeps Enter, the markdown triggers and the "/"
   /// menu out of itself.
+  ///
+  /// [formatSignToHeading] is left out. A `#` is a character people write —
+  /// a number, a tag, a channel — and the one place they write it is where it
+  /// was being taken for a heading: the head of a line, on the empty block
+  /// they had just opened. Every other trigger opens a block whose marker is
+  /// punctuation nobody starts a sentence with; a heading is made from the
+  /// strip or the "/" menu, where nothing is taken for anything.
   List<CharacterShortcutEvent> get _characterShortcuts => [
     ...widget.features.characterShortcuts,
     ...standardCharacterShortcutEvents
-        .where((event) => event != slashCommand)
+        .where((event) => event != slashCommand && event != formatSignToHeading)
         .map(widget.features.guard),
     if (widget.slashMenu) widget.features.guard(_slashCommand()),
   ];

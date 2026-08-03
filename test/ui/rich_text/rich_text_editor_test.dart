@@ -390,6 +390,41 @@ void main() {
     });
   });
 
+  group('ce que la frappe met en forme', () {
+    testWidgets('un dièse reste un dièse', (tester) async {
+      // Un « # » est un caractère qu'on écrit — un numéro, un mot-clé — et le
+      // seul endroit où on l'écrit est celui où il passait pour un titre : en
+      // tête d'une ligne qu'on vient d'ouvrir.
+      await pump(
+        tester,
+        RichTextEditor(
+          features: defaultRichTextFeatures,
+          editorState: stateOf('Salut'),
+        ),
+      );
+
+      final keys = tester
+          .widget<AppFlowyEditor>(find.byType(AppFlowyEditor))
+          .characterShortcutEvents
+          .map((event) => event.key);
+
+      expect(
+        keys.where((key) => key.startsWith(formatSignToHeading.key)),
+        isEmpty,
+      );
+
+      // Les autres continuent : leur marqueur n'ouvre pas de phrase.
+      expect(
+        keys.where((key) => key.startsWith(formatMinusToBulletedList.key)),
+        isNotEmpty,
+      );
+      expect(
+        keys.where((key) => key.startsWith(formatNumberToNumberedList.key)),
+        isNotEmpty,
+      );
+    });
+  });
+
   group('ce que l\'historique retient', () {
     testWidgets('un tableau qui se met en forme n\'est pas une frappe', (
       tester,

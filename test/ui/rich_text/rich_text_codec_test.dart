@@ -445,4 +445,103 @@ void main() {
       expect(markdown, 'Avant après');
     });
   });
+
+  group('ce qui ouvrirait un bloc en tête de ligne', () {
+    const codec = MarkdownRichTextCodec(features: defaultRichTextFeatures);
+
+    Document documentOf(List<Node> nodes) =>
+        Document.blank()..insert([0], nodes);
+
+    Node reread(Document document) =>
+        codec.decode(codec.encode(document)).root.children.first;
+
+    /// Le texte est écrit dans un paragraphe, et doit revenir un paragraphe
+    /// portant exactement les mêmes caractères.
+    void survives(String text) {
+      final block = reread(
+        documentOf([paragraphNode(delta: Delta()..insert(text))]),
+      );
+
+      expect(block.type, ParagraphBlockKeys.type, reason: text);
+      expect(block.delta?.toPlainText(), text, reason: text);
+    }
+
+    test('un dièse reste un dièse et pas un titre', () {
+      final markdown = codec.encode(
+        documentOf([paragraphNode(delta: Delta()..insert('# Test non titre'))]),
+      );
+
+      expect(markdown, r'\# Test non titre');
+
+      survives('# Test non titre');
+    });
+
+    test('et tout ce que le lecteur sait ouvrir avec', () {
+      survives('## Deux');
+      survives('- pas une liste');
+      survives('* pas une puce');
+      survives('1. pas une liste');
+      survives('> pas une citation');
+      survives('```pas du code');
+      survives('![](https://example.org/a.png)');
+    });
+
+    test('ce qui n\'ouvre rien n\'est pas échappé pour autant', () {
+      final markdown = codec.encode(
+        documentOf([
+          paragraphNode(delta: Delta()..insert('(entre parenthèses)')),
+          paragraphNode(delta: Delta()..insert('--- pas une règle')),
+          paragraphNode(delta: Delta()..insert('C:\\chemin')),
+        ]),
+      );
+
+      expect(
+        markdown,
+        '(entre parenthèses)\n\n--- pas une règle\n\nC:\\chemin',
+      );
+    });
+
+    test('un marqueur dans un bloc qui en est déjà un', () {
+      final quote = reread(
+        documentOf([quoteNode(delta: Delta()..insert('# pas un titre'))]),
+      );
+
+      expect(quote.type, QuoteBlockKeys.type);
+      expect(quote.delta?.toPlainText(), '# pas un titre');
+    });
+
+    test('le contenu d\'un bloc de code n\'est jamais échappé', () {
+      final markdown = codec.encode(
+        documentOf([
+          codeBlockNode(
+            delta: Delta()..insert('# commentaire'),
+            language: 'python',
+          ),
+        ]),
+      );
+
+      expect(markdown, contains('# commentaire'));
+      expect(markdown, isNot(contains(r'\#')));
+    });
+
+    test('les marques du passage survivent à l\'échappement', () {
+      final markdown = codec.encode(
+        documentOf([
+          paragraphNode(
+            delta: Delta()
+              ..insert('# ')
+              ..insert('gras', attributes: {'bold': true}),
+          ),
+        ]),
+      );
+
+      expect(markdown, r'\# **gras**');
+
+      final block = codec.decode(markdown).root.children.first;
+      final runs = block.delta!.toList().cast<TextInsert>();
+
+      expect(block.delta?.toPlainText(), '# gras');
+      expect(runs.last.attributes?['bold'], isTrue);
+    });
+  });
 }
