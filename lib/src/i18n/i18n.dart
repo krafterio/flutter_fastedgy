@@ -5,11 +5,14 @@
 
 import 'dart:convert';
 
+import 'package:cupertino_ui/cupertino_ui.dart'
+    show GlobalCupertinoLocalizations;
 import 'package:easy_localization/easy_localization.dart';
 import 'package:easy_logger/easy_logger.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter/widgets.dart';
 import 'package:logging/logging.dart';
+import 'package:material_ui/material_ui.dart' show GlobalMaterialLocalizations;
 
 /// Loads this package's own translations under the application's.
 ///
@@ -53,6 +56,22 @@ class FastEdgyAssetLoader extends AssetLoader {
   }
 }
 
+extension FastEdgyLocalizations on BuildContext {
+  /// The delegates an application's App widget must be given.
+  ///
+  /// `context.localizationDelegates` alone is not enough: it carries the
+  /// globals of `flutter_localizations`, which localize the Material and
+  /// Cupertino still shipped inside `package:flutter`. Since Flutter 3.47 the
+  /// widgets actually rendered come from `material_ui` and `cupertino_ui`,
+  /// whose localizations are distinct types, and a locale other than English
+  /// finds none of them.
+  List<LocalizationsDelegate> get fastEdgyLocalizationDelegates => [
+    ...localizationDelegates,
+    GlobalMaterialLocalizations.delegate,
+    GlobalCupertinoLocalizations.delegate,
+  ];
+}
+
 /// Initialize EasyLocalization
 ///
 /// This is called automatically by initializeFastEdgy().
@@ -71,7 +90,7 @@ Future<void> initializeI18n() async {
 /// ```dart
 /// // In your App widget build method:
 /// MaterialApp( // or CupertinoApp, or WidgetsApp
-///   localizationsDelegates: context.localizationDelegates,
+///   localizationsDelegates: context.fastEdgyLocalizationDelegates,
 ///   supportedLocales: context.supportedLocales,
 ///   locale: context.locale,
 ///   // ... rest of your app config
@@ -96,7 +115,7 @@ Future<void> initializeI18n() async {
 ///   @override
 ///   Widget build(BuildContext context) {
 ///     return MaterialApp(
-///       localizationsDelegates: context.localizationDelegates,
+///       localizationsDelegates: context.fastEdgyLocalizationDelegates,
 ///       supportedLocales: context.supportedLocales,
 ///       locale: context.locale,
 ///       home: HomeScreen(),
