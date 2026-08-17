@@ -3,7 +3,7 @@
  * MIT License (see LICENSE file).
  */
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'theme/component_theme.dart';
 

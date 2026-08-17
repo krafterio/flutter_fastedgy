@@ -8,7 +8,7 @@ import 'dart:typed_data';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/foundation.dart'
     show TargetPlatform, debugDefaultTargetPlatformOverride;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' show SystemChannels;
 import 'package:flutter_fastedgy/ui.dart';
 import 'package:flutter_test/flutter_test.dart';

@@ -3,7 +3,7 @@
  * MIT License (see LICENSE file).
  */
 
-import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:logging/logging.dart';
 import '../log_listener.dart';
 

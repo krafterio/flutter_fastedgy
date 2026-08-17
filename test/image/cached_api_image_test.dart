@@ -8,7 +8,7 @@ import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart' hide ImageCache;
+import 'package:material_ui/material_ui.dart' hide ImageCache;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_fastedgy/flutter_fastedgy.dart';

@@ -7,7 +7,7 @@ import 'dart:async' show unawaited;
 
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'rich_text_action.dart';
 import 'rich_text_action_bar.dart';

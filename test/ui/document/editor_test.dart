@@ -5,7 +5,7 @@
 
 import 'package:flutter_fastedgy/ui.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_fastedgy/flutter_fastedgy.dart' show t;
 import 'package:flutter_test/flutter_test.dart';
 
