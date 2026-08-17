@@ -90,28 +90,20 @@ class SyncEngine {
     this._outbox,
     this._fetcher,
     this._bus, {
-    LocalStore? localStore,
-    Replica? replica,
-    Stream<bool>? online,
-    SyncStatus? status,
-    ConflictStore? conflicts,
-    SyncLock? lock,
-    MetadataProvider? metadatas,
-    PendingUploadStore? uploads,
-    LocalImageStore? images,
+    this._localStore,
+    this._replica,
+    this._online,
+    this._status,
+    this._conflicts,
+    this._lock,
+    this._metadatas,
+    this._uploads,
+    this._images,
     this.batchSize = 500,
     this.maxAttempts = 25,
     this.retryBaseDelay = const Duration(seconds: 5),
     this.retryMaxDelay = const Duration(minutes: 5),
-  }) : _localStore = localStore,
-       _replica = replica,
-       _online = online,
-       _status = status,
-       _conflicts = conflicts,
-       _lock = lock,
-       _metadatas = metadatas,
-       _uploads = uploads,
-       _images = images;
+  });
 
   /// Start listening to connectivity: every regain triggers a flush.
   void start() {
@@ -307,11 +299,10 @@ class SyncEngine {
           operation.context,
         ),
         idMap.remap(
-              operation.payload ?? const {},
-              _modelNameOf(operation, metadatas),
-              metadatas,
-            )
-            as Map,
+          operation.payload ?? const {},
+          _modelNameOf(operation, metadatas),
+          metadatas,
+        ) as Map,
       );
       final record = (response.data as Map).cast<String, dynamic>();
       final stillQueued = await _outbox.remove(operation.id);

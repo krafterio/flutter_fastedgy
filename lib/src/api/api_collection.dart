@@ -18,14 +18,12 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
     this.api, {
     dynamic fields,
     dynamic orderBy,
-    int? limit,
+    this._limit,
     bool autoRefreshOnChange = true,
     this.refreshDelay = const Duration(milliseconds: 250),
-    Object? watchFields,
-  }) : _watchFields = watchFields,
-       _configFields = fields,
-       _configOrderBy = orderBy,
-       _limit = limit {
+    this._watchFields,
+  }) : _configFields = fields,
+       _configOrderBy = orderBy {
     if (autoRefreshOnChange) {
       _sub = getService<Bus>().on<ResourceChangedEvent>().listen(
         _onResourceChanged,
@@ -61,9 +59,10 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
     final declared = _watchFields;
 
     if (declared == true) {
-      return ApiHelpers.encodeFields(
-        fields,
-      ).split(',').where((one) => one.isNotEmpty).toList();
+      return ApiHelpers.encodeFields(fields)
+          .split(',')
+          .where((one) => one.isNotEmpty)
+          .toList();
     }
 
     return declared is Iterable<String> ? declared.toList() : const [];

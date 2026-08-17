@@ -35,8 +35,8 @@ class DefaultAuthProvider<TUser> implements AuthProvider<TUser> {
     this._fetcher,
     this._tokenStorage,
     this._bus, {
-    TUser Function(Map<String, dynamic> json)? userFromJson,
-  }) : _userFromJson = userFromJson;
+    this._userFromJson,
+  });
 
   /// Get the Fetcher instance
   ///

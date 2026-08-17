@@ -47,20 +47,17 @@ class GroupedApiCollection<T extends BaseModel<T>> extends ChangeNotifier
   GroupedApiCollection(
     this.api,
     this.source, {
-    dynamic fields,
+    this._fields,
     dynamic orderBy,
-    Object? filter,
+    this._filter,
     ListSort sort = ListSort.empty,
     this.rowLimit = 20,
     this.refreshDelay = const Duration(milliseconds: 250),
-    Object? watchFields,
-  }) : _watchFields = watchFields,
-       _fields = fields,
-       // An ordering known up front — restored from a URL — is what the buckets
+    this._watchFields,
+  }) : // An ordering known up front — restored from a URL — is what the buckets
        // are built with, rather than re-read right after their first page.
        _orderBy = sort.isEmpty ? orderBy : sort.toOrderBy(),
-       _sort = sort,
-       _filter = filter {
+       _sort = sort {
     _sub = getService<Bus>().on<ResourceChangedEvent>().listen(
       _onResourceChanged,
     );
@@ -88,9 +85,10 @@ class GroupedApiCollection<T extends BaseModel<T>> extends ChangeNotifier
     final declared = _watchFields;
 
     if (declared == true) {
-      return ApiHelpers.encodeFields(
-        _fields,
-      ).split(',').where((one) => one.isNotEmpty).toList();
+      return ApiHelpers.encodeFields(_fields)
+          .split(',')
+          .where((one) => one.isNotEmpty)
+          .toList();
     }
 
     return declared is Iterable<String> ? declared.toList() : const [];

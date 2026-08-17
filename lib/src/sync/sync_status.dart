@@ -58,7 +58,7 @@ class SyncStatus extends ChangeNotifier {
   int _pending = 0;
   int _conflicts = 0;
 
-  SyncStatus(this._bus, {bool online = true}) : _online = online;
+  SyncStatus(this._bus, {this._online = true});
 
   /// Whether the server can be expected to answer, readable without holding the
   /// service — the question a UI gating an action actually has.

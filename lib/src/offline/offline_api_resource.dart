@@ -52,15 +52,14 @@ abstract class OfflineApiResource extends ApiResource {
 
   /// Create an offline-capable manual API service for a resource.
   ///
-  /// [localStore] and [imageMirror] override the container-registered
+  /// `localStore` and `imageMirror` override the container-registered
   /// services (mainly for tests).
   OfflineApiResource(
     super.basePath, {
     super.fetcher,
-    LocalStore? localStore,
-    ImageMirror? imageMirror,
-  }) : _localStore = localStore,
-       _imageMirror = imageMirror;
+    this._localStore,
+    this._imageMirror,
+  });
 
   /// The local store backing this resource, or null when offline is disabled.
   LocalStore? get localStore =>
