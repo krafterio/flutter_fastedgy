@@ -6,6 +6,7 @@
 import 'dart:async';
 
 import 'package:appflowy_editor/appflowy_editor.dart';
+import 'package:flutter/foundation.dart' show FlutterExceptionHandler;
 import 'package:flutter/gestures.dart' show kTouchSlop;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_fastedgy/flutter_fastedgy.dart' show t;
@@ -215,6 +216,41 @@ class RichTextEditor extends StatefulWidget {
   State<RichTextEditor> createState() => RichTextEditorState();
 }
 
+/// The handler installed by [_silenceStaleItemPositions], to tell it from the
+/// application's own — a page mounted after the application changed it hands
+/// the new one the same treatment.
+FlutterExceptionHandler? _staleItemPositionsFilter;
+
+/// Drops the assertion the package's document list throws on its way out.
+///
+/// The list writes where its items ended up at the end of the frame and
+/// disposes the notifier it writes to as it goes, so a page left mid-fling
+/// lands that write on a dead one. Neither end is ours to hold back, and the
+/// assertion is debug-only: in release that write reaches a notifier nobody
+/// listens to any more.
+void _silenceStaleItemPositions() {
+  final present = FlutterError.onError;
+
+  if (identical(present, _staleItemPositionsFilter)) {
+    return;
+  }
+
+  void filter(FlutterErrorDetails details) {
+    final stale =
+        details.exception.toString().contains('ItemPosition') &&
+        (details.stack?.toString() ?? '').contains(
+          'scrollable_positioned_list',
+        );
+
+    if (!stale) {
+      present?.call(details);
+    }
+  }
+
+  _staleItemPositionsFilter = filter;
+  FlutterError.onError = filter;
+}
+
 class RichTextEditorState extends State<RichTextEditor> {
   late final EditorScrollController scrollController;
 
@@ -255,6 +291,8 @@ class RichTextEditorState extends State<RichTextEditor> {
   @override
   void initState() {
     super.initState();
+
+    _silenceStaleItemPositions();
 
     // The editor shows a block's gutter while the block is hovered, and a
     // finger cannot hover: on a touch platform that gate is taken off and the
