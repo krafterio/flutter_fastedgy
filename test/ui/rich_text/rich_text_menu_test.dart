@@ -69,9 +69,8 @@ void main() {
       final divider = standardSelectionMenuItems.firstWhere(
         (item) => item.name == 'Divider',
       );
-      final renamed = richTextSlashMenuItems(
-        const RichTextFeatures([]),
-      ).firstWhere((item) => item.name == 'Divider');
+      final renamed = richTextSlashMenuItems(const RichTextFeatures([]))
+          .firstWhere((item) => item.name == 'Divider');
 
       expect(renamed.keywords, divider.keywords);
     },
@@ -81,9 +80,8 @@ void main() {
     final wrapped = standardSelectionMenuItems.firstWhere(
       (item) => item.name == 'Divider',
     );
-    final ours = richTextSlashMenuItems(
-      const RichTextFeatures([]),
-    ).firstWhere((item) => item.name == 'Divider');
+    final ours = richTextSlashMenuItems(const RichTextFeatures([]))
+        .firstWhere((item) => item.name == 'Divider');
 
     // The menu re-arms these on the items it is handed, so ours is always the
     // one that deletes and the one it wraps has to stand down. Both deleting
@@ -115,9 +113,8 @@ void main() {
     );
     await tester.pump();
 
-    final heading = richTextSlashMenuItems(
-      defaultRichTextFeatures,
-    ).firstWhere((item) => item.name == 'H1');
+    final heading = richTextSlashMenuItems(defaultRichTextFeatures)
+        .firstWhere((item) => item.name == 'H1');
 
     // What the menu does to the items it is handed, just before showing them.
     heading

@@ -4,6 +4,7 @@
  */
 
 import 'package:dio/dio.dart';
+
 import '../fetcher/client.dart';
 import 'api_helpers.dart';
 import 'api_model.dart';

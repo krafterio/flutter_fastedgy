@@ -4,6 +4,7 @@
  */
 
 import 'dart:async';
+
 import 'package:event_bus/event_bus.dart';
 
 /// Application-wide event bus for communication between components

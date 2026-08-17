@@ -4,6 +4,7 @@
  */
 
 import 'package:image/image.dart' as img;
+
 import '../api/base_model.dart';
 
 /// Result of a storage upload operation

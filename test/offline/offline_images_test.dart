@@ -391,8 +391,9 @@ void main() {
         {'id': 1, 'avatar': 'avatars/shared.png'},
         {'id': 2, 'avatar': 'avatars/shared.png'},
       ]);
-      adapter.byteRoutes['GET /storage/download/avatars/shared.png'] =
-          (options) => Uint8List.fromList([1]);
+      adapter.byteRoutes['GET /storage/download/avatars/shared.png'] = (
+        options,
+      ) => Uint8List.fromList([1]);
       await api.sync();
 
       adapter.routes['GET /items'] = (options) => _page([

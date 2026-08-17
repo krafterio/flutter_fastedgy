@@ -4,6 +4,7 @@
  */
 
 import 'package:dio/dio.dart';
+
 import '../../logging/logger.dart';
 
 /// Retries a request when the underlying HTTP socket was killed by the

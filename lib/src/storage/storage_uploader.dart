@@ -6,9 +6,11 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+
 import 'package:dio/dio.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as path;
+
 import '../fetcher/client.dart';
 import '../fetcher/http_error.dart';
 import '../logging/logger.dart';

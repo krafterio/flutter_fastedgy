@@ -65,12 +65,12 @@ void main() {
   });
 
   test('the link card speaks through the catalogs', () {
-    final fr =
-        jsonDecode(File('assets/translations/fr.json').readAsStringSync())
-            as Map<String, dynamic>;
-    final en =
-        jsonDecode(File('assets/translations/en.json').readAsStringSync())
-            as Map<String, dynamic>;
+    final fr = jsonDecode(
+      File('assets/translations/fr.json').readAsStringSync(),
+    ) as Map<String, dynamic>;
+    final en = jsonDecode(
+      File('assets/translations/en.json').readAsStringSync(),
+    ) as Map<String, dynamic>;
 
     const keys = [
       'Link',

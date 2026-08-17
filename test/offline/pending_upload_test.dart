@@ -245,9 +245,8 @@ void main() {
         Uint8List.fromList([1]),
         fileName: 'a.txt',
       );
-      await File(
-        '${tempDir.path}/fastedgy_pending_uploads/${buffered.id}',
-      ).delete();
+      await File('${tempDir.path}/fastedgy_pending_uploads/${buffered.id}')
+          .delete();
 
       expect(await uploads.bytes(buffered.id), isNull);
     });

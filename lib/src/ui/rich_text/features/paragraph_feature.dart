@@ -4,6 +4,7 @@
  */
 
 import '../rich_text_feature.dart';
+
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:markdown/markdown.dart' as md;
 

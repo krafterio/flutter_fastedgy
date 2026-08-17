@@ -11,11 +11,10 @@ import 'rich_text_feature.dart';
 
 /// Builds what hangs in a block's left margin, given the block and the builder
 /// that renders it — the latter being what a drag has to draw as feedback.
-typedef RichTextBlockActionsBuilder =
-    Widget Function(
-      BlockComponentContext blockContext,
-      BlockComponentBuilder builder,
-    );
+typedef RichTextBlockActionsBuilder = Widget Function(
+  BlockComponentContext blockContext,
+  BlockComponentBuilder builder,
+);
 
 /// The blocks a document can hold: the package's, plus what the [features] add
 /// or override, all dressed the same way.

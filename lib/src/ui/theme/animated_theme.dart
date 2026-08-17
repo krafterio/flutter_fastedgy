@@ -42,13 +42,11 @@ class _AnimatedThemeState extends AnimatedWidgetBaseState<AnimatedTheme> {
 
   @override
   void forEachTween(TweenVisitor<dynamic> visitor) {
-    _data =
-        visitor(
-              _data,
-              widget.data,
-              (value) => ThemeDataTween(begin: value as FastEdgyThemeData),
-            )
-            as ThemeDataTween?;
+    _data = visitor(
+      _data,
+      widget.data,
+      (value) => ThemeDataTween(begin: value as FastEdgyThemeData),
+    ) as ThemeDataTween?;
   }
 
   @override

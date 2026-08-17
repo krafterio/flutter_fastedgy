@@ -173,24 +173,21 @@ void main() {
       expect(markdown.trim(), '![](attachment:15)');
     });
 
-    test(
-      'an image inserted offline survives as it was, until a save stores it',
-      () {
-        // The data URI is what an offline insert leaves behind; losing it in the
-        // round trip would lose the picture before it ever reached the server.
-        final blocks = codec
-            .decode(codec.encode(documentOf([imageNode(url: _pixel)])))
-            .root
-            .children;
+    test('an image inserted offline survives as it was, until a save stores it', () {
+      // The data URI is what an offline insert leaves behind; losing it in the
+      // round trip would lose the picture before it ever reached the server.
+      final blocks = codec
+          .decode(codec.encode(documentOf([imageNode(url: _pixel)])))
+          .root
+          .children;
 
-        expect(
-          inlineImageBytes(
-            blocks.single.attributes[ImageBlockKeys.url] as String?,
-          ),
-          isNotNull,
-        );
-      },
-    );
+      expect(
+        inlineImageBytes(
+          blocks.single.attributes[ImageBlockKeys.url] as String?,
+        ),
+        isNotNull,
+      );
+    });
   });
 
   group('the handle to resize a picture', () {
@@ -569,9 +566,8 @@ void main() {
           Selection.collapsed(Position(path: [0], offset: 6)),
         );
         expect(
-          const MarkdownRichTextCodec(
-            features: defaultRichTextFeatures,
-          ).encode(state.document),
+          const MarkdownRichTextCodec(features: defaultRichTextFeatures)
+              .encode(state.document),
           written,
         );
       });
@@ -857,9 +853,8 @@ void main() {
 
   group('in the "/" menu', () {
     test('ours stands in for the package entry rather than beside it', () {
-      final items = richTextSlashMenuItems(
-        defaultRichTextFeatures,
-      ).where((item) => item.name == t('Image'));
+      final items = richTextSlashMenuItems(defaultRichTextFeatures)
+          .where((item) => item.name == t('Image'));
 
       expect(items, hasLength(1));
       // The package's own would open its untranslated dialog on the block we
@@ -869,9 +864,8 @@ void main() {
 
     test('narrowing the features gives the package entry back', () {
       final bare = defaultRichTextFeatures.without<ImageFeature>();
-      final items = richTextSlashMenuItems(
-        bare,
-      ).where((item) => item.name == t('Image'));
+      final items = richTextSlashMenuItems(bare)
+          .where((item) => item.name == t('Image'));
 
       expect(items, hasLength(1));
       expect(bare.replacedMenuItems, isNot(contains('Image')));

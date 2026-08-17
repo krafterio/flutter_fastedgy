@@ -147,20 +147,16 @@ void main() {
     testWidgets(
       'runs every feature in order, each handed what the last one made',
       (tester) async {
-        final decorate = const RichTextFeatures([
-          _Marker('a'),
-          _Marker('b'),
-        ]).textSpanDecorator!;
-        final span =
-            decorate(
-                  await contextOf(tester),
-                  Node(type: 'paragraph'),
-                  0,
-                  TextInsert(''),
-                  const TextSpan(text: ''),
-                  const TextSpan(),
-                )
-                as TextSpan;
+        final decorate = const RichTextFeatures([_Marker('a'), _Marker('b')])
+            .textSpanDecorator!;
+        final span = decorate(
+          await contextOf(tester),
+          Node(type: 'paragraph'),
+          0,
+          TextInsert(''),
+          const TextSpan(text: ''),
+          const TextSpan(),
+        ) as TextSpan;
 
         expect(span.text, 'ab');
       },
@@ -213,9 +209,8 @@ void main() {
         mentionRun(Mention(address: _address, label: label)),
       );
 
-      return mentionOf(
-        runsOf(codec.decode(codec.encode(document))).first,
-      )?.label;
+      return mentionOf(runsOf(codec.decode(codec.encode(document))).first)
+          ?.label;
     }
 
     test('a label carrying an unbalanced bracket keeps it, and the link', () {
@@ -335,28 +330,25 @@ void main() {
     expect(find.text('#REF-42'), findsOneWidget);
   });
 
-  test(
-    'typing right against a mention writes plain text, not more mention',
-    () async {
-      // The report that made this a test: the caret looked stuck to the right of
-      // a tag and nothing appeared. The editor gives a typed character the
-      // attributes of the one before it, so the letter was joining the mention's
-      // run — and the run is drawn as one chip, so it vanished.
-      MentionSources();
+  test('typing right against a mention writes plain text, not more mention', () async {
+    // The report that made this a test: the caret looked stuck to the right of
+    // a tag and nothing appeared. The editor gives a typed character the
+    // attributes of the one before it, so the letter was joining the mention's
+    // run — and the run is drawn as one chip, so it vanished.
+    MentionSources();
 
-      final state = EditorState(document: sentence());
-      addTearDown(state.dispose);
-      final node = state.document.root.children.first;
+    final state = EditorState(document: sentence());
+    addTearDown(state.dispose);
+    final node = state.document.root.children.first;
 
-      await state.apply(state.transaction..insertText(node, 6, 'a'));
+    await state.apply(state.transaction..insertText(node, 6, 'a'));
 
-      final runs = runsOf(state.document);
+    final runs = runsOf(state.document);
 
-      expect(runs.map((run) => run.text).join(), 'Voir \u{FFFC}a demain');
-      expect(runs.where((run) => mentionOf(run) != null), hasLength(1));
-      expect(mentionOf(runs[1])?.label, '#REF-42');
-    },
-  );
+    expect(runs.map((run) => run.text).join(), 'Voir \u{FFFC}a demain');
+    expect(runs.where((run) => mentionOf(run) != null), hasLength(1));
+    expect(mentionOf(runs[1])?.label, '#REF-42');
+  });
 
   testWidgets('clicking a mention opens its card, and Escape closes it', (
     tester,

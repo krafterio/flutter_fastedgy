@@ -23,8 +23,10 @@ const richTextPopoverWidth = 320.0;
 const _gap = 6.0;
 
 /// Builds the body of a card, given the callback that closes it.
-typedef RichTextPopoverBuilder =
-    Widget Function(BuildContext context, VoidCallback dismiss);
+typedef RichTextPopoverBuilder = Widget Function(
+  BuildContext context,
+  VoidCallback dismiss,
+);
 
 /// Opens a card anchored to [selection], for a feature that edits something in
 /// place — a link today, whatever comes next.

@@ -5,7 +5,9 @@
 
 import 'dart:io';
 import 'dart:typed_data';
+
 import 'package:dio/dio.dart';
+
 import '../fetcher/client.dart';
 import '../logging/logger.dart';
 

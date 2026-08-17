@@ -40,9 +40,8 @@ void main() {
             search: (query, options) async => const [],
           ),
         );
-      final features = RichTextFeatures([
-        MentionFeature(sources: sources),
-      ]).and([const ImageFeature()]);
+      final features = RichTextFeatures([MentionFeature(sources: sources)])
+          .and([const ImageFeature()]);
 
       final names = features.menuItems.map((item) => item.name).toList();
 

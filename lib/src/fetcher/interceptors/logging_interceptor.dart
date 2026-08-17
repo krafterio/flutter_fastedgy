@@ -4,6 +4,7 @@
  */
 
 import 'package:dio/dio.dart';
+
 import '../../logging/logger.dart';
 
 /// Interceptor that logs all HTTP requests and responses

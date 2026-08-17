@@ -4,6 +4,7 @@
  */
 
 import 'package:flutter/widgets.dart';
+
 import 'fetcher.dart';
 
 /// A widget that provides a Fetcher instance with automatic disposal

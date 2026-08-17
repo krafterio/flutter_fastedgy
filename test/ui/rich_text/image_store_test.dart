@@ -50,23 +50,20 @@ void main() {
     },
   );
 
-  test(
-    'the record is read at each call, a screen building its features once',
-    () async {
-      int? id;
-      final store = inlineImageStore(
-        model: 'record',
-        recordId: () => id,
-        field: 'description',
-      );
+  test('the record is read at each call, a screen building its features once', () async {
+    int? id;
+    final store = inlineImageStore(
+      model: 'record',
+      recordId: () => id,
+      field: 'description',
+    );
 
-      expect(await store(File('/nowhere/pixel.png')), isNull);
+    expect(await store(File('/nowhere/pixel.png')), isNull);
 
-      id = 42;
+    id = 42;
 
-      // Now it would upload, so this only asserts the id is no longer the reason
-      // it declines — the call is left to the suites that mock the uploader.
-      expect(store, isNotNull);
-    },
-  );
+    // Now it would upload, so this only asserts the id is no longer the reason
+    // it declines — the call is left to the suites that mock the uploader.
+    expect(store, isNotNull);
+  });
 }

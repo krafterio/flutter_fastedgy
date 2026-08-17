@@ -84,16 +84,14 @@ void main() {
       map.register('attachment', -3, 102);
 
       for (final tempId in [-1, -2, -3]) {
-        final remapped =
-            map.remap(
-                  {
-                    'name': 'file',
-                    'record': {'model': 'flow', 'id': -1},
-                  },
-                  'attachment',
-                  _metadatas,
-                )
-                as Map;
+        final remapped = map.remap(
+          {
+            'name': 'file',
+            'record': {'model': 'flow', 'id': -1},
+          },
+          'attachment',
+          _metadatas,
+        ) as Map;
 
         expect(
           (remapped['record'] as Map)['id'],
@@ -108,24 +106,20 @@ void main() {
       final map = TempIdMap();
       map.register('flow', -1, 42);
 
-      final read =
-          map.remap(
-                {
-                  'record': {r'$model': 'flow', 'id': -1},
-                },
-                'attachment',
-                _metadatas,
-              )
-              as Map;
-      final write =
-          map.remap(
-                {
-                  'record': {'model': 'flow', 'id': -1},
-                },
-                'attachment',
-                _metadatas,
-              )
-              as Map;
+      final read = map.remap(
+        {
+          'record': {r'$model': 'flow', 'id': -1},
+        },
+        'attachment',
+        _metadatas,
+      ) as Map;
+      final write = map.remap(
+        {
+          'record': {'model': 'flow', 'id': -1},
+        },
+        'attachment',
+        _metadatas,
+      ) as Map;
 
       expect((read['record'] as Map)['id'], 42);
       expect((write['record'] as Map)['id'], 42);
@@ -135,15 +129,13 @@ void main() {
       final map = TempIdMap();
       map.register('flow', -1, 42);
 
-      final remapped =
-          map.remap(
-                {
-                  'record': {'model': 'project', 'id': -1},
-                },
-                'attachment',
-                _metadatas,
-              )
-              as Map;
+      final remapped = map.remap(
+        {
+          'record': {'model': 'project', 'id': -1},
+        },
+        'attachment',
+        _metadatas,
+      ) as Map;
 
       // Same value, different model: it is not the flow's temporary id.
       expect((remapped['record'] as Map)['id'], -1);

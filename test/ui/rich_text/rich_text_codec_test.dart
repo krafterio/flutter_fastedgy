@@ -213,27 +213,30 @@ void main() {
 
         expect(markdown, '[Example](https://example.org)');
         expect(
-          roundTrip(
-            linked('Example', 'https://example.org'),
-          ).delta?.toPlainText(),
+          roundTrip(linked('Example', 'https://example.org')).delta
+              ?.toPlainText(),
           'Example',
         );
       });
 
-      test('a link to its own text is written bare, and read back as a link', () {
-        final markdown = codec.encode(
-          documentOf([linked('https://example.org', 'https://example.org')]),
-        );
+      test(
+        'a link to its own text is written bare, and read back as a link',
+        () {
+          final markdown = codec.encode(
+            documentOf([linked('https://example.org', 'https://example.org')]),
+          );
 
-        // `[url](url)` says nothing the bare URL does not: markdown autolinks it.
-        expect(markdown, 'https://example.org');
-        expect(
-          roundTrip(
-            linked('https://example.org', 'https://example.org'),
-          ).delta?.first.attributes,
-          containsPair('href', 'https://example.org'),
-        );
-      });
+          // `[url](url)` says nothing the bare URL does not: markdown autolinks it.
+          expect(markdown, 'https://example.org');
+          expect(
+            roundTrip(linked('https://example.org', 'https://example.org'))
+                .delta
+                ?.first
+                .attributes,
+            containsPair('href', 'https://example.org'),
+          );
+        },
+      );
 
       test('a URL typed as plain text comes back a link', () {
         final blocks = codec.decode('https://example.org').root.children;
@@ -264,15 +267,12 @@ void main() {
       });
     });
 
-    test(
-      'markdown holding nothing readable still opens on a paragraph to type into',
-      () {
-        expect(
-          codec.decode('<!-- -->').root.children.map((block) => block.type),
-          ['paragraph'],
-        );
-      },
-    );
+    test('markdown holding nothing readable still opens on a paragraph to type into', () {
+      expect(
+        codec.decode('<!-- -->').root.children.map((block) => block.type),
+        ['paragraph'],
+      );
+    });
 
     test('an absent or blank source opens on a paragraph', () {
       expect(codec.decode(null).root.children.map((block) => block.type), [

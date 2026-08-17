@@ -146,6 +146,6 @@ class ModelAvailability extends ChangeNotifier {
 /// One-shot version of [ModelAvailability.canWrite], for a callback that only
 /// needs the answer once — a menu item deciding whether to open a form, a guard
 /// at the top of an action handler.
-Future<bool> canWriteModel(String modelName) async => (await ModelCapability.of(
-  modelName,
-)).canWrite(serverReachable: SyncStatus.currentlyReachable);
+Future<bool> canWriteModel(String modelName) async =>
+    (await ModelCapability.of(modelName))
+        .canWrite(serverReachable: SyncStatus.currentlyReachable);

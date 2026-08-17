@@ -124,9 +124,9 @@ class ConflictStore {
 
   /// Every parked conflict, newest first (by the original write time).
   Future<List<ConflictEntry>> all() async {
-    final entries = (await _store.getAll(
-      _namespace,
-    )).map(ConflictEntry.fromJson).toList();
+    final entries = (await _store.getAll(_namespace))
+        .map(ConflictEntry.fromJson)
+        .toList();
 
     entries.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 

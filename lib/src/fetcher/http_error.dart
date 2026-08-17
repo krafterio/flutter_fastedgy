@@ -4,6 +4,7 @@
  */
 
 import 'package:dio/dio.dart';
+
 import '../i18n/i18n.dart';
 
 /// Validation error detail from FastAPI

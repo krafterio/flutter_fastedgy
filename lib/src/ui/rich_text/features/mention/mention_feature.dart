@@ -4,6 +4,7 @@
  */
 
 import '../../../rich_text/rich_text_feature.dart';
+
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_fastedgy/flutter_fastedgy.dart'
@@ -243,9 +244,8 @@ class MentionFeature extends RichTextFeature {
 
       final caret = selection.end.offset;
       final text = delta.toPlainText();
-      final source = controllerOf(
-        editorState,
-      ).sourceFor(character, text.substring(0, caret.clamp(0, text.length)));
+      final source = controllerOf(editorState)
+          .sourceFor(character, text.substring(0, caret.clamp(0, text.length)));
 
       if (source == null) {
         return false;

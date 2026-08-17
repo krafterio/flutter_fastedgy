@@ -230,9 +230,9 @@ void main() {
 
       await collection.load();
 
-      final filter =
-          jsonDecode(rowRequests().first.headers['X-Filter'] as String)
-              as List<Object?>;
+      final filter = jsonDecode(
+        rowRequests().first.headers['X-Filter'] as String,
+      ) as List<Object?>;
 
       expect(filter.first, '&');
       expect(filter[1], [

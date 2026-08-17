@@ -210,9 +210,8 @@ class _RichTextActionBarState extends State<RichTextActionBar> {
               onPointerUp: (_) => _lastX = null,
               onPointerCancel: (_) => _lastX = null,
               child: ScrollConfiguration(
-                behavior: ScrollConfiguration.of(
-                  context,
-                ).copyWith(scrollbars: false, overscroll: false),
+                behavior: ScrollConfiguration.of(context)
+                    .copyWith(scrollbars: false, overscroll: false),
                 child: SingleChildScrollView(
                   controller: _scroll,
                   physics: const NeverScrollableScrollPhysics(),

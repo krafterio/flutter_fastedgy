@@ -5,6 +5,7 @@
 
 import '../../rich_text_action.dart';
 import '../../rich_text_feature.dart';
+
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_fastedgy/flutter_fastedgy.dart' show t;

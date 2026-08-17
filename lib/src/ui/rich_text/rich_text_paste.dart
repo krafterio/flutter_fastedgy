@@ -84,9 +84,11 @@ Future<bool> pasteMarkdown(
     return false;
   }
 
-  final nodes = MarkdownRichTextCodec(
-    features: features,
-  ).decode(text).root.children.toList();
+  final nodes = MarkdownRichTextCodec(features: features)
+      .decode(text)
+      .root
+      .children
+      .toList();
 
   if (nodes.isEmpty) {
     return false;

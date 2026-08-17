@@ -382,9 +382,8 @@ class _SlashMenu extends StatelessWidget {
                     ),
                     child: Text(
                       t('Nothing to insert'),
-                      style: menuLabel(
-                        style,
-                      ).copyWith(color: RichTextTheme.of(context).mutedText),
+                      style: menuLabel(style)
+                          .copyWith(color: RichTextTheme.of(context).mutedText),
                     ),
                   ),
                 ]

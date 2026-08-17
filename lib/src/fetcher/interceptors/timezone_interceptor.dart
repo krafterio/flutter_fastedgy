@@ -4,6 +4,7 @@
  */
 
 import 'package:dio/dio.dart';
+
 import '../timezone_provider.dart';
 
 /// Interceptor that automatically adds the X-Timezone header to requests

@@ -17,9 +17,9 @@ void main() {
     richTextClipboardHasContent.value = true;
   });
 
-  RichTextAction pasteAction() => RichTextActions.clipboard(
-    defaultRichTextFeatures,
-  ).firstWhere((action) => action.id == 'paste');
+  RichTextAction pasteAction() =>
+      RichTextActions.clipboard(defaultRichTextFeatures)
+          .firstWhere((action) => action.id == 'paste');
 
   EditorState withCaret() {
     final state = EditorState(document: Document.blank(withInitialText: true))

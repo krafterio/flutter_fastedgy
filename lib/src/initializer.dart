@@ -5,6 +5,7 @@
 
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:logging/logging.dart';
+
 import 'app_info/models.dart';
 import 'app_info/user_agent.dart';
 import 'container/container.dart';
@@ -20,6 +21,7 @@ import 'bus/bus.dart';
 import 'metadata/metadata_provider.dart';
 import 'metadata/default_metadata_provider.dart';
 import 'image/image_cache.dart';
+
 import 'package:connectivity_plus/connectivity_plus.dart';
 
 import 'api/api_model_engine.dart';

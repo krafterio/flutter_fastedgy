@@ -16,9 +16,10 @@ void main() {
   late Directory tmp;
   late FilesystemLocalImageStore store;
 
-  Iterable<File> files() => Directory(
-    '${tmp.path}/fastedgy_offline_images',
-  ).listSync().whereType<File>();
+  Iterable<File> files() =>
+      Directory('${tmp.path}/fastedgy_offline_images')
+          .listSync()
+          .whereType<File>();
   Uint8List bytes(String s) => Uint8List.fromList(s.codeUnits);
 
   setUp(() async {

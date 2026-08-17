@@ -4,6 +4,7 @@
  */
 
 import 'package:dio/dio.dart';
+
 import '../bus/bus.dart';
 import '../container/container.dart';
 import '../fetcher/client.dart';

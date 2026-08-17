@@ -4,6 +4,7 @@
  */
 
 import 'package:flutter/widgets.dart';
+
 import 'fetcher.dart';
 
 /// Mixin that provides automatic Fetcher disposal

@@ -164,9 +164,8 @@ void main() {
   group('ce qu\'une feature ajoute à la barre', () {
     test('image n\'est offert que là où la feature est montée', () {
       expect(
-        const RichTextFeatures([
-          ImageFeature(),
-        ]).actions.map((action) => action.id),
+        const RichTextFeatures([ImageFeature()]).actions
+            .map((action) => action.id),
         contains('image'),
       );
       expect(const RichTextFeatures([ParagraphFeature()]).actions, isEmpty);

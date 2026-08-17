@@ -546,9 +546,12 @@ void main() {
 
       final table = find.byType(RichTextEditor).evaluate().isEmpty
           ? null
-          : (tester.widget<RichTextEditor>(
-              find.byType(RichTextEditor),
-            )).editorState.document.root.children.single;
+          : (tester.widget<RichTextEditor>(find.byType(RichTextEditor)))
+                .editorState
+                .document
+                .root
+                .children
+                .single;
 
       expect(table?.attributes[TableBlockKeys.colsLen], 3);
     });

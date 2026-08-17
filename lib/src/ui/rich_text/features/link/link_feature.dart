@@ -4,6 +4,7 @@
  */
 
 import '../../rich_text_feature.dart';
+
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter_fastedgy/flutter_fastedgy.dart' show t;
 

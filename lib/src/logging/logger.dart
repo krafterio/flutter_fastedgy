@@ -5,6 +5,7 @@
 
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:logging/logging.dart';
+
 import '../fetcher/http_error.dart';
 import './listeners/console_log_listener.dart';
 import './listeners/flutter_log_listener.dart';

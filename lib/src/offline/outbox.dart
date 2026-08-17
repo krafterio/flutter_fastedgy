@@ -309,9 +309,9 @@ class Outbox {
 
   /// Every pending operation, in enqueue order.
   Future<List<PendingOperation>> all() async {
-    final operations = (await _store.getAll(
-      _namespace,
-    )).map(PendingOperation.fromJson).toList();
+    final operations = (await _store.getAll(_namespace))
+        .map(PendingOperation.fromJson)
+        .toList();
 
     operations.sort((a, b) => a.id.compareTo(b.id));
 

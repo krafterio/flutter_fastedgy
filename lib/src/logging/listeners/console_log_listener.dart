@@ -5,6 +5,7 @@
 
 import 'package:flutter/foundation.dart';
 import 'package:logging/logging.dart';
+
 import '../log_listener.dart';
 
 /// Console log listener using print

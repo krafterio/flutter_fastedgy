@@ -113,9 +113,9 @@ class ListSort {
   /// Compact form for a URL (`status,-name`): a descending level is prefixed
   /// with `-`. Half the length of the server grammar, needs no escaping, and
   /// reads at a glance in a shared link.
-  String encode() => [
-    for (final key in keys) key.ascending ? key.field : '-${key.field}',
-  ].join(',');
+  String encode() =>
+      [for (final key in keys) key.ascending ? key.field : '-${key.field}']
+          .join(',');
 
   /// Reads back what [encode] wrote. Tolerant by contract — a URL is user
   /// input: it never throws, skips blanks, keeps the first mention of a

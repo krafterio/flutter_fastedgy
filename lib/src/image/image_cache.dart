@@ -4,6 +4,7 @@
  */
 
 import 'dart:typed_data';
+
 import '../bus/bus.dart';
 import '../auth/auth_events.dart';
 import '../logging/logger.dart';

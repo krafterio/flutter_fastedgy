@@ -436,9 +436,8 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
       try {
         await getService<SyncEngine>().flush();
       } catch (error) {
-        getLogger(
-          'OfflineApiModelEngine',
-        ).warning('Outbox flush failed', error);
+        getLogger('OfflineApiModelEngine')
+            .warning('Outbox flush failed', error);
       }
     }
 

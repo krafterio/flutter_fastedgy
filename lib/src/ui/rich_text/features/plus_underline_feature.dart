@@ -4,6 +4,7 @@
  */
 
 import '../rich_text_feature.dart';
+
 import 'package:markdown/markdown.dart' as md;
 
 /// Reads `++text++` as underline — the spelling Quill and Fleather write, and

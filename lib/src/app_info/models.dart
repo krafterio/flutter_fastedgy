@@ -57,9 +57,8 @@ class AppInfo {
     if (Platform.isAndroid) {
       return (await deviceInfo.androidInfo).version.release;
     }
-    final match = RegExp(
-      r'Version (\S+)',
-    ).firstMatch(Platform.operatingSystemVersion);
+    final match = RegExp(r'Version (\S+)')
+        .firstMatch(Platform.operatingSystemVersion);
     return match?.group(1) ?? Platform.operatingSystemVersion.split(' ').first;
   }
 

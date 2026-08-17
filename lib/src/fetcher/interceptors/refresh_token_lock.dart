@@ -4,7 +4,9 @@
  */
 
 import 'dart:async';
+
 import 'package:dio/dio.dart';
+
 import '../../auth/auth_provider.dart';
 import '../../logging/logger.dart';
 import '../http_error.dart';

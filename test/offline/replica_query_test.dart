@@ -274,22 +274,19 @@ void main() {
       );
     });
 
-    test(
-      'AND rules on the same to-many path hit the same related row',
-      () async {
-        // ws1 has ADMIN=Ada and MEMBER=Grace: independent EXISTS would match it,
-        // the server's joined-lookup semantics must not.
-        final result = await query(
-          'workspace',
-          filter: [
-            ['members.role', '=', 'ADMIN'],
-            ['members.user.name', '=', 'Grace'],
-          ],
-        );
+    test('AND rules on the same to-many path hit the same related row', () async {
+      // ws1 has ADMIN=Ada and MEMBER=Grace: independent EXISTS would match it,
+      // the server's joined-lookup semantics must not.
+      final result = await query(
+        'workspace',
+        filter: [
+          ['members.role', '=', 'ADMIN'],
+          ['members.user.name', '=', 'Grace'],
+        ],
+      );
 
-        expect(names(result.records), ['Beta']);
-      },
-    );
+      expect(names(result.records), ['Beta']);
+    });
 
     test('OR branches get independent EXISTS', () async {
       final result = await query(

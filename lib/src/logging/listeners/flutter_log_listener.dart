@@ -4,7 +4,9 @@
  */
 
 import 'dart:developer' as developer;
+
 import 'package:logging/logging.dart';
+
 import '../log_listener.dart';
 
 class FlutterLogListener implements LogListener {

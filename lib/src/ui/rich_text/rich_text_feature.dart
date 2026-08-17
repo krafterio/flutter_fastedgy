@@ -7,6 +7,7 @@ import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:markdown/markdown.dart' as md;
 
 import 'rich_text_action.dart';
+
 import 'package:flutter/painting.dart' show TextSpan;
 
 /// One content feature of a [DocumentEditor]: everything a kind of block needs,

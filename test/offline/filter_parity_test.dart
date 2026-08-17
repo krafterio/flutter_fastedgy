@@ -21,11 +21,9 @@ import 'package:flutter_fastedgy/flutter_fastedgy.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  final parity =
-      jsonDecode(
-            File('test/offline/fixtures/filter_parity.json').readAsStringSync(),
-          )
-          as Map<String, dynamic>;
+  final parity = jsonDecode(
+    File('test/offline/fixtures/filter_parity.json').readAsStringSync(),
+  ) as Map<String, dynamic>;
 
   final schema = LocalSchema.fromModels(
     (parity['metadata'] as Map<String, dynamic>).map(

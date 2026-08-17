@@ -228,9 +228,8 @@ class _LinkMenuState extends State<_LinkMenu> {
       children: [
         Text(
           editing ? t('Edit link') : t('Add a link'),
-          style: RichTextTheme.of(
-            context,
-          ).fieldText.copyWith(fontWeight: FontWeight.w600),
+          style: RichTextTheme.of(context).fieldText
+              .copyWith(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 10),
         CallbackShortcuts(

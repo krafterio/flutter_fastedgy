@@ -4,6 +4,7 @@
  */
 
 import 'package:dio/dio.dart';
+
 import '../../auth/token_storage.dart';
 import '../../logging/logger.dart';
 import 'refresh_token_lock.dart';
