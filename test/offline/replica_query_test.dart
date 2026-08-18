@@ -337,6 +337,31 @@ void main() {
       expect(result.total, 3);
       expect(names(result.records), ['Grace', 'marc']);
     });
+
+    test('a to-many order stops repeating the record', () async {
+      // Krafter holds two members and Beta one: joining them to sort would
+      // yield three rows, so a two-row page would hold Krafter twice and drop
+      // Beta off the end.
+      final result = await query('workspace', orderBy: 'members.role');
+
+      expect(result.records.length, 2);
+      expect(names(result.records).toSet(), {'Krafter', 'Beta'});
+      expect(result.total, 2);
+    });
+
+    test('a to-many order ranks on the extreme related value', () async {
+      // Krafter's members are Ada and Grace, Beta's only Grace: ascending
+      // ranks on the smallest name.
+      final asc = await query('workspace', orderBy: 'members.user.name');
+
+      expect(names(asc.records), ['Krafter', 'Beta']);
+
+      // Krafter holds ADMIN and MEMBER, Beta only ADMIN: descending ranks on
+      // the largest role, so the same aggregate cannot answer both.
+      final desc = await query('workspace', orderBy: 'members.role:desc');
+
+      expect(names(desc.records), ['Krafter', 'Beta']);
+    });
   });
 
   group('scoping and unsupported', () {

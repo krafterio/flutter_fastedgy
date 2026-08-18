@@ -39,7 +39,11 @@ class CompiledReplicaQuery {
 /// - `like`-family case sensitivity matches the server: sensitive variants
 ///   compile to `GLOB`, insensitive ones to SQLite `LIKE` (ASCII folding);
 /// - nested `order_by` follows m2o paths through `LEFT JOIN`s with the
-///   PostgreSQL null ordering (ASC → NULLS LAST, DESC → NULLS FIRST);
+///   PostgreSQL null ordering (ASC → NULLS LAST, DESC → NULLS FIRST); a path
+///   that fans out (o2m, m2m, generic o2m) is ranked by a correlated
+///   aggregate instead — MIN ascending, MAX descending, NULL when nothing is
+///   related — since joining it would repeat the record once per related row
+///   and shorten the page;
 /// - `search`/`search_fuzzy` on the fulltext field compile to FTS5 MATCH
 ///   subqueries over the `<table>_fts` index (see `replica_search.dart`);
 ///   `search_fuzzy` degrades to `search` (no pg_trgm equivalent), and
@@ -65,8 +69,8 @@ class CompiledReplicaQuery {
 /// Unsupported offline (throws [UnsupportedError]): `match`, the bare
 /// `spatial distance`/`l2 distance`-family operators (not boolean
 /// predicates, rejected by PostgreSQL server-side too), order_by on a point
-/// or vector field, filters ending on a to-many field, paths through m2m or
-/// generic relations, and o2m hops with an ambiguous reverse FK
+/// or vector field, filters ending on a to-many field, paths through a
+/// forward generic reference, and o2m hops with an ambiguous reverse FK
 /// (declare/replicate the pivot instead).
 class ReplicaQueryCompiler {
   final LocalSchema schema;
@@ -298,6 +302,96 @@ class ReplicaQueryCompiler {
       rule,
       args,
     );
+  }
+
+  /// Correlated aggregate ordering a record by a path that fans out.
+  ///
+  /// Joining a to-many hop to sort by one of its columns repeats the record
+  /// once per related row, which shortens a page and lets the same record come
+  /// back on the next one. The far side is aggregated instead, mirroring the
+  /// server: ascending ranks a record by its smallest related value,
+  /// descending by its largest, and a record with nothing related yields NULL.
+  ///
+  /// Nesting the aggregate hop by hop is equivalent to one aggregate over the
+  /// whole path, since a MIN of MINs is the overall MIN (idem MAX).
+  String _aggregateExpr(
+    _Context ctx,
+    String parentModel,
+    String parentAlias,
+    List<_Hop> hops,
+    LocalFieldSchema leaf,
+    bool descending,
+    List<Object?> args,
+  ) {
+    final hop = hops.first;
+    final rest = hops.sublist(1);
+    final alias = ctx.nextAlias('a');
+
+    // Built before the FROM/WHERE args because the aggregated expression is
+    // written first in the subquery, and the arguments follow the SQL order.
+    final innerArgs = <Object?>[];
+    final String inner;
+
+    if (rest.isEmpty) {
+      inner = _leafColumn(alias, leaf);
+    } else if (_allMany2one(rest)) {
+      inner = _chainExpr(
+        ctx,
+        alias,
+        rest,
+        (leafAlias) => _leafColumn(leafAlias, leaf),
+        innerArgs,
+      );
+    } else {
+      inner = _aggregateExpr(
+        ctx,
+        hop.target.name,
+        alias,
+        rest,
+        leaf,
+        descending,
+        innerArgs,
+      );
+    }
+
+    final fromArgs = <Object?>[];
+    final linkArgs = <Object?>[];
+    var from = '"${_table(hop.target)}" $alias';
+    final String link;
+
+    switch (hop.kind) {
+      case _HopKind.one2many:
+        link = '$alias."${hop.reverseField}" = $parentAlias.id';
+      case _HopKind.many2one:
+        link = '$parentAlias."${hop.field.name}" = $alias.id';
+      case _HopKind.genericOne2many:
+        link =
+            '$alias."${hop.genericReverse!.referenceIdColumn}" = $parentAlias.id '
+            'AND $alias."${hop.genericReverse!.referenceModelColumn}" = ?';
+        linkArgs.add(hop.sourceModel);
+      case _HopKind.many2many:
+        final pivot = ctx.nextAlias('p');
+        from =
+            '"${hop.pivotTable}" $pivot '
+            'JOIN "${_table(hop.target)}" $alias '
+            'ON $alias.id = $pivot.target_id AND $alias._workspace = ?';
+        link = '$pivot.parent_id = $parentAlias.id AND $pivot._workspace = ?';
+        fromArgs.add(ctx.scopeOf(hop.target.name));
+        linkArgs.add(ctx.scopeOf(parentModel));
+    }
+
+    args
+      ..addAll(innerArgs)
+      ..addAll(fromArgs)
+      ..addAll(linkArgs)
+      ..add(ctx.scopeOf(hop.target.name));
+
+    // The collation sits inside the aggregate so the value it picks is the one
+    // the server's collation would pick, not the byte-order winner.
+    final collated = _isTextualSort(leaf) ? '$inner COLLATE NOCASE' : inner;
+
+    return '(SELECT ${descending ? 'MAX' : 'MIN'}($collated) FROM $from '
+        'WHERE $link AND $alias._workspace = ?)';
   }
 
   String _scalarChain(
@@ -946,6 +1040,25 @@ class ReplicaQueryCompiler {
         continue;
       }
 
+      // A hop that fans out is aggregated rather than joined: joining it would
+      // repeat the record once per related row.
+      if (!_isSingleValued(path.hops)) {
+        final expr = _aggregateExpr(
+          ctx,
+          root.name,
+          't0',
+          path.hops,
+          path.leaf,
+          descending,
+          tailArgs,
+        );
+
+        terms.add(
+          '$expr ${descending ? 'DESC NULLS FIRST' : 'ASC NULLS LAST'}',
+        );
+        continue;
+      }
+
       var alias = 't0';
       var prefix = '';
 
@@ -965,6 +1078,7 @@ class ReplicaQueryCompiler {
               // (mirrors the filter's one2many join).
               on = '$joinAlias."${hop.reverseField}" = $alias.id';
             default:
+              // Unreachable: a path holding such a hop is aggregated above.
               throw UnsupportedError(
                 'order_by through a ${hop.kind.name} relation is not supported offline',
               );
