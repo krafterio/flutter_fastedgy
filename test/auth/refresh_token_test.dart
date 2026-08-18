@@ -137,6 +137,121 @@ void main() {
       expect(calls, 2);
     });
   });
+
+  group('RefreshTokenInterceptor', () {
+    late int protectedCalls;
+    late _RenewingAuthProvider provider;
+    late Fetcher fetcher;
+
+    setUp(() {
+      initializeContainer();
+
+      if (!hasService<Bus>()) {
+        container.registerSingleton<Bus>(Bus());
+      }
+
+      SharedPreferences.setMockInitialValues({
+        'token': _jwtExpiringAt(
+          DateTime.now().add(const Duration(minutes: 15)),
+        ),
+        'refresh_token': 'refresh-1',
+      });
+
+      provider = _RenewingAuthProvider();
+      container.registerSingleton<TokenStorage>(TokenStorage());
+      container.registerSingleton<AuthProvider<dynamic>>(provider);
+
+      protectedCalls = 0;
+      fetcher = createMockFetcher((request) {
+        protectedCalls++;
+
+        // Answers 401 whatever the token is, the way an endpoint refusing on
+        // something a refresh cannot fix does. Capped so a looping interceptor
+        // fails the expectation instead of hanging the suite.
+        if (protectedCalls > 5) {
+          return const MockResponse.error(500);
+        }
+
+        return const MockResponse.error(401);
+      });
+    });
+
+    tearDown(container.reset);
+
+    test(
+      'replays a request once, not for as long as the refresh works',
+      () async {
+        await expectLater(
+          fetcher.get('/api/protected'),
+          throwsA(isA<Exception>()),
+        );
+
+        expect(protectedCalls, 2);
+        expect(provider.refreshes, 1);
+      },
+    );
+
+    test(
+      'still refreshes for a resource whose name starts like auth',
+      () async {
+        await expectLater(
+          fetcher.get('/api/authors'),
+          throwsA(isA<Exception>()),
+        );
+
+        expect(provider.refreshes, 1);
+      },
+    );
+
+    test('never refreshes on a rejected login', () async {
+      await expectLater(
+        fetcher.post('/auth/token', {'username': 'ada', 'password': 'wrong'}),
+        throwsA(isA<Exception>()),
+      );
+
+      expect(provider.refreshes, 0);
+    });
+  });
+}
+
+class _RenewingAuthProvider implements AuthProvider<dynamic> {
+  var refreshes = 0;
+
+  @override
+  Future<bool> refreshToken() async {
+    refreshes++;
+    await getService<TokenStorage>().saveAccessToken(
+      _jwtExpiringAt(DateTime.now().add(const Duration(minutes: 15))),
+    );
+
+    return true;
+  }
+
+  @override
+  Future<void> logout() async {}
+
+  @override
+  Future<AuthResult<dynamic>> login(String username, String password) =>
+      throw UnimplementedError();
+
+  @override
+  Future<AuthResult<dynamic>> register(Map<String, dynamic> userData) =>
+      throw UnimplementedError();
+
+  @override
+  Future<String?> getAccessToken() => throw UnimplementedError();
+
+  @override
+  Future<String?> getValidatedAccessToken() => throw UnimplementedError();
+
+  @override
+  Future<String?> getRefreshToken() => throw UnimplementedError();
+
+  @override
+  Future<bool> isAuthenticated() => throw UnimplementedError();
+
+  @override
+  Future<dynamic> getCurrentUser() => throw UnimplementedError();
 }
 
 class _GatedAuthProvider implements AuthProvider<dynamic> {

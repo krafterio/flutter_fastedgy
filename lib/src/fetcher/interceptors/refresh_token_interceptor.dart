@@ -9,6 +9,21 @@ import '../../auth/token_storage.dart';
 import '../../logging/logger.dart';
 import 'refresh_token_lock.dart';
 
+/// Marks a request already replayed once after a refresh.
+///
+/// The replay goes back through the whole interceptor chain, so without this
+/// an endpoint answering 401 for a reason no token can fix keeps the cycle
+/// going for as long as the refresh succeeds: refresh, retry, 401, refresh.
+const _retriedKey = 'fastedgy.refreshRetried';
+
+/// Path segment of the endpoints where a 401 is the answer, not an expired
+/// token: signing in with the wrong password, or presenting a refresh token
+/// the server no longer accepts. Refreshing turns neither into a success.
+///
+/// The surrounding slashes keep out a resource whose name merely starts the
+/// same way, `/authors` never matching `/auth/`.
+const _neverRefreshedPath = '/auth/';
+
 /// Interceptor that automatically refreshes the access token on 401 errors
 ///
 /// When a request fails with 401 (Unauthorized), this interceptor:
@@ -31,10 +46,14 @@ class RefreshTokenInterceptor extends Interceptor {
     DioException err,
     ErrorInterceptorHandler handler,
   ) async {
-    // Only handle 401 errors, exclude auth/refresh to avoid infinite loop
-    // (like Vue.js: error?.response?.status !== 401 || url.includes('auth/refresh'))
     if (err.response?.statusCode != 401 ||
-        err.requestOptions.path.contains('auth/refresh')) {
+        err.requestOptions.path.contains(_neverRefreshedPath)) {
+      return handler.next(err);
+    }
+
+    if (err.requestOptions.extra[_retriedKey] == true) {
+      _logger.fine('Already replayed after a refresh, letting the 401 through');
+
       return handler.next(err);
     }
 
@@ -76,14 +95,22 @@ class RefreshTokenInterceptor extends Interceptor {
       // Clone the failed request with the new token
       final requestOptions = err.requestOptions;
       requestOptions.headers['Authorization'] = 'Bearer $newToken';
+      requestOptions.extra[_retriedKey] = true;
 
       // Retry the request
       final response = await _dio.fetch(requestOptions);
 
       // Return the successful response
       return handler.resolve(response);
-    } catch (e) {
-      _logger.fine('Error during token refresh: $e');
+    } catch (e, stackTrace) {
+      // The lock answers every refresh outcome with a bool, logging out on a
+      // rejected refresh token and holding the session on a network or 5xx
+      // failure, so what lands here is the replay. Its error is dropped in
+      // favour of the original 401 handed back to the caller: without this
+      // line it would be lost. The pipeline reads the argument to demote an
+      // unanswered server to a single INFO line.
+      _logger.warning('Replay after a refresh failed', e, stackTrace);
+
       return handler.next(err);
     }
   }
