@@ -41,9 +41,11 @@ Map<String, BlockComponentBuilder> richTextBlocks({
   EdgeInsets listItemPadding = const EdgeInsets.symmetric(vertical: 3),
   TextStyle Function(int level)? headingText,
   EdgeInsets Function(int level)? headingMargin,
+  EdgeInsets? dividerPadding,
 }) {
   final builders = {...standardBlockComponentBuilderMap, ...features.builders};
   final heading = builders[HeadingBlockKeys.type];
+  final divider = builders[DividerBlockKeys.type];
 
   // The package sizes its headings in pixels from its own source, and a builder
   // is the only way a theme reaches them.
@@ -51,6 +53,18 @@ Map<String, BlockComponentBuilder> richTextBlocks({
     builders[HeadingBlockKeys.type] = HeadingBlockComponentBuilder(
       configuration: heading.configuration,
       textStyleBuilder: headingText,
+    );
+  }
+
+  // The package pads its rule from inside, with a band of its own the theme
+  // cannot reach: the line alone is left here, and the air around it becomes
+  // the block's padding like a heading's is its margin.
+  if (dividerPadding != null && divider is DividerBlockComponentBuilder) {
+    builders[DividerBlockKeys.type] = DividerBlockComponentBuilder(
+      configuration: divider.configuration,
+      lineColor: divider.lineColor,
+      wrapper: divider.wrapper,
+      height: 1,
     );
   }
 
@@ -85,9 +99,11 @@ Map<String, BlockComponentBuilder> richTextBlocks({
     builders[type] = builder;
 
     builder.configuration = builder.configuration.copyWith(
-      padding: (_) => _listTypes.contains(type)
-          ? listItemPadding
-          : const EdgeInsets.symmetric(vertical: 3),
+      padding: (_) => switch (type) {
+        DividerBlockKeys.type when dividerPadding != null => dividerPadding,
+        _ when _listTypes.contains(type) => listItemPadding,
+        _ => const EdgeInsets.symmetric(vertical: 3),
+      },
       // Null leaves the package's own, which every block but a heading keeps.
       margin: type == HeadingBlockKeys.type && headingMargin != null
           ? (node) => _headingMargin(node, headingMargin)

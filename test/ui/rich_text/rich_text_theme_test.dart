@@ -120,6 +120,18 @@ void main() {
       );
     });
 
+    test('counts the air around a rule in the theme spacing too', () {
+      const tokens = FastEdgyThemeData(spacing: 10.0);
+      final even = RichTextTheme.from(tokens).dividerPadding;
+
+      expect(even.top, even.bottom, reason: 'a rule belongs to neither side');
+      expect(even.top, 10.0 * RichTextTheme.defaultDividerSpacing.$1);
+      expect(
+        RichTextTheme.from(tokens, dividerSpacing: (3, 1)).dividerPadding,
+        const EdgeInsets.only(top: 30, bottom: 10),
+      );
+    });
+
     test('answers for a level no toolbar makes', () {
       final theme = RichTextTheme.fallback;
 

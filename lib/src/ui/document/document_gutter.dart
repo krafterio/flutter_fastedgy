@@ -367,8 +367,55 @@ class _DocumentGutterState extends State<DocumentGutter> {
           ),
   );
 
+  /// The first line of the block, as it was last laid out, and where in it the
+  /// handles hang.
+  ///
+  /// Measured rather than guessed at a constant: the handles stand level with
+  /// the line a block opens with, and that line is a different height in a
+  /// paragraph, in a heading and in a rule. The block is laid out beside them,
+  /// so a margin taller than the line it hangs from decides the block's own
+  /// height and pushes it off centre — which is why the height is capped to
+  /// what the handles need rather than left to the buttons.
+  ({double top, double height})? _hang;
+
+  void _measureLine() {
+    final node = widget.blockComponentContext.node;
+    final selectable = node.selectable;
+    final margin = context.findRenderObject();
+
+    if (!mounted || selectable == null || margin is! RenderBox) {
+      return;
+    }
+
+    // Both sides read in the one frame every block shares: what a block puts
+    // above its first line — the padding of a list item, the air a heading
+    // holds — is then already in the answer, rather than something this has to
+    // know about and add.
+    final line = selectable.getCursorRectInPosition(Position(path: node.path));
+
+    if (line == null || !margin.attached) {
+      return;
+    }
+
+    final from = selectable.localToGlobal(line.topLeft).dy;
+    final top =
+        (from -
+                margin.localToGlobal(Offset.zero).dy +
+                (line.height - _buttonSize) / 2)
+            .clamp(0.0, double.infinity);
+    // No taller than what the handles take: the row is as tall as the block or
+    // as this, whichever wins, and any slack here would centre them in it.
+    final hang = (top: top, height: top + _buttonSize);
+
+    if (hang != _hang) {
+      setState(() => _hang = hang);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    WidgetsBinding.instance.addPostFrameCallback((_) => _measureLine());
+
     // Total width must stay equal to the layout's gutter so the editor's
     // reduced left padding keeps block text aligned with the header.
     //
@@ -377,8 +424,9 @@ class _DocumentGutterState extends State<DocumentGutter> {
     // gets, it costs the page no more room than a pointer has always cost it.
     return SizedBox(
       width: widget.gutterWidth,
+      height: _hang?.height,
       child: Padding(
-        padding: const EdgeInsets.only(top: 6, right: 2),
+        padding: EdgeInsets.only(top: _hang?.top ?? 6, right: 2),
         child: hasHoverPointer ? _forPointer(context) : _forTouch(context),
       ),
     );

@@ -103,6 +103,10 @@ class RichTextTheme extends ComponentThemeData {
   /// of their own.
   final EdgeInsets listItemPadding;
 
+  /// The air above and below a rule, which is all a rule is made of: the line
+  /// itself is drawn a pixel high and centred in what this leaves it.
+  final EdgeInsets dividerPadding;
+
   /// What anything floating over the document wears — the toolbar, an editing
   /// card, a menu.
   ///
@@ -134,6 +138,7 @@ class RichTextTheme extends ComponentThemeData {
     required this.chipRadius,
     required this.blockPadding,
     required this.listItemPadding,
+    required this.dividerPadding,
     required this.floatingSurface,
     this.monoFontFamily,
   });
@@ -160,6 +165,10 @@ class RichTextTheme extends ComponentThemeData {
     (2, 1),
   ];
 
+  /// Above and below a rule, in multiples of the theme's spacing. Even: a rule
+  /// separates two things rather than belonging to either.
+  static const (double above, double below) defaultDividerSpacing = (4, 4);
+
   EdgeInsets headingMarginAt(int level) => headingMargin.isEmpty
       ? EdgeInsets.zero
       : headingMargin[(level - 1).clamp(0, headingMargin.length - 1)];
@@ -183,6 +192,7 @@ class RichTextTheme extends ComponentThemeData {
     FastEdgyThemeData theme, {
     List<double> headingScale = defaultHeadingScale,
     List<(double above, double below)> headingSpacing = defaultHeadingSpacing,
+    (double above, double below) dividerSpacing = defaultDividerSpacing,
   }) {
     final colors = theme.colors;
 
@@ -231,6 +241,10 @@ class RichTextTheme extends ComponentThemeData {
       // The vertical rhythm every block is laid at: lists follow it unless the
       // application asks for airier ones.
       listItemPadding: const EdgeInsets.symmetric(vertical: 3),
+      dividerPadding: EdgeInsets.only(
+        top: theme.spacing * dividerSpacing.$1,
+        bottom: theme.spacing * dividerSpacing.$2,
+      ),
       floatingSurface: BoxDecoration(
         color: colors.surface,
         borderRadius: BorderRadius.circular(theme.radius),
@@ -288,6 +302,7 @@ class RichTextTheme extends ComponentThemeData {
     BorderRadius? chipRadius,
     EdgeInsets? blockPadding,
     EdgeInsets? listItemPadding,
+    EdgeInsets? dividerPadding,
     BoxDecoration? floatingSurface,
   }) {
     return RichTextTheme(
@@ -315,6 +330,7 @@ class RichTextTheme extends ComponentThemeData {
       chipRadius: chipRadius ?? this.chipRadius,
       blockPadding: blockPadding ?? this.blockPadding,
       listItemPadding: listItemPadding ?? this.listItemPadding,
+      dividerPadding: dividerPadding ?? this.dividerPadding,
       floatingSurface: floatingSurface ?? this.floatingSurface,
     );
   }

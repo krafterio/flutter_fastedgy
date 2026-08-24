@@ -5,6 +5,7 @@
 
 import 'package:flutter_fastedgy/ui.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
+import 'package:flutter/material.dart' as material show Divider;
 import 'package:flutter/rendering.dart' show RenderBox, RenderParagraph;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -213,5 +214,59 @@ void main() {
     );
 
     expect(tester.getSize(find.byType(RichTextViewer)).height, lessThan(120));
+  });
+
+  group('a rule', () {
+    Future<(Rect block, Rect rule)> ruleOf(
+      WidgetTester tester, {
+      RichTextTheme? theme,
+    }) async {
+      await pump(
+        tester,
+        FastEdgyTheme(
+          data: FastEdgyThemeData.fallback.copyWith(
+            components: {RichTextTheme: ?theme},
+          ),
+          child: RichTextViewer(
+            editorState: stateOf([
+              paragraphNode(delta: Delta()..insert('Texte')),
+              dividerNode(),
+            ]),
+            features: defaultRichTextFeatures,
+          ),
+        ),
+      );
+
+      return (
+        tester.getRect(find.byType(DividerBlockComponentWidget)),
+        tester.getRect(find.byType(material.Divider)),
+      );
+    }
+
+    testWidgets('hangs in the middle of the air the theme gives it', (
+      tester,
+    ) async {
+      final (block, rule) = await ruleOf(tester);
+      final padding = RichTextTheme.fallback.dividerPadding;
+
+      expect(rule.top - block.top, padding.top);
+      expect(block.bottom - rule.bottom, padding.bottom);
+    });
+
+    testWidgets('and takes the air an application names, above and below', (
+      tester,
+    ) async {
+      final (block, rule) = await ruleOf(
+        tester,
+        theme: RichTextTheme.from(
+          FastEdgyThemeData.fallback,
+          dividerSpacing: (6, 1),
+        ),
+      );
+      final spacing = FastEdgyThemeData.fallback.spacing;
+
+      expect(rule.top - block.top, spacing * 6);
+      expect(block.bottom - rule.bottom, spacing);
+    });
   });
 }

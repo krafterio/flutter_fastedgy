@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart'
     show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:flutter/gestures.dart'
     show PointerDeviceKind, kLongPressTimeout;
+import 'package:flutter/material.dart' as material show Divider;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_fastedgy/flutter_fastedgy.dart' show t;
 import 'package:flutter_fastedgy/ui.dart';
@@ -188,7 +189,12 @@ void main() {
         await caretOn(tester, state, 0);
 
         final handle = tester.getCenter(handles(FastEdgyGlyph.gripRow));
-        final third = tester.getCenter(find.text('Trois', findRichText: true));
+        // Under the middle of the third block, which is what puts the block
+        // after it rather than before: aiming at the line itself is the exact
+        // boundary between the two.
+        final third =
+            tester.getCenter(find.text('Trois', findRichText: true)) +
+            const Offset(0, 6);
 
         final gesture = await tester.startGesture(handle);
         await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
@@ -276,6 +282,65 @@ void main() {
 
         expect(find.byType(Draggable<Node>), findsNWidgets(3));
         expect(find.byType(LongPressDraggable<Node>), findsNothing);
+      });
+    });
+  });
+
+  group('where the handles hang', () {
+    testWidgets('level with the line each block opens with', (tester) async {
+      await onPlatform(TargetPlatform.macOS, () async {
+        final state = EditorState(
+          document: markdownToDocument('Para\n\n# Titre\n\n- Puce'),
+        );
+        addTearDown(state.dispose);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(body: DocumentEditor(editorState: state)),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Whatever a block puts above that line — the air a heading holds, the
+        // padding of a list item — is already in where the line ended up.
+        for (final (index, text) in ['Para', 'Titre', 'Puce'].indexed) {
+          final line = tester.getRect(find.text(text, findRichText: true));
+          final handle = tester.getRect(
+            handles(FastEdgyGlyph.gripRow).at(index),
+          );
+
+          expect(handle.center.dy, closeTo(line.center.dy, 0.5), reason: text);
+        }
+      });
+    });
+  });
+
+  group('a rule under the handles', () {
+    testWidgets('keeps the air the theme gives it even', (tester) async {
+      await onPlatform(TargetPlatform.macOS, () async {
+        final state = EditorState(
+          document: Document.blank()
+            ..insert(
+              [0],
+              [paragraphNode(delta: Delta()..insert('Un')), dividerNode()],
+            ),
+        );
+        addTearDown(state.dispose);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(body: DocumentEditor(editorState: state)),
+          ),
+        );
+        await tester.pump();
+
+        // The handles stand in a row beside the block, so the taller of the two
+        // decides how much room the line hangs in.
+        final row = tester.getRect(find.byType(DividerBlockComponentWidget));
+        final rule = tester.getRect(find.byType(material.Divider));
+
+        expect(rule.top - row.top, RichTextTheme.fallback.dividerPadding.top);
+        expect(row.bottom - rule.bottom, rule.top - row.top);
       });
     });
   });
