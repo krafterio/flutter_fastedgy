@@ -121,11 +121,11 @@ final codeBlockCommands = [
   codeBlockExitCommand,
 ];
 
-/// "Code" entry for the slash menu, wearing [icon] — Material's unless the
-/// application has an icon set of its own.
+/// "Code block" entry for the slash menu, wearing [icon] — Material's unless
+/// the application has an icon set of its own.
 SelectionMenuItem codeBlockMenuItem({IconData icon = Icons.code}) =>
     SelectionMenuItem.node(
-      getName: () => t('Code'),
+      getName: () => t('Code block'),
       keywords: ['code', 'snippet', '```'],
       iconBuilder: (editorState, isSelected, style) => SelectionMenuIconWidget(
         icon: icon,

@@ -329,6 +329,13 @@ class RichTextActions {
       attribute: AppFlowyRichTextKeys.strikethrough,
       group: 1,
     ),
+    RichTextAction.mark(
+      id: 'code',
+      glyph: FastEdgyGlyph.code,
+      getLabel: () => t('Code'),
+      attribute: AppFlowyRichTextKeys.code,
+      group: 1,
+    ),
   ];
 
   /// The three lists, each leaving the list when pressed again.

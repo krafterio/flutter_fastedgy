@@ -42,6 +42,17 @@ void main() {
       state.dispose();
     });
 
+    test('code writes the mark markdown reads back as a backquote', () async {
+      final state = stateOf('kt serve');
+      const codec = MarkdownRichTextCodec(features: defaultRichTextFeatures);
+
+      await actionOf('code').run(state);
+
+      expect(codec.encode(state.document).trim(), '`kt serve`');
+
+      state.dispose();
+    });
+
     test('un type de bloc s\'applique et revient au paragraphe', () async {
       final state = stateOf('Pain');
       final list = actionOf('bulleted_list');

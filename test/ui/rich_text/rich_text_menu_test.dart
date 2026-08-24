@@ -44,6 +44,14 @@ void main() {
     }
   });
 
+  test('the code block entry says it is a block, in both catalogs', () {
+    // Named 'Code' upstream, which reads as the mark a word carries rather than
+    // as the block the entry makes.
+    expect(codeBlockMenuItem().name, 'Code block');
+    expect(catalog('fr'), contains('Code block'));
+    expect(catalog('en'), contains('Code block'));
+  });
+
   test('the menu carries the package blocks and what the features add', () {
     final items = richTextSlashMenuItems(defaultRichTextFeatures);
 
