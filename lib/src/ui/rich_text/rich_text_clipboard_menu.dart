@@ -82,11 +82,19 @@ class _RichTextClipboardMenuState extends State<RichTextClipboardMenu> {
           return const SizedBox.shrink();
         }
 
+        // A column of items as wide as the widest still has to be told how
+        // wide that is: hung off a pointer in an overlay it is handed no width
+        // at all, and a stretched column of nothing is an infinity.
         if (widget.direction == Axis.vertical) {
-          return Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: _items(live),
+          return ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: _maxWidth),
+            child: IntrinsicWidth(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: _items(live),
+              ),
+            ),
           );
         }
 

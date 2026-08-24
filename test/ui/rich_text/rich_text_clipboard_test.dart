@@ -5,6 +5,7 @@
 
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/services.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_fastedgy/ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -85,5 +86,40 @@ void main() {
         expect(richTextClipboardHasContent.value, isTrue);
       },
     );
+  });
+
+  group('le menu du clic droit', () {
+    testWidgets('tient debout sans largeur imposée', (tester) async {
+      final state = withCaret();
+
+      // Ce qu'en fait l'éditeur : posé à un point d'un Stack, donc mesuré sans
+      // aucune largeur. Une colonne étirée y valait l'infini.
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Stack(
+            children: [
+              Positioned(
+                left: 10,
+                top: 10,
+                child: RichTextSurface(
+                  child: RichTextClipboardMenu(
+                    editorState: state,
+                    actions: RichTextActions.clipboard(defaultRichTextFeatures),
+                    direction: Axis.vertical,
+                    onDone: () {},
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      expect(tester.takeException(), isNull);
+      expect(
+        tester.getSize(find.byType(RichTextSurface)).width,
+        lessThanOrEqualTo(300.0),
+      );
+    });
   });
 }
