@@ -111,6 +111,35 @@ Map<String, BlockComponentBuilder> richTextBlocks({
   return builders;
 }
 
+/// Which editor built a node, so what a block reads back long after its build
+/// comes from the editor holding it rather than from whoever wrote last on the
+/// shared builder.
+///
+/// Weak on the node, so a block the document has dropped is forgotten with it.
+final _scopeOf = Expando<_ScopedBlockComponentBuilder>('rich text block scope');
+
+/// What the package's blocks call to fill their margin — one function for every
+/// editor, asking the node itself whose gutter it should hang.
+///
+/// A block reads `actionBuilder` off its builder at the moment its margin
+/// draws, not at the moment it is built: the first hover on a page, minutes
+/// later, reached whatever the field or the message rendered under it had left
+/// on the shared instance since. That is an empty margin, so the width the
+/// gutter had reserved collapsed and the block jumped left under the pointer.
+Widget _actionForNode(
+  BlockComponentContext blockContext,
+  BlockComponentActionState state,
+) =>
+    _scopeOf[blockContext.node]?.actionBuilder(blockContext, state) ??
+    const SizedBox.shrink();
+
+Widget _actionTrailingForNode(
+  BlockComponentContext blockContext,
+  BlockComponentActionState state,
+) =>
+    _scopeOf[blockContext.node]?.actionTrailingBuilder(blockContext, state) ??
+    const SizedBox.shrink();
+
 /// One editor's copy of a block builder: it holds the dressing itself and hands
 /// it to [builder] just before that builds, so what another editor left on the
 /// shared instance never reaches this one's blocks.
@@ -125,11 +154,16 @@ class _ScopedBlockComponentBuilder extends BlockComponentBuilder {
 
   @override
   BlockComponentWidget build(BlockComponentContext blockComponentContext) {
+    _scopeOf[blockComponentContext.node] = this;
+
     builder
       ..configuration = configuration
       ..showActions = showActions
-      ..actionBuilder = actionBuilder
-      ..actionTrailingBuilder = actionTrailingBuilder;
+      // Never this scope's own: the blocks call these back later, and the field
+      // they read them from belongs to the shared instance (see
+      // [_actionForNode]).
+      ..actionBuilder = _actionForNode
+      ..actionTrailingBuilder = _actionTrailingForNode;
 
     return builder.build(blockComponentContext);
   }

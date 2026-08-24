@@ -6,7 +6,8 @@
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/foundation.dart'
     show TargetPlatform, debugDefaultTargetPlatformOverride;
-import 'package:flutter/gestures.dart' show kLongPressTimeout;
+import 'package:flutter/gestures.dart'
+    show PointerDeviceKind, kLongPressTimeout;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_fastedgy/flutter_fastedgy.dart' show t;
 import 'package:flutter_fastedgy/ui.dart';
@@ -74,6 +75,53 @@ void main() {
 
   double topOfSecondBlock(WidgetTester tester) =>
       tester.getTopLeft(find.text('Deux', findRichText: true)).dy;
+
+  group('la gouttière et les autres éditeurs', () {
+    // A block reads its margin off its builder at the moment that margin draws
+    // — the first hover, long after the build — and the package hands out one
+    // builder instance for every editor on the screen. A message rendered under
+    // the page had left an empty margin on the shared instance, so the block
+    // jumped left by the width of the gutter the moment it was hovered.
+    testWidgets('survit à un document rendu sous la page', (tester) async {
+      await onPlatform(TargetPlatform.macOS, () async {
+        final page = EditorState(document: markdownToDocument('* Un item'));
+        addTearDown(page.dispose);
+        final message = EditorState(document: markdownToDocument('* Une puce'));
+        addTearDown(message.dispose);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: DocumentEditor(
+                editorState: page,
+                footer: RichTextViewer(
+                  editorState: message,
+                  features: defaultRichTextFeatures,
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        final item = find.text('Un item', findRichText: true);
+        final resting = tester.getTopLeft(item).dx;
+
+        final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+        await mouse.addPointer(location: Offset.zero);
+        addTearDown(mouse.removePointer);
+
+        await mouse.moveTo(tester.getCenter(item));
+        await tester.pumpAndSettle();
+
+        expect(tester.getTopLeft(item).dx, resting);
+        // The gutter it hangs in, rather than a margin that was never there:
+        // both readings would agree just as well on a page that had lost it
+        // before the first frame.
+        expect(resting, greaterThan(DocumentLayout.standard.gutter));
+      });
+    });
+  });
 
   group('la gouttière au doigt', () {
     // The editor only shows a block's gutter while it is hovered, and a finger
