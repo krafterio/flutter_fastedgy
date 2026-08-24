@@ -121,6 +121,7 @@ class _RichTextViewerState extends State<RichTextViewer> {
         builders: richTextBlocks(
           features: widget.features,
           listItemPadding: theme.listItemPadding,
+          headingText: theme.headingAt,
         ),
       );
   }

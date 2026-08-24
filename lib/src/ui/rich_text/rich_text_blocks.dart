@@ -39,8 +39,21 @@ Map<String, BlockComponentBuilder> richTextBlocks({
   String Function(Node node)? placeholderText,
   BlockComponentBuilder? pageBuilder,
   EdgeInsets listItemPadding = const EdgeInsets.symmetric(vertical: 3),
+  TextStyle Function(int level)? headingText,
 }) {
   final builders = {...standardBlockComponentBuilderMap, ...features.builders};
+  final heading = builders[HeadingBlockKeys.type];
+
+  // The package sizes its headings from a list written into its own source, in
+  // pixels, and takes a builder for them instead — the only way a theme reaches
+  // a heading. Left alone where a feature replaced the block with one of its
+  // own: what that draws is its business.
+  if (headingText != null && heading is HeadingBlockComponentBuilder) {
+    builders[HeadingBlockKeys.type] = HeadingBlockComponentBuilder(
+      configuration: heading.configuration,
+      textStyleBuilder: headingText,
+    );
+  }
 
   if (showPlaceholder != null) {
     // Never inside a table: a cell is a column of its own, and the hint wrapped

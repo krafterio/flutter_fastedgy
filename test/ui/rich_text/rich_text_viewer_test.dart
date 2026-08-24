@@ -5,6 +5,7 @@
 
 import 'package:flutter_fastedgy/ui.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -28,6 +29,60 @@ void main() {
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: child)));
     await tester.pump();
   }
+
+  /// The first size the rendered line names — what a heading is actually drawn
+  /// at, rather than what the builder was handed.
+  double? fontSizeOf(WidgetTester tester, String text) {
+    final paragraph = tester.renderObject<RenderParagraph>(
+      find.text(text, findRichText: true),
+    );
+    double? size;
+
+    paragraph.text.visitChildren((span) {
+      size ??= span.style?.fontSize;
+
+      return size == null;
+    });
+
+    return size;
+  }
+
+  testWidgets(
+    'draws a heading at the size the theme names, not the package\'s',
+    (tester) async {
+      await pump(
+        tester,
+        FastEdgyTheme(
+          data: FastEdgyThemeData.fallback.copyWith(
+            typography: TypographyRoles.fallback.copyWith(
+              heading: const TextStyle(
+                fontSize: 30,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          child: RichTextViewer(
+            features: defaultRichTextFeatures,
+            editorState: stateOf([
+              headingNode(level: 1, delta: Delta()..insert('Titre')),
+              headingNode(level: 3, delta: Delta()..insert('Section')),
+            ]),
+          ),
+        ),
+      );
+
+      // The package's own would be 28 and 18, from a list written into its
+      // source.
+      expect(
+        fontSizeOf(tester, 'Titre'),
+        30 * RichTextTheme.defaultHeadingScale.first,
+      );
+      expect(
+        fontSizeOf(tester, 'Section'),
+        30 * RichTextTheme.defaultHeadingScale[2],
+      );
+    },
+  );
 
   testWidgets('renders down a list, where the height is unbounded', (
     tester,

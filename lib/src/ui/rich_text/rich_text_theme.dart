@@ -3,6 +3,7 @@
  * MIT License (see LICENSE file).
  */
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/widgets.dart';
 
 import '../theme/component_theme.dart';
@@ -26,6 +27,16 @@ class RichTextTheme extends ComponentThemeData {
 
   /// A code block's text.
   final TextStyle codeText;
+
+  /// What a heading is written in, level 1 first, one entry per level the
+  /// document format has.
+  ///
+  /// The one text role carrying no colour, on purpose: the style is applied
+  /// over each span of the line, so a colour here would repaint an inline
+  /// colour inside a heading. Left null, the page's own ink shows through and
+  /// what was coloured stays coloured — an application wanting its titles a
+  /// shade of their own overrides these styles with the colour on them.
+  final List<TextStyle> headingText;
 
   /// The face inline code takes, applied onto whatever text surrounds it —
   /// null where the typography names no monospace family.
@@ -102,6 +113,7 @@ class RichTextTheme extends ComponentThemeData {
     required this.blockText,
     required this.fieldText,
     required this.codeText,
+    required this.headingText,
     required this.ink,
     required this.mutedText,
     required this.surface,
@@ -124,19 +136,57 @@ class RichTextTheme extends ComponentThemeData {
     this.monoFontFamily,
   });
 
+  /// What each level takes of the heading role by default.
+  ///
+  /// Modest on purpose. A heading inside a page is told apart by its weight
+  /// before its size, and the ceiling is the title of the page it sits in: a
+  /// level 1 matching the subject a document is filed under stops reading as
+  /// part of it and starts reading as a second one.
+  static const List<double> defaultHeadingScale = [
+    1.05,
+    0.95,
+    0.9,
+    0.85,
+    0.8,
+    0.8,
+  ];
+
+  /// What a heading of [level] is written in, whatever the level.
+  ///
+  /// Clamped rather than checked: the format allows six levels, a document
+  /// imported from elsewhere may name any of them, and a heading is never worth
+  /// throwing over.
+  TextStyle headingAt(int level) => headingText.isEmpty
+      ? blockText
+      : headingText[(level - 1).clamp(0, headingText.length - 1)];
+
   /// Derived from the tokens, so an application that overrides one role sees
   /// the whole stack follow instead of repeating a colour in five places.
   ///
   /// The text roles carry no colour of their own, so [ink] is painted onto them
   /// here; an application wanting its body text a shade off its strongest ink
   /// overrides [blockText] and [fieldText] with the exact styles it wants.
-  factory RichTextTheme.from(FastEdgyThemeData theme) {
+  ///
+  /// [headingScale] is what each level takes of the heading role, which is the
+  /// role a widget needing levels scales rather than asking for five more. An
+  /// application wanting louder titles gives its own factors instead of writing
+  /// six styles out; one wanting a face or a colour of its own overrides
+  /// [headingText] itself. As many levels as it names, [headingAt] answering
+  /// for the rest.
+  factory RichTextTheme.from(
+    FastEdgyThemeData theme, {
+    List<double> headingScale = defaultHeadingScale,
+  }) {
     final colors = theme.colors;
 
     return RichTextTheme(
       blockText: theme.typography.blockText.copyWith(color: colors.ink),
       fieldText: theme.typography.body.copyWith(color: colors.ink),
       codeText: theme.typography.mono.copyWith(color: colors.ink),
+      headingText: [
+        for (final factor in headingScale)
+          theme.typography.heading.apply(fontSizeFactor: factor),
+      ],
       monoFontFamily: theme.typography.mono.fontFamily,
       ink: colors.ink,
       mutedText: colors.muted,
@@ -203,6 +253,7 @@ class RichTextTheme extends ComponentThemeData {
     TextStyle? blockText,
     TextStyle? fieldText,
     TextStyle? codeText,
+    List<TextStyle>? headingText,
     String? monoFontFamily,
     Color? ink,
     Color? mutedText,
@@ -228,6 +279,7 @@ class RichTextTheme extends ComponentThemeData {
       blockText: blockText ?? this.blockText,
       fieldText: fieldText ?? this.fieldText,
       codeText: codeText ?? this.codeText,
+      headingText: headingText ?? this.headingText,
       monoFontFamily: monoFontFamily ?? this.monoFontFamily,
       ink: ink ?? this.ink,
       mutedText: mutedText ?? this.mutedText,
@@ -261,6 +313,7 @@ class RichTextTheme extends ComponentThemeData {
         other.blockText == blockText &&
         other.fieldText == fieldText &&
         other.codeText == codeText &&
+        listEquals(other.headingText, headingText) &&
         other.monoFontFamily == monoFontFamily &&
         other.ink == ink &&
         other.mutedText == mutedText &&
@@ -288,6 +341,7 @@ class RichTextTheme extends ComponentThemeData {
     blockText,
     fieldText,
     codeText,
+    Object.hashAll(headingText),
     monoFontFamily,
     ink,
     mutedText,

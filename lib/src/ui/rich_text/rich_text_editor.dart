@@ -509,28 +509,32 @@ class RichTextEditorState extends State<RichTextEditor> {
       ? widget.emptyPlaceholder ?? ''
       : widget.hintPlaceholder ?? t('Write, or type “/” to insert a block…');
 
-  Map<String, BlockComponentBuilder>
-  _buildBlockComponentBuilders() => richTextBlocks(
-    features: widget.features,
-    blockActions: widget.blockActions,
-    listItemPadding: RichTextTheme.of(context).listItemPadding,
-    placeholderText: _paragraphPlaceholder,
-    // The package shows a paragraph's placeholder only while the cursor sits in
-    // it; a blank document keeps showing its own with no selection at all.
-    showPlaceholder: (editorState, node) {
-      final selection = editorState.selection;
+  Map<String, BlockComponentBuilder> _buildBlockComponentBuilders() {
+    final theme = RichTextTheme.of(context);
 
-      return selection == null
-          ? _isBlankDocument && widget.emptyPlaceholder != null
-          : selection.isSingle && selection.start.path.equals(node.path);
-    },
-    // The package's page block wraps its blocks in a scroll view of its own,
-    // which cannot be laid out where the height is unbounded, and whose scroll
-    // controller asserts if it is ever built twice — which measuring the editor
-    // does. An editor that does not own its scrolling needs none of it: a plain
-    // column measures itself.
-    pageBuilder: widget.scrollable ? null : _PlainPageBlockComponentBuilder(),
-  );
+    return richTextBlocks(
+      features: widget.features,
+      blockActions: widget.blockActions,
+      listItemPadding: theme.listItemPadding,
+      headingText: theme.headingAt,
+      placeholderText: _paragraphPlaceholder,
+      // The package shows a paragraph's placeholder only while the cursor sits
+      // in it; a blank document keeps showing its own with no selection at all.
+      showPlaceholder: (editorState, node) {
+        final selection = editorState.selection;
+
+        return selection == null
+            ? _isBlankDocument && widget.emptyPlaceholder != null
+            : selection.isSingle && selection.start.path.equals(node.path);
+      },
+      // The package's page block wraps its blocks in a scroll view of its own,
+      // which cannot be laid out where the height is unbounded, and whose
+      // scroll controller asserts if it is ever built twice — which measuring
+      // the editor does. An editor that does not own its scrolling needs none
+      // of it: a plain column measures itself.
+      pageBuilder: widget.scrollable ? null : _PlainPageBlockComponentBuilder(),
+    );
+  }
 
   /// Every shortcut but a feature's own goes behind the features' guards, so a
   /// block that swallows typing keeps Enter, the markdown triggers and the "/"

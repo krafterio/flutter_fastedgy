@@ -52,6 +52,57 @@ void main() {
       );
     });
 
+    test('scales the heading role, level by level', () {
+      const tokens = FastEdgyThemeData(
+        typography: TypographyRoles(
+          body: TextStyle(fontSize: 14),
+          blockText: TextStyle(fontSize: 16),
+          small: TextStyle(fontSize: 12),
+          mono: TextStyle(fontSize: 13),
+          heading: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+        ),
+      );
+      final heading = RichTextTheme.from(tokens).headingText;
+
+      expect(heading, hasLength(6));
+      expect(heading[0].fontSize, greaterThan(heading[1].fontSize!));
+      expect(heading[2].fontSize, 20 * RichTextTheme.defaultHeadingScale[2]);
+      expect(
+        heading.every((style) => style.fontWeight == FontWeight.w600),
+        isTrue,
+      );
+      expect(
+        heading.every((style) => style.color == null),
+        isTrue,
+        reason: 'a colour here would repaint an inline colour in the heading',
+      );
+    });
+
+    test('takes the scale an application names, as far as it names it', () {
+      final loud = RichTextTheme.from(
+        FastEdgyThemeData.fallback,
+        headingScale: const [2.0, 1.5, 1.0],
+      );
+      final role = FastEdgyThemeData.fallback.typography.heading.fontSize!;
+
+      expect(loud.headingText, hasLength(3));
+      expect(loud.headingAt(1).fontSize, role * 2);
+      expect(loud.headingAt(5).fontSize, role, reason: 'clamped to the last');
+    });
+
+    test('answers for a level no toolbar makes', () {
+      final theme = RichTextTheme.fallback;
+
+      expect(theme.headingAt(6), theme.headingText.last);
+      expect(theme.headingAt(9), theme.headingText.last);
+      expect(theme.headingAt(1), theme.headingText.first);
+      expect(theme.headingAt(0), theme.headingText.first);
+      expect(
+        theme.copyWith(headingText: const []).headingAt(2),
+        theme.blockText,
+      );
+    });
+
     test('copyWith touches one value and leaves the rest', () {
       final red = RichTextTheme.fallback.copyWith(
         cursor: const Color(0xFFFF0000),
