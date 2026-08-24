@@ -131,4 +131,50 @@ void main() {
       expect(topOf(reserveAbove: 0) + 52, lessThanOrEqualTo(selection.top));
     });
   });
+
+  group('RichTextSurface', () {
+    testWidgets('écrit avec le style du thème, pas avec celui du dessus', (
+      tester,
+    ) async {
+      final theme = RichTextTheme.fallback;
+      late TextStyle inside;
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          // Ce que voit une surface montée dans un overlay : le style de
+          // secours du framework, gras et souligné de jaune.
+          child: DefaultTextStyle(
+            style: const TextStyle(
+              fontWeight: FontWeight.w900,
+              decoration: TextDecoration.underline,
+              decorationColor: Color(0xFFFFFF00),
+            ),
+            child: ComponentTheme<RichTextTheme>(
+              data: theme,
+              child: const RichTextSurface(child: _StyleProbe()),
+            ),
+          ),
+        ),
+      );
+
+      inside = _StyleProbe.seen!;
+      expect(inside.decoration, isNot(TextDecoration.underline));
+      expect(inside.fontWeight, theme.fieldText.fontWeight);
+      expect(inside.fontSize, theme.fieldText.fontSize);
+    });
+  });
+}
+
+class _StyleProbe extends StatelessWidget {
+  static TextStyle? seen;
+
+  const _StyleProbe();
+
+  @override
+  Widget build(BuildContext context) {
+    seen = DefaultTextStyle.of(context).style;
+
+    return const SizedBox.shrink();
+  }
 }

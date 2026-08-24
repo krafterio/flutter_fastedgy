@@ -251,15 +251,24 @@ class RichTextSurface extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: width,
-      height: height,
-      padding: padding,
-      // Clipped to its own corners: what scrolls inside a surface has to stop
-      // at them, or a row of items runs out past the rounding.
-      clipBehavior: Clip.antiAlias,
-      decoration: decoration ?? RichTextTheme.of(context).floatingSurface,
-      child: child,
+    final theme = RichTextTheme.of(context);
+
+    return DefaultTextStyle(
+      // A surface is built into an overlay, where whatever the application sets
+      // over its own pages is nowhere above it. Without a style of its own it
+      // reads the framework's fallback — bold, underlined in yellow — and any
+      // label drawn here inherits it.
+      style: theme.fieldText,
+      child: Container(
+        width: width,
+        height: height,
+        padding: padding,
+        // Clipped to its own corners: what scrolls inside a surface has to stop
+        // at them, or a row of items runs out past the rounding.
+        clipBehavior: Clip.antiAlias,
+        decoration: decoration ?? theme.floatingSurface,
+        child: child,
+      ),
     );
   }
 }
