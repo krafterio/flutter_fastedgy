@@ -18,6 +18,7 @@ import 'rich_text_blank.dart';
 import 'rich_text_action.dart';
 import 'rich_text_action_bar.dart';
 import 'rich_text_blocks.dart';
+import 'rich_text_clipboard.dart';
 import 'rich_text_clipboard_menu.dart';
 import 'rich_text_caret.dart';
 import 'rich_text_feature.dart';
@@ -1080,6 +1081,8 @@ class RichTextEditorState extends State<RichTextEditor> {
         ...widget.features.commandShortcuts,
         if (widget.onSubmit != null) ..._submitShortcuts,
         ...wholeBlockCommands,
+        richTextCopyCommand(features: widget.features),
+        richTextCutCommand(features: widget.features),
         richTextPasteCommand(features: widget.features),
         ...standardCommandShortcutEvents,
       ],

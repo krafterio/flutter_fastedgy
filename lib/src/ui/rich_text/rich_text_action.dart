@@ -264,7 +264,7 @@ class RichTextActions {
       group: 6,
       isActive: (_) => false,
       isEnabled: _hasSelection,
-      run: (editorState) async => cutCommand.handler(editorState),
+      run: (editorState) => cutRichText(editorState, features: features),
     ),
     RichTextAction(
       id: 'copy',
@@ -273,7 +273,7 @@ class RichTextActions {
       group: 6,
       isActive: (_) => false,
       isEnabled: _hasSelection,
-      run: (editorState) async => copyCommand.handler(editorState),
+      run: (editorState) => copyRichText(editorState, features: features),
     ),
     RichTextAction(
       id: 'paste',

@@ -9,7 +9,7 @@ import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/foundation.dart'
     show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter/services.dart' show SystemChannels;
+import 'package:flutter/services.dart' show MethodChannel, SystemChannels;
 import 'package:flutter_fastedgy/ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -372,6 +372,114 @@ void main() {
       } finally {
         debugDefaultTargetPlatformOverride = null;
       }
+    });
+  });
+
+  group('the copy command', () {
+    setUp(() {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, (_) async => null);
+    });
+
+    tearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null);
+      AppFlowyClipboard.lastText = null;
+    });
+
+    EditorState marked() {
+      final state = EditorState(
+        document: Document.blank()
+          ..insert(
+            [0],
+            [
+              paragraphNode(
+                delta: Delta()
+                  ..insert(
+                    'Lait',
+                    attributes: {AppFlowyRichTextKeys.bold: true},
+                  )
+                  ..insert(' entier'),
+              ),
+            ],
+          ),
+      );
+      addTearDown(state.dispose);
+      state.selection = Selection.single(
+        path: [0],
+        startOffset: 0,
+        endOffset: 11,
+      );
+
+      return state;
+    }
+
+    test('writes what was selected as markdown and as html', () async {
+      final written = <String, String>{};
+
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(const MethodChannel('fastedgy/clipboard'), (
+            call,
+          ) async {
+            written.addAll((call.arguments as Map).cast<String, String>());
+
+            return null;
+          });
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(
+              const MethodChannel('fastedgy/clipboard'),
+              null,
+            ),
+      );
+
+      await copyRichText(marked(), features: defaultRichTextFeatures);
+
+      // Two shapes on the pasteboard at once: ours reads the markdown back as
+      // blocks, a word processor pastes the html as formatted text.
+      expect(written['text'], '**Lait** entier');
+      expect(written['html'], '<p><strong>Lait</strong> entier</p>');
+    });
+
+    test('and the markdown alone where nothing carries two', () async {
+      await copyRichText(marked(), features: defaultRichTextFeatures);
+
+      expect(AppFlowyClipboard.lastText, '**Lait** entier');
+    });
+
+    test('and what it writes is pasted back with its marks on', () async {
+      final source = marked();
+      await copyRichText(source, features: defaultRichTextFeatures);
+
+      final target = EditorState(
+        document: Document.blank(withInitialText: true),
+      )..selection = Selection.collapsed(Position(path: [0], offset: 0));
+      addTearDown(target.dispose);
+
+      AppFlowyClipboard.mockSetData(
+        AppFlowyClipboardData(text: AppFlowyClipboard.lastText),
+      );
+      addTearDown(() => AppFlowyClipboard.mockSetData(null));
+
+      await pasteRichText(target, features: defaultRichTextFeatures);
+
+      final delta = target.getNodeAtPath([0])?.delta;
+
+      expect(delta?.toPlainText(), 'Lait entier');
+      expect(
+        (delta?.first as TextInsert).attributes?[AppFlowyRichTextKeys.bold],
+        isTrue,
+      );
+    });
+
+    test('cutting leaves the markdown behind and takes the words', () async {
+      final state = marked();
+
+      await cutRichText(state, features: defaultRichTextFeatures);
+
+      expect(AppFlowyClipboard.lastText, '**Lait** entier');
+      expect(state.getNodeAtPath([0])?.delta?.toPlainText(), isEmpty);
     });
   });
 
