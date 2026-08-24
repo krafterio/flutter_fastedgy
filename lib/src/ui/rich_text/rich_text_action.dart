@@ -110,7 +110,7 @@ class RichTextAction {
     isActive: (editorState) =>
         _isBlock(_nodeOf(editorState), type, attributes, identity),
     run: (editorState) async {
-      final selection = editorState.selection;
+      final selection = editorState.selection?.normalized;
       final node = _nodeOf(editorState);
 
       if (selection == null || node == null) {
@@ -120,20 +120,97 @@ class RichTextAction {
       final becomes = _isBlock(node, type, attributes, identity)
           ? ParagraphBlockKeys.type
           : type;
+      final nodes = editorState.getNodesInSelection(selection);
 
-      await editorState.formatNode(
-        selection,
-        (node) => node.copyWith(
-          type: becomes,
-          attributes: {
-            ...node.attributes,
-            if (becomes == type) ...attributes,
-            blockComponentDelta: (node.delta ?? Delta()).toJson(),
-          },
-        ),
-      );
+      if (nodes.isEmpty) {
+        return;
+      }
+
+      final transaction = editorState.transaction;
+
+      for (final node in nodes) {
+        final lines = _lines(node.delta ?? Delta());
+
+        transaction
+          ..insertNodes(node.path, [
+            for (final (index, line) in lines.indexed)
+              node.copyWith(
+                type: becomes,
+                // Whatever hung under the block stays under its first line: the
+                // lines after it are new blocks, and a copyWith left to itself
+                // would give each of them a copy of the children.
+                children: index == 0 ? null : const [],
+                attributes: {
+                  ...node.attributes,
+                  if (becomes == type) ...attributes,
+                  blockComponentDelta: line.toJson(),
+                },
+              ),
+          ])
+          ..deleteNode(node);
+      }
+
+      transaction.afterSelection = _selectionOver(nodes, selection);
+
+      await editorState.apply(transaction);
     },
   );
+
+  /// One delta per line the block holds, the marks each line carries with it.
+  ///
+  /// A block is one line here — every way of making one splits at the return.
+  /// A paragraph read back from markdown is the exception: a return inside a
+  /// paragraph is a soft break there, so what arrives is one block holding
+  /// three lines, and turning it into a list made one bullet out of the three.
+  static List<Delta> _lines(Delta delta) {
+    final lines = [Delta()];
+
+    for (final op in delta) {
+      if (op is! TextInsert) {
+        continue;
+      }
+
+      final parts = op.text.split('\n');
+
+      for (final (index, part) in parts.indexed) {
+        if (index > 0) {
+          lines.add(Delta());
+        }
+
+        if (part.isNotEmpty) {
+          lines.last.insert(part, attributes: op.attributes);
+        }
+      }
+    }
+
+    return lines;
+  }
+
+  /// What is left selected once the blocks have been replaced.
+  ///
+  /// The same selection where nothing split, which is every conversion but the
+  /// one above. Where something did, the offsets it named are counted over a
+  /// line that is now several blocks, so the blocks made out of it are selected
+  /// whole instead — sibling arithmetic, the shape every split has: one block
+  /// on the page becoming the lines it held.
+  static Selection _selectionOver(List<Node> nodes, Selection selection) {
+    final lines = [for (final node in nodes) ..._lines(node.delta ?? Delta())];
+
+    if (lines.length == nodes.length) {
+      return selection;
+    }
+
+    final path = nodes.first.path;
+    final end = path.last + lines.length - 1;
+
+    return Selection(
+      start: Position(path: path),
+      end: Position(
+        path: [...path.take(path.length - 1), end],
+        offset: lines.last.toPlainText().length,
+      ),
+    );
+  }
 
   static Node? _nodeOf(EditorState editorState) {
     final selection = editorState.selection;

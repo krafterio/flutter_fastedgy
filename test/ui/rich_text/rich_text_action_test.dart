@@ -56,6 +56,58 @@ void main() {
       state.dispose();
     });
 
+    test('un paragraphe multiligne donne une puce par ligne', () async {
+      // Ce qu'une description relue depuis du markdown contient : un retour
+      // seul y est un saut de ligne, pas un paragraphe de plus.
+      final state = EditorState(
+        document: Document.blank()
+          ..insert(
+            [0],
+            [
+              paragraphNode(
+                delta: Delta()
+                  ..insert('un\nde')
+                  ..insert('ux', attributes: {'bold': true})
+                  ..insert('\ntrois'),
+              ),
+            ],
+          ),
+      );
+      state.selection = Selection.single(
+        path: [0],
+        startOffset: 0,
+        endOffset: 13,
+      );
+
+      await actionOf('bulleted_list').run(state);
+
+      final blocks = state.document.root.children;
+
+      expect(blocks, hasLength(3));
+      expect(
+        blocks.every((node) => node.type == BulletedListBlockKeys.type),
+        isTrue,
+      );
+      expect(blocks.map((node) => node.delta?.toPlainText()), [
+        'un',
+        'deux',
+        'trois',
+      ]);
+      // Les marques de la ligne la suivent dans sa puce.
+      expect(blocks[1].delta?.toJson(), [
+        {'insert': 'de'},
+        {
+          'insert': 'ux',
+          'attributes': {'bold': true},
+        },
+      ]);
+      // Et ce qui a été converti reste sélectionné, offsets compris.
+      expect(state.selection?.end.path, [2]);
+      expect(state.selection?.end.offset, 5);
+
+      state.dispose();
+    });
+
     test('le texte du bloc survit au changement de type', () async {
       final state = stateOf('Œufs');
 
