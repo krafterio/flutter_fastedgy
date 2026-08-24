@@ -28,15 +28,16 @@ class RichTextTheme extends ComponentThemeData {
   /// A code block's text.
   final TextStyle codeText;
 
-  /// What a heading is written in, level 1 first, one entry per level the
-  /// document format has.
+  /// What a heading is written in, level 1 first.
   ///
-  /// The one text role carrying no colour, on purpose: the style is applied
-  /// over each span of the line, so a colour here would repaint an inline
-  /// colour inside a heading. Left null, the page's own ink shows through and
-  /// what was coloured stays coloured — an application wanting its titles a
-  /// shade of their own overrides these styles with the colour on them.
+  /// Carries no colour: the style is applied over each span, so a colour here
+  /// would repaint an inline one.
   final List<TextStyle> headingText;
+
+  /// What a heading holds clear of what surrounds it, level 1 first.
+  ///
+  /// A margin, not a padding: it sits outside the selection.
+  final List<EdgeInsets> headingMargin;
 
   /// The face inline code takes, applied onto whatever text surrounds it —
   /// null where the typography names no monospace family.
@@ -114,6 +115,7 @@ class RichTextTheme extends ComponentThemeData {
     required this.fieldText,
     required this.codeText,
     required this.headingText,
+    required this.headingMargin,
     required this.ink,
     required this.mutedText,
     required this.surface,
@@ -136,12 +138,8 @@ class RichTextTheme extends ComponentThemeData {
     this.monoFontFamily,
   });
 
-  /// What each level takes of the heading role by default.
-  ///
-  /// Modest on purpose. A heading inside a page is told apart by its weight
-  /// before its size, and the ceiling is the title of the page it sits in: a
-  /// level 1 matching the subject a document is filed under stops reading as
-  /// part of it and starts reading as a second one.
+  /// What each level takes of the heading role. Modest: the ceiling is the
+  /// title of the page the document sits in.
   static const List<double> defaultHeadingScale = [
     1.05,
     0.95,
@@ -151,11 +149,22 @@ class RichTextTheme extends ComponentThemeData {
     0.8,
   ];
 
-  /// What a heading of [level] is written in, whatever the level.
-  ///
-  /// Clamped rather than checked: the format allows six levels, a document
-  /// imported from elsewhere may name any of them, and a heading is never worth
-  /// throwing over.
+  /// Above and below each level, in multiples of the theme's spacing. More
+  /// above than below: a heading belongs to what follows it.
+  static const List<(double above, double below)> defaultHeadingSpacing = [
+    (5, 1.5),
+    (4, 1.5),
+    (3, 1),
+    (2.5, 1),
+    (2, 1),
+    (2, 1),
+  ];
+
+  EdgeInsets headingMarginAt(int level) => headingMargin.isEmpty
+      ? EdgeInsets.zero
+      : headingMargin[(level - 1).clamp(0, headingMargin.length - 1)];
+
+  /// Clamped: markdown may name any of the six levels.
   TextStyle headingAt(int level) => headingText.isEmpty
       ? blockText
       : headingText[(level - 1).clamp(0, headingText.length - 1)];
@@ -167,15 +176,13 @@ class RichTextTheme extends ComponentThemeData {
   /// here; an application wanting its body text a shade off its strongest ink
   /// overrides [blockText] and [fieldText] with the exact styles it wants.
   ///
-  /// [headingScale] is what each level takes of the heading role, which is the
-  /// role a widget needing levels scales rather than asking for five more. An
-  /// application wanting louder titles gives its own factors instead of writing
-  /// six styles out; one wanting a face or a colour of its own overrides
-  /// [headingText] itself. As many levels as it names, [headingAt] answering
-  /// for the rest.
+  /// [headingScale] and [headingSpacing] size the headings and the air around
+  /// them without writing six styles out; as many levels as they name, the rest
+  /// clamped.
   factory RichTextTheme.from(
     FastEdgyThemeData theme, {
     List<double> headingScale = defaultHeadingScale,
+    List<(double above, double below)> headingSpacing = defaultHeadingSpacing,
   }) {
     final colors = theme.colors;
 
@@ -186,6 +193,13 @@ class RichTextTheme extends ComponentThemeData {
       headingText: [
         for (final factor in headingScale)
           theme.typography.heading.apply(fontSizeFactor: factor),
+      ],
+      headingMargin: [
+        for (final (above, below) in headingSpacing)
+          EdgeInsets.only(
+            top: theme.spacing * above,
+            bottom: theme.spacing * below,
+          ),
       ],
       monoFontFamily: theme.typography.mono.fontFamily,
       ink: colors.ink,
@@ -254,6 +268,7 @@ class RichTextTheme extends ComponentThemeData {
     TextStyle? fieldText,
     TextStyle? codeText,
     List<TextStyle>? headingText,
+    List<EdgeInsets>? headingMargin,
     String? monoFontFamily,
     Color? ink,
     Color? mutedText,
@@ -280,6 +295,7 @@ class RichTextTheme extends ComponentThemeData {
       fieldText: fieldText ?? this.fieldText,
       codeText: codeText ?? this.codeText,
       headingText: headingText ?? this.headingText,
+      headingMargin: headingMargin ?? this.headingMargin,
       monoFontFamily: monoFontFamily ?? this.monoFontFamily,
       ink: ink ?? this.ink,
       mutedText: mutedText ?? this.mutedText,
@@ -314,6 +330,7 @@ class RichTextTheme extends ComponentThemeData {
         other.fieldText == fieldText &&
         other.codeText == codeText &&
         listEquals(other.headingText, headingText) &&
+        listEquals(other.headingMargin, headingMargin) &&
         other.monoFontFamily == monoFontFamily &&
         other.ink == ink &&
         other.mutedText == mutedText &&
@@ -342,6 +359,7 @@ class RichTextTheme extends ComponentThemeData {
     fieldText,
     codeText,
     Object.hashAll(headingText),
+    Object.hashAll(headingMargin),
     monoFontFamily,
     ink,
     mutedText,

@@ -90,6 +90,36 @@ void main() {
       expect(loud.headingAt(5).fontSize, role, reason: 'clamped to the last');
     });
 
+    test('counts the air around a heading in the theme spacing', () {
+      const tokens = FastEdgyThemeData(spacing: 10.0);
+      final margin = RichTextTheme.from(tokens).headingMargin;
+      final (above, below) = RichTextTheme.defaultHeadingSpacing.first;
+
+      expect(margin, hasLength(6));
+      expect(margin.first.top, 10.0 * above);
+      expect(margin.first.bottom, 10.0 * below);
+      expect(
+        margin.first.top,
+        greaterThan(margin.first.bottom),
+        reason: 'a heading belongs to what follows it',
+      );
+      expect(margin.first.top, greaterThan(margin.last.top));
+    });
+
+    test('takes the air an application names, level by level', () {
+      final tight = RichTextTheme.from(
+        FastEdgyThemeData.fallback,
+        headingSpacing: const [(1, 0)],
+      );
+
+      expect(tight.headingMarginAt(1).top, FastEdgyThemeData.fallback.spacing);
+      expect(tight.headingMarginAt(4), tight.headingMarginAt(1));
+      expect(
+        tight.copyWith(headingMargin: const []).headingMarginAt(1),
+        EdgeInsets.zero,
+      );
+    });
+
     test('answers for a level no toolbar makes', () {
       final theme = RichTextTheme.fallback;
 

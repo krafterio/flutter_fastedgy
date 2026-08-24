@@ -57,8 +57,7 @@ void main() {
     });
 
     test('un paragraphe multiligne donne une puce par ligne', () async {
-      // Ce qu'une description relue depuis du markdown contient : un retour
-      // seul y est un saut de ligne, pas un paragraphe de plus.
+      // Un retour seul en markdown est un saut de ligne, pas un paragraphe.
       final state = EditorState(
         document: Document.blank()
           ..insert(
@@ -93,7 +92,6 @@ void main() {
         'deux',
         'trois',
       ]);
-      // Les marques de la ligne la suivent dans sa puce.
       expect(blocks[1].delta?.toJson(), [
         {'insert': 'de'},
         {
@@ -101,7 +99,6 @@ void main() {
           'attributes': {'bold': true},
         },
       ]);
-      // Et ce qui a été converti reste sélectionné, offsets compris.
       expect(state.selection?.end.path, [2]);
       expect(state.selection?.end.offset, 5);
 

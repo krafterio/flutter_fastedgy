@@ -517,6 +517,7 @@ class RichTextEditorState extends State<RichTextEditor> {
       blockActions: widget.blockActions,
       listItemPadding: theme.listItemPadding,
       headingText: theme.headingAt,
+      headingMargin: theme.headingMarginAt,
       placeholderText: _paragraphPlaceholder,
       // The package shows a paragraph's placeholder only while the cursor sits
       // in it; a blank document keeps showing its own with no selection at all.

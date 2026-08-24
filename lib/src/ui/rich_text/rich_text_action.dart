@@ -136,9 +136,8 @@ class RichTextAction {
             for (final (index, line) in lines.indexed)
               node.copyWith(
                 type: becomes,
-                // Whatever hung under the block stays under its first line: the
-                // lines after it are new blocks, and a copyWith left to itself
-                // would give each of them a copy of the children.
+                // Left to itself, copyWith would copy the children onto every
+                // line.
                 children: index == 0 ? null : const [],
                 attributes: {
                   ...node.attributes,
@@ -156,12 +155,8 @@ class RichTextAction {
     },
   );
 
-  /// One delta per line the block holds, the marks each line carries with it.
-  ///
-  /// A block is one line here — every way of making one splits at the return.
-  /// A paragraph read back from markdown is the exception: a return inside a
-  /// paragraph is a soft break there, so what arrives is one block holding
-  /// three lines, and turning it into a list made one bullet out of the three.
+  /// One delta per line, marks kept. A block is one line here, but a return
+  /// read back from markdown is a soft break, so a paragraph can hold several.
   static List<Delta> _lines(Delta delta) {
     final lines = [Delta()];
 
@@ -186,13 +181,8 @@ class RichTextAction {
     return lines;
   }
 
-  /// What is left selected once the blocks have been replaced.
-  ///
-  /// The same selection where nothing split, which is every conversion but the
-  /// one above. Where something did, the offsets it named are counted over a
-  /// line that is now several blocks, so the blocks made out of it are selected
-  /// whole instead — sibling arithmetic, the shape every split has: one block
-  /// on the page becoming the lines it held.
+  /// Where something split, the offsets named a line that is now several
+  /// blocks, so what was converted is selected whole instead.
   static Selection _selectionOver(List<Node> nodes, Selection selection) {
     final lines = [for (final node in nodes) ..._lines(node.delta ?? Delta())];
 

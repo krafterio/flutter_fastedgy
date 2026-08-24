@@ -40,14 +40,13 @@ Map<String, BlockComponentBuilder> richTextBlocks({
   BlockComponentBuilder? pageBuilder,
   EdgeInsets listItemPadding = const EdgeInsets.symmetric(vertical: 3),
   TextStyle Function(int level)? headingText,
+  EdgeInsets Function(int level)? headingMargin,
 }) {
   final builders = {...standardBlockComponentBuilderMap, ...features.builders};
   final heading = builders[HeadingBlockKeys.type];
 
-  // The package sizes its headings from a list written into its own source, in
-  // pixels, and takes a builder for them instead — the only way a theme reaches
-  // a heading. Left alone where a feature replaced the block with one of its
-  // own: what that draws is its business.
+  // The package sizes its headings in pixels from its own source, and a builder
+  // is the only way a theme reaches them.
   if (headingText != null && heading is HeadingBlockComponentBuilder) {
     builders[HeadingBlockKeys.type] = HeadingBlockComponentBuilder(
       configuration: heading.configuration,
@@ -89,6 +88,10 @@ Map<String, BlockComponentBuilder> richTextBlocks({
       padding: (_) => _listTypes.contains(type)
           ? listItemPadding
           : const EdgeInsets.symmetric(vertical: 3),
+      // Null leaves the package's own, which every block but a heading keeps.
+      margin: type == HeadingBlockKeys.type && headingMargin != null
+          ? (node) => _headingMargin(node, headingMargin)
+          : null,
       placeholderText: switch (type) {
         ParagraphBlockKeys.type => placeholderText,
         HeadingBlockKeys.type => _headingPlaceholder,
@@ -167,6 +170,13 @@ class _ScopedBlockComponentBuilder extends BlockComponentBuilder {
 
     return builder.build(blockComponentContext);
   }
+}
+
+/// No air above the heading that opens the page: nothing stands over it.
+EdgeInsets _headingMargin(Node node, EdgeInsets Function(int level) margin) {
+  final insets = margin(node.attributes[HeadingBlockKeys.level] as int? ?? 1);
+
+  return node.previous == null ? insets.copyWith(top: 0) : insets;
 }
 
 /// The blocks that wear [RichTextTheme.listItemPadding] instead of the shared

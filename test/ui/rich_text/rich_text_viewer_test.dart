@@ -5,7 +5,7 @@
 
 import 'package:flutter_fastedgy/ui.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
-import 'package:flutter/rendering.dart' show RenderParagraph;
+import 'package:flutter/rendering.dart' show RenderBox, RenderParagraph;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -30,8 +30,6 @@ void main() {
     await tester.pump();
   }
 
-  /// The first size the rendered line names — what a heading is actually drawn
-  /// at, rather than what the builder was handed.
   double? fontSizeOf(WidgetTester tester, String text) {
     final paragraph = tester.renderObject<RenderParagraph>(
       find.text(text, findRichText: true),
@@ -83,6 +81,63 @@ void main() {
       );
     },
   );
+
+  double topOf(WidgetTester tester, String text) => tester
+      .renderObject<RenderBox>(find.text(text, findRichText: true))
+      .localToGlobal(Offset.zero)
+      .dy;
+
+  Future<double> headingTop(
+    WidgetTester tester, {
+    required List<Node> nodes,
+    required bool spaced,
+  }) async {
+    final state = EditorState(document: Document.blank()..insert([0], nodes));
+    addTearDown(state.dispose);
+
+    await pump(
+      tester,
+      FastEdgyTheme(
+        data: FastEdgyThemeData.fallback.copyWith(
+          components: {
+            if (!spaced)
+              RichTextTheme: RichTextTheme.fallback.copyWith(
+                headingMargin: List.filled(6, EdgeInsets.zero),
+              ),
+          },
+        ),
+        child: RichTextViewer(
+          editorState: state,
+          features: defaultRichTextFeatures,
+        ),
+      ),
+    );
+
+    return topOf(tester, 'Titre');
+  }
+
+  testWidgets('a heading holds the air the theme names above it', (
+    tester,
+  ) async {
+    final nodes = [
+      paragraphNode(delta: Delta()..insert('Texte')),
+      headingNode(level: 1, delta: Delta()..insert('Titre')),
+    ];
+
+    final flush = await headingTop(tester, nodes: nodes, spaced: false);
+    final spaced = await headingTop(tester, nodes: nodes, spaced: true);
+
+    expect(spaced - flush, RichTextTheme.fallback.headingMarginAt(1).top);
+  });
+
+  testWidgets('but none above the one that opens the page', (tester) async {
+    final nodes = [headingNode(level: 1, delta: Delta()..insert('Titre'))];
+
+    final flush = await headingTop(tester, nodes: nodes, spaced: false);
+    final spaced = await headingTop(tester, nodes: nodes, spaced: true);
+
+    expect(spaced, flush);
+  });
 
   testWidgets('renders down a list, where the height is unbounded', (
     tester,
