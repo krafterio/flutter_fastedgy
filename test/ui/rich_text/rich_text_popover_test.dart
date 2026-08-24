@@ -133,7 +133,7 @@ void main() {
   });
 
   group('RichTextSurface', () {
-    testWidgets('écrit avec le style du thème, pas avec celui du dessus', (
+    testWidgets('writes in the theme style, not in the one above it', (
       tester,
     ) async {
       final theme = RichTextTheme.fallback;
@@ -142,8 +142,8 @@ void main() {
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          // Ce que voit une surface montée dans un overlay : le style de
-          // secours du framework, gras et souligné de jaune.
+          // What a surface mounted in an overlay reads: the framework's
+          // fallback, bold and underlined in yellow.
           child: DefaultTextStyle(
             style: const TextStyle(
               fontWeight: FontWeight.w900,

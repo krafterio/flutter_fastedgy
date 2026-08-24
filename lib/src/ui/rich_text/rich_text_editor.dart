@@ -626,6 +626,14 @@ class RichTextEditorState extends State<RichTextEditor> {
         : box.localToGlobal(Offset.zero) & box.size;
   }
 
+  /// Only while the editor is still there to hear it: the menu is taken down
+  /// as the tree is, and by then the flag may be gone.
+  void _reportContextMenu(bool open) {
+    if (mounted) {
+      _contextMenuOpen.value = open;
+    }
+  }
+
   /// Cut, copy, paste and select all, under the pointer that asked for them.
   Widget _buildContextMenu(
     BuildContext context,
@@ -639,7 +647,7 @@ class RichTextEditorState extends State<RichTextEditor> {
           left: offset.dx,
           top: offset.dy,
           child: _RichTextContextMenu(
-            open: _contextMenuOpen,
+            report: _reportContextMenu,
             child: RichTextSurface(
               padding: const EdgeInsets.symmetric(vertical: 4),
               child: RichTextClipboardMenu(
@@ -1270,11 +1278,15 @@ class _PlainPageBlockComponent extends BlockComponentStatelessWidget {
 
 /// Says whether the menu is up while it is, and stops saying it the moment it
 /// goes: the package takes the overlay away without telling anyone.
+///
+/// It reports to the editor rather than writing the flag itself: the menu lives
+/// in an overlay of its own and outlives the editor on the way down, where the
+/// flag is already disposed.
 class _RichTextContextMenu extends StatefulWidget {
-  final ValueNotifier<bool> open;
+  final ValueChanged<bool> report;
   final Widget child;
 
-  const _RichTextContextMenu({required this.open, required this.child});
+  const _RichTextContextMenu({required this.report, required this.child});
 
   @override
   State<_RichTextContextMenu> createState() => _RichTextContextMenuState();
@@ -1284,12 +1296,20 @@ class _RichTextContextMenuState extends State<_RichTextContextMenu> {
   @override
   void initState() {
     super.initState();
-    widget.open.value = true;
+
+    // Said once the frame is out: the package mounts this from inside a build,
+    // and the toolbar reading it is already being built by then — telling it
+    // there and then is an error rather than a notification.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        widget.report(true);
+      }
+    });
   }
 
   @override
   void dispose() {
-    widget.open.value = false;
+    widget.report(false);
     super.dispose();
   }
 

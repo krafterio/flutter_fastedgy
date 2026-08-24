@@ -88,12 +88,12 @@ void main() {
     );
   });
 
-  group('le menu du clic droit', () {
-    testWidgets('tient debout sans largeur imposée', (tester) async {
+  group('the right-click menu', () {
+    testWidgets('stands up where no width is handed to it', (tester) async {
       final state = withCaret();
 
-      // Ce qu'en fait l'éditeur : posé à un point d'un Stack, donc mesuré sans
-      // aucune largeur. Une colonne étirée y valait l'infini.
+      // What the editor makes of it: hung off a point of a Stack, and so
+      // measured with no width at all. A stretched column there was an infinity.
       await tester.pumpWidget(
         MaterialApp(
           home: Stack(

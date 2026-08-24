@@ -9,6 +9,7 @@ import 'package:flutter/foundation.dart'
     show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/scheduler.dart' show SchedulerBinding;
+import 'package:flutter/gestures.dart' show kSecondaryButton;
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
 
@@ -536,5 +537,33 @@ void main() {
 
       expect(state.undoManager.undoStack.isNonEmpty, isTrue);
     });
+  });
+
+  testWidgets('the right-click menu does not wake the bar mid-build', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+
+    final state = stateOf('Some text to cut');
+
+    await pump(
+      tester,
+      RichTextEditor(features: defaultRichTextFeatures, editorState: state),
+    );
+
+    // The floating bar is up: it is the one listening to the flag the menu
+    // raises as it mounts, from inside a build.
+    state.selection = Selection.single(path: [0], startOffset: 0, endOffset: 2);
+    await tester.pumpAndSettle();
+
+    await tester.tapAt(
+      tester.getCenter(find.byType(RichTextEditor)),
+      buttons: kSecondaryButton,
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+
+    debugDefaultTargetPlatformOverride = null;
   });
 }
