@@ -212,6 +212,84 @@ void main() {
       expect(provider.refreshes, 0);
     });
   });
+
+  group('RefreshTokenInterceptor, server unavailable', () {
+    late Fetcher fetcher;
+
+    setUp(() {
+      initializeContainer();
+
+      if (!hasService<Bus>()) {
+        container.registerSingleton<Bus>(Bus());
+      }
+
+      SharedPreferences.setMockInitialValues({
+        'token': _jwtExpiringAt(
+          DateTime.now().add(const Duration(minutes: 15)),
+        ),
+        'refresh_token': 'refresh-1',
+      });
+
+      container.registerSingleton<TokenStorage>(TokenStorage());
+      container.registerSingleton<AuthProvider<dynamic>>(
+        _UnavailableAuthProvider(),
+      );
+
+      fetcher = createMockFetcher((request) => const MockResponse.error(401));
+    });
+
+    tearDown(container.reset);
+
+    test('reports the maintenance rather than the original 401', () async {
+      await expectLater(
+        fetcher.get('/api/protected'),
+        throwsA(
+          isA<HttpError>()
+              .having((e) => e.statusCode, 'statusCode', 503)
+              .having((e) => e, 'is not an auth rejection', isNot(isA<UnauthorizedError>())),
+        ),
+      );
+    });
+  });
+}
+
+/// Refresh answering 503, the way a deploy or a database restart does.
+class _UnavailableAuthProvider implements AuthProvider<dynamic> {
+  @override
+  Future<bool> refreshToken() async => throw HttpError(
+    message: 'HTTP 503',
+    statusCode: 503,
+    response: Response<dynamic>(
+      requestOptions: RequestOptions(path: '/auth/refresh'),
+      statusCode: 503,
+    ),
+  );
+
+  @override
+  Future<void> logout() async {}
+
+  @override
+  Future<AuthResult<dynamic>> login(String username, String password) =>
+      throw UnimplementedError();
+
+  @override
+  Future<AuthResult<dynamic>> register(Map<String, dynamic> userData) =>
+      throw UnimplementedError();
+
+  @override
+  Future<String?> getAccessToken() => throw UnimplementedError();
+
+  @override
+  Future<String?> getValidatedAccessToken() => throw UnimplementedError();
+
+  @override
+  Future<String?> getRefreshToken() => throw UnimplementedError();
+
+  @override
+  Future<bool> isAuthenticated() => throw UnimplementedError();
+
+  @override
+  Future<dynamic> getCurrentUser() => throw UnimplementedError();
 }
 
 class _RenewingAuthProvider implements AuthProvider<dynamic> {

@@ -33,11 +33,16 @@ class RefreshTokenLock {
   bool _isRefreshing = false;
   final List<_QueueItem> _failedQueue = [];
   bool _isRedirecting = false;
+  Object? _lastFailure;
 
   RefreshTokenLock(this._authProvider);
 
   /// Whether a refresh is currently in progress
   bool get isRefreshing => _isRefreshing;
+
+  /// Why the last refresh failed, null once one succeeds. Tells a rejected
+  /// session apart from a server that could not answer.
+  Object? get lastFailure => _lastFailure;
 
   /// Handle logout if not already redirecting
   Future<void> _handleLogout() async {
@@ -100,6 +105,7 @@ class RefreshTokenLock {
     }
 
     _isRefreshing = true;
+    _lastFailure = null;
     _logger.fine('Starting token refresh');
 
     try {
@@ -119,6 +125,7 @@ class RefreshTokenLock {
     } on NetworkError catch (e) {
       // Network error: do NOT logout, the server may come back
       _logger.fine('Network error during token refresh: $e');
+      _lastFailure = e;
       _processQueue(e);
       return false;
     } on HttpError catch (e) {
@@ -131,11 +138,13 @@ class RefreshTokenLock {
       }
       // Server error (5xx) or other HTTP error: do NOT logout
       _logger.fine('Server error during token refresh (${e.statusCode}): $e');
+      _lastFailure = e;
       _processQueue(e);
       return false;
     } catch (e) {
       // Unknown exception: do NOT logout
       _logger.fine('Unexpected error during token refresh: $e');
+      _lastFailure = e;
       _processQueue(e);
       return false;
     } finally {

@@ -7,6 +7,7 @@ import 'package:dio/dio.dart';
 
 import '../../auth/token_storage.dart';
 import '../../logging/logger.dart';
+import '../http_error.dart';
 import 'refresh_token_lock.dart';
 
 /// Marks a request already replayed once after a refresh.
@@ -41,6 +42,29 @@ class RefreshTokenInterceptor extends Interceptor {
 
   RefreshTokenInterceptor(this._lock, this._dio, this._tokenStorage);
 
+  /// The refresh failure to report in place of the original 401, when the
+  /// server could not answer at all. Handing back the 401 makes a maintenance
+  /// window look like a rejected session, and the caller signs the user out.
+  DioException? _unavailable(DioException err) {
+    final failure = _lock.lastFailure;
+
+    if (failure == null || !isServerUnavailable(failure)) {
+      return null;
+    }
+
+    final response = failure is HttpError ? failure.response : null;
+
+    return DioException(
+      requestOptions: err.requestOptions,
+      response: response,
+      type: response == null
+          ? DioExceptionType.connectionError
+          : DioExceptionType.badResponse,
+      error: failure,
+      message: describeUnavailable(failure),
+    );
+  }
+
   @override
   Future<void> onError(
     DioException err,
@@ -73,7 +97,8 @@ class RefreshTokenInterceptor extends Interceptor {
 
       if (!refreshed) {
         _logger.fine('Token refresh failed');
-        return handler.next(err);
+
+        return handler.next(_unavailable(err) ?? err);
       }
 
       // Check if request was cancelled while waiting
