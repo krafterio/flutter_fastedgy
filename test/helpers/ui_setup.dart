@@ -30,7 +30,7 @@ Future<void> setUpUiTestServices() async {
   }
 
   if (!hasService<TokenStorage>()) {
-    container.registerSingleton<TokenStorage>(TokenStorage());
+    container.registerSingleton<TokenStorage>(const TokenStorage());
   }
 
   if (!hasService<TimezoneProvider>()) {

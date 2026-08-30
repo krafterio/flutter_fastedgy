@@ -10,7 +10,8 @@ import 'package:dio/dio.dart';
 import 'package:flutter_fastedgy/flutter_fastedgy.dart';
 import 'package:flutter_fastedgy/testing.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/test/test_flutter_secure_storage_platform.dart';
+import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
 
 String _jwtExpiringAt(DateTime when) {
   final payload = base64Url
@@ -20,6 +21,12 @@ String _jwtExpiringAt(DateTime when) {
       .replaceAll('=', '');
 
   return 'header.$payload.signature';
+}
+
+void _seedTokens(String accessToken) {
+  FlutterSecureStoragePlatform.instance = TestFlutterSecureStoragePlatform(
+    <String, String>{'token': accessToken, 'refresh_token': 'refresh-1'},
+  );
 }
 
 void main() {
@@ -79,12 +86,9 @@ void main() {
         container.registerSingleton<Bus>(Bus());
       }
 
-      SharedPreferences.setMockInitialValues({
-        'token': _jwtExpiringAt(
-          DateTime.now().subtract(const Duration(minutes: 1)),
-        ),
-        'refresh_token': 'refresh-1',
-      });
+      _seedTokens(
+        _jwtExpiringAt(DateTime.now().subtract(const Duration(minutes: 1))),
+      );
 
       gate = Completer<void>();
       calls = 0;
@@ -109,7 +113,7 @@ void main() {
     tearDown(container.reset);
 
     DefaultAuthProvider<dynamic> buildProvider() =>
-        DefaultAuthProvider<dynamic>(fetcher, TokenStorage(), Bus());
+        DefaultAuthProvider<dynamic>(fetcher, const TokenStorage(), Bus());
 
     test(
       'shares one /auth/refresh between the HTTP path and a socket handshake',
@@ -150,15 +154,12 @@ void main() {
         container.registerSingleton<Bus>(Bus());
       }
 
-      SharedPreferences.setMockInitialValues({
-        'token': _jwtExpiringAt(
-          DateTime.now().add(const Duration(minutes: 15)),
-        ),
-        'refresh_token': 'refresh-1',
-      });
+      _seedTokens(
+        _jwtExpiringAt(DateTime.now().add(const Duration(minutes: 15))),
+      );
 
       provider = _RenewingAuthProvider();
-      container.registerSingleton<TokenStorage>(TokenStorage());
+      container.registerSingleton<TokenStorage>(const TokenStorage());
       container.registerSingleton<AuthProvider<dynamic>>(provider);
 
       protectedCalls = 0;
@@ -223,14 +224,11 @@ void main() {
         container.registerSingleton<Bus>(Bus());
       }
 
-      SharedPreferences.setMockInitialValues({
-        'token': _jwtExpiringAt(
-          DateTime.now().add(const Duration(minutes: 15)),
-        ),
-        'refresh_token': 'refresh-1',
-      });
+      _seedTokens(
+        _jwtExpiringAt(DateTime.now().add(const Duration(minutes: 15))),
+      );
 
-      container.registerSingleton<TokenStorage>(TokenStorage());
+      container.registerSingleton<TokenStorage>(const TokenStorage());
       container.registerSingleton<AuthProvider<dynamic>>(
         _UnavailableAuthProvider(),
       );
@@ -246,7 +244,11 @@ void main() {
         throwsA(
           isA<HttpError>()
               .having((e) => e.statusCode, 'statusCode', 503)
-              .having((e) => e, 'is not an auth rejection', isNot(isA<UnauthorizedError>())),
+              .having(
+                (e) => e,
+                'is not an auth rejection',
+                isNot(isA<UnauthorizedError>()),
+              ),
         ),
       );
     });

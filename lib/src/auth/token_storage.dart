@@ -5,6 +5,7 @@
 
 import 'dart:convert';
 
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Storage for authentication tokens
@@ -12,35 +13,72 @@ class TokenStorage {
   static const String _accessTokenKey = 'token';
   static const String _refreshTokenKey = 'refresh_token';
 
+  static const FlutterSecureStorage _storage = FlutterSecureStorage(
+    iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
+  );
+
+  /// Also reads the tokens a previous version left in the shared preferences,
+  /// moving what it finds to the secure storage and clearing it from there
+  const TokenStorage({this.legacy = false});
+
+  final bool legacy;
+
   /// Save access token
-  Future<void> saveAccessToken(String token) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_accessTokenKey, token);
-  }
+  Future<void> saveAccessToken(String token) =>
+      _storage.write(key: _accessTokenKey, value: token);
 
   /// Save refresh token
-  Future<void> saveRefreshToken(String token) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_refreshTokenKey, token);
-  }
+  Future<void> saveRefreshToken(String token) =>
+      _storage.write(key: _refreshTokenKey, value: token);
 
   /// Get access token
-  Future<String?> getAccessToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_accessTokenKey);
-  }
+  Future<String?> getAccessToken() => _read(_accessTokenKey);
 
   /// Get refresh token
-  Future<String?> getRefreshToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_refreshTokenKey);
-  }
+  Future<String?> getRefreshToken() => _read(_refreshTokenKey);
 
   /// Clear all tokens (logout)
   Future<void> clearTokens() async {
+    await _storage.delete(key: _accessTokenKey);
+    await _storage.delete(key: _refreshTokenKey);
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_accessTokenKey);
     await prefs.remove(_refreshTokenKey);
+  }
+
+  Future<String?> _read(String key) async {
+    final value = await _readSecure(key);
+
+    if (value != null && value.isNotEmpty) {
+      return value;
+    }
+
+    if (!legacy) {
+      return null;
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    final legacyValue = prefs.getString(key);
+
+    if (legacyValue == null || legacyValue.isEmpty) {
+      return null;
+    }
+
+    await _storage.write(key: key, value: legacyValue);
+    await prefs.remove(key);
+
+    return legacyValue;
+  }
+
+  /// A keystore key invalidated by a restore or a lock-screen change makes the
+  /// store unreadable: the session is empty rather than an error on startup
+  Future<String?> _readSecure(String key) async {
+    try {
+      return await _storage.read(key: key);
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Check if access token is expired by decoding the JWT payload

@@ -132,7 +132,7 @@ Future<void> initializeFastEdgy({
   // TokenStorage
   if (!hasService<TokenStorage>()) {
     container.registerSingleton<TokenStorage>(
-      tokenStorageFactory?.call() ?? TokenStorage(),
+      tokenStorageFactory?.call() ?? const TokenStorage(),
     );
   }
 
