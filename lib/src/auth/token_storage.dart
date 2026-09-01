@@ -5,6 +5,7 @@
 
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -22,6 +23,21 @@ class TokenStorage {
   const TokenStorage({this.legacy = false});
 
   final bool legacy;
+
+  /// Swaps the keychain for an in-memory one holding [values], keyed as the
+  /// tokens are (`token`, `refresh_token`).
+  ///
+  /// A real keychain answers over a platform channel, which a test pumping its
+  /// own clock never gets: every authenticated request would wait on it
+  /// forever. Call it from the test setup, before anything reads a token, so an
+  /// application never has to reach for the storage package itself.
+  @visibleForTesting
+  static void setMockInitialValues([Map<String, String> values = const {}]) {
+    // This is the seam the annotation asks for, handed to the applications
+    // built on top so they never import the storage package themselves.
+    // ignore: invalid_use_of_visible_for_testing_member
+    FlutterSecureStorage.setMockInitialValues(values);
+  }
 
   /// Save access token
   Future<void> saveAccessToken(String token) =>
