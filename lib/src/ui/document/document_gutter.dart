@@ -379,11 +379,19 @@ class _DocumentGutterState extends State<DocumentGutter> {
   ({double top, double height})? _hang;
 
   void _measureLine() {
+    // Asked before anything else: this runs at the end of the frame that built
+    // the block, and the block can be gone by then — a drawer closed over the
+    // document, a page swapped. A defunct State throws on `context` rather than
+    // answering, so reading it first turned a closed drawer into an exception.
+    if (!mounted) {
+      return;
+    }
+
     final node = widget.blockComponentContext.node;
     final selectable = node.selectable;
     final margin = context.findRenderObject();
 
-    if (!mounted || selectable == null || margin is! RenderBox) {
+    if (selectable == null || margin is! RenderBox) {
       return;
     }
 
