@@ -3,6 +3,9 @@
  * MIT License (see LICENSE file).
  */
 
+import 'dart:convert' show jsonEncode;
+import 'dart:typed_data' show TypedData;
+
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -26,6 +29,15 @@ class Fetcher {
   final Bus _bus;
   final Map<String, CancelToken> _cancelTokens = {};
   final CancelToken _globalCancelToken = CancelToken();
+
+  /// GET requests in flight, by what makes their answer: several holders
+  /// mounting at once ask for the same rows, and each of them used to open its
+  /// own round trip. Three restored tabs meant three identical reads of the
+  /// pickable users, of the pickable projects, and of the same avatar.
+  ///
+  /// Only concurrent reads share — an entry goes as soon as its request
+  /// settles, so this is a collapse, never a cache.
+  final Map<String, Future<Response>> _pendingGets = {};
 
   Fetcher._({Dio? dio, Bus? bus})
     : _dio = dio ?? Dio(),
@@ -206,16 +218,102 @@ class Fetcher {
     Map<String, dynamic>? headers,
     String? id,
     ResponseType? responseType,
-  }) async {
-    return _request(
+  }) {
+    // A request the caller can cancel by id stays its own: a shared one would
+    // be cancelled out from under everybody else riding it.
+    if (id != null) {
+      return _request(
+        path,
+        method: 'GET',
+        queryParameters: params,
+        headers: headers,
+        id: id,
+        responseType: responseType,
+      );
+    }
+
+    final key = _getKey(path, params, headers, responseType);
+    final pending = _pendingGets[key];
+
+    if (pending != null) {
+      // Its own decoded copy: a model writes into the map it was built from,
+      // so two holders over one payload would edit each other's rows.
+      return pending.then(_copyOf);
+    }
+
+    final request = _request(
       path,
       method: 'GET',
       queryParameters: params,
       headers: headers,
-      id: id,
       responseType: responseType,
     );
+
+    _pendingGets[key] = request;
+    // Detached from what the callers get, so the failure they handle is not
+    // reported a second time here.
+    request.whenComplete(() => _pendingGets.remove(key)).ignore();
+
+    return request;
   }
+
+  /// Everything that makes two GETs the same answer.
+  ///
+  /// The headers count as much as the query: a collection carries what it reads
+  /// in `X-Fields`, and what it reads it under in `X-Filter`, so two lists of
+  /// the same path differ by those alone. Encoded rather than concatenated — a
+  /// filter is a JSON string, and a separator appearing inside one would make
+  /// two different reads share a key, which serves a holder another's rows.
+  String _getKey(
+    String path,
+    Map<String, dynamic>? params,
+    Map<String, dynamic>? headers,
+    ResponseType? responseType,
+  ) {
+    List<List<String>> pairs(Map<String, dynamic>? map) {
+      final keys = (map?.keys.toList() ?? <String>[])..sort();
+
+      return [
+        for (final key in keys) [key, '${map![key]}'],
+      ];
+    }
+
+    return jsonEncode([
+      path,
+      pairs(params),
+      pairs(headers),
+      (responseType ?? ResponseType.json).name,
+    ]);
+  }
+
+  /// The same response over a copy of its decoded body.
+  Response _copyOf(Response response) => Response(
+    data: _copyOfBody(response.data),
+    requestOptions: response.requestOptions,
+    statusCode: response.statusCode,
+    statusMessage: response.statusMessage,
+    isRedirect: response.isRedirect,
+    redirects: response.redirects,
+    extra: response.extra,
+    headers: response.headers,
+  );
+
+  /// Copies the containers of a decoded JSON body, keeping the leaves.
+  ///
+  /// Rebuilt with the very types a decode produces — `Map<String, dynamic>` and
+  /// `List<dynamic>` — since that is what every caller casts the body to.
+  ///
+  /// A typed byte list is left as it is: nothing writes into one, and rebuilding
+  /// it as a plain list would hand the caller something it cannot read back.
+  Object? _copyOfBody(Object? body) => switch (body) {
+    TypedData() => body,
+    Map() => <String, dynamic>{
+      for (final entry in body.entries)
+        '${entry.key}': _copyOfBody(entry.value),
+    },
+    List() => <dynamic>[for (final item in body) _copyOfBody(item)],
+    _ => body,
+  };
 
   /// Perform a POST request
   ///
