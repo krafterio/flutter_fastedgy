@@ -28,21 +28,34 @@ class UnmirroredQueryField {
 }
 
 /// Field paths a filter reads, deduplicated.
+///
+/// The sub-filter of an `any` rule is walked too, its paths prefixed by the
+/// relation: they are columns the query reads like any other, and a mirror
+/// that never populated them answers the same empty page.
 Set<String> filterFieldPaths(FilterNode? filter) {
   final paths = <String>{};
 
-  void walk(FilterNode? node) {
+  void walk(FilterNode? node, String prefix) {
     switch (node) {
       case null:
         return;
-      case FilterRule(:final field):
-        paths.add(field);
+      case FilterRule(:final field, :final operator, :final value):
+        if (operator == 'any' || operator == 'not any') {
+          paths.add('$prefix$field');
+          walk(parseFilter(value), '$prefix$field.');
+
+          return;
+        }
+
+        paths.add('$prefix$field');
       case FilterCondition(:final rules):
-        rules.forEach(walk);
+        for (final rule in rules) {
+          walk(rule, prefix);
+        }
     }
   }
 
-  walk(filter);
+  walk(filter, '');
 
   return paths;
 }

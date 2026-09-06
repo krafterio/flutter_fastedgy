@@ -33,9 +33,14 @@ class CompiledReplicaQuery {
 ///   semantics of the server lookups (a broken FK chain yields NULL, so
 ///   `is empty` also matches records without the relation);
 /// - paths through a to-many relation compile to `EXISTS` chains (o2m through
-///   the resolved reverse FK); in an AND, rules sharing the same relation
-///   path are grouped into a single `EXISTS` (same related row — the
-///   server's joined lookups), while OR branches get independent `EXISTS`;
+///   the resolved reverse FK), one per rule: two ANDed rules over the same
+///   relation are independent, each satisfied by a related row of its own
+///   (`A & B` is the intersection of A and B, whatever rules sit next to
+///   them);
+/// - `any` / `not any` compile to one `EXISTS` / `NOT EXISTS` over the
+///   relation the field names, carrying its whole sub-filter: that is what
+///   asks for a single related record satisfying all of it. An empty
+///   sub-filter asks only what the relation carries;
 /// - `like`-family case sensitivity matches the server: sensitive variants
 ///   compile to `GLOB`, insensitive ones to SQLite `LIKE` (ASCII folding);
 /// - nested `order_by` follows m2o paths through `LEFT JOIN`s with the
@@ -140,51 +145,14 @@ class ReplicaQueryCompiler {
     FilterCondition condition,
     List<Object?> args,
   ) {
-    final isAnd = condition.condition == '&';
     final parts = <String>[];
 
-    if (isAnd) {
-      final grouped = <String, List<(_Path, FilterRule)>>{};
-
-      for (final node in condition.rules) {
-        switch (node) {
-          case FilterRule():
-            final path = _resolvePath(ctx, model, node.field);
-
-            if (_isSingleValued(path.hops)) {
-              parts.add(_scalarPredicate(ctx, alias, path, node, args));
-            } else {
-              // Group by first hop: rules sharing a path prefix share the
-              // same EXISTS chain (the server's joined-lookup semantics).
-              grouped.putIfAbsent(path.hops.first.field.name, () => []).add((
-                path,
-                node,
-              ));
-            }
-          case FilterCondition():
-            parts.add('(${_compileCondition(ctx, model, alias, node, args)})');
-        }
-      }
-
-      for (final group in grouped.values) {
-        parts.add(_existsTree(ctx, model.name, alias, group, 0, args));
-      }
-    } else {
-      for (final node in condition.rules) {
-        switch (node) {
-          case FilterRule():
-            final path = _resolvePath(ctx, model, node.field);
-
-            if (_isSingleValued(path.hops)) {
-              parts.add(_scalarPredicate(ctx, alias, path, node, args));
-            } else {
-              parts.add(
-                _existsTree(ctx, model.name, alias, [(path, node)], 0, args),
-              );
-            }
-          case FilterCondition():
-            parts.add('(${_compileCondition(ctx, model, alias, node, args)})');
-        }
+    for (final node in condition.rules) {
+      switch (node) {
+        case FilterRule():
+          parts.add(_compileRule(ctx, model, alias, node, args));
+        case FilterCondition():
+          parts.add('(${_compileCondition(ctx, model, alias, node, args)})');
       }
     }
 
@@ -192,21 +160,84 @@ class ReplicaQueryCompiler {
       return '1 = 1';
     }
 
-    return parts.join(isAnd ? ' AND ' : ' OR ');
+    return parts.join(condition.condition == '&' ? ' AND ' : ' OR ');
   }
 
-  // One EXISTS per shared path segment, predicates attached at their depth —
-  // the prefix tree mirrors the ORM's join sharing: two AND rules on
-  // `members.role` and `members.user.name` constrain the SAME members row.
-  String _existsTree(
+  String _compileRule(
+    _Context ctx,
+    LocalModelSchema model,
+    String alias,
+    FilterRule rule,
+    List<Object?> args,
+  ) {
+    if (rule.operator == 'any' || rule.operator == 'not any') {
+      return _anyPredicate(ctx, model, alias, rule, args);
+    }
+
+    final path = _resolvePath(ctx, model, rule.field);
+
+    if (_isSingleValued(path.hops)) {
+      return _scalarPredicate(ctx, alias, path, rule, args);
+    }
+
+    return _existsChain(
+      ctx,
+      model.name,
+      alias,
+      path.hops,
+      0,
+      args,
+      (innerAlias, rest) =>
+          _leafPredicate(ctx, innerAlias, rest, path.leaf, rule, args),
+    );
+  }
+
+  /// `any` / `not any`: one EXISTS over the relation the field names, carrying
+  /// its whole sub-filter — a single related record has to satisfy all of it,
+  /// the reading a conjunction of separate rules deliberately does not have.
+  /// An empty sub-filter asks only what the relation carries, so `not any` of
+  /// one matches a record with nothing related.
+  String _anyPredicate(
+    _Context ctx,
+    LocalModelSchema model,
+    String alias,
+    FilterRule rule,
+    List<Object?> args,
+  ) {
+    final hops = _relationHops(ctx, model, rule.field);
+    final subFilter = parseFilter(rule.value);
+    final exists = _existsChain(
+      ctx,
+      model.name,
+      alias,
+      hops,
+      0,
+      args,
+      (innerAlias, _) => subFilter == null
+          ? '1 = 1'
+          : '(${_compileCondition(ctx, hops.last.target, innerAlias, subFilter, args)})',
+      toEnd: true,
+    );
+
+    return rule.operator == 'any' ? exists : 'NOT $exists';
+  }
+
+  /// One EXISTS per hop of a path, the innermost carrying [inner].
+  ///
+  /// The walk stops as soon as the remaining hops are all m2o, which the leaf
+  /// predicate reads as a scalar chain — unless [toEnd], where the whole path
+  /// is walked because [inner] answers on its far side (`any`).
+  String _existsChain(
     _Context ctx,
     String parentModel,
     String parentAlias,
-    List<(_Path, FilterRule)> rules,
+    List<_Hop> hops,
     int depth,
     List<Object?> args,
-  ) {
-    final hop = rules.first.$1.hops[depth];
+    String Function(String alias, List<_Hop> rest) inner, {
+    bool toEnd = false,
+  }) {
+    final hop = hops[depth];
     final alias = ctx.nextAlias('e');
     var from = '"${_table(hop.target)}" $alias';
     final String link;
@@ -234,31 +265,23 @@ class ReplicaQueryCompiler {
 
     args.add(ctx.scopeOf(hop.target.name));
 
-    final parts = <String>[];
-    final deeper = <String, List<(_Path, FilterRule)>>{};
-
-    for (final entry in rules) {
-      final rest = entry.$1.hops.sublist(depth + 1);
-
-      if (_allMany2one(rest)) {
-        parts.add(
-          _leafPredicate(ctx, alias, rest, entry.$1.leaf, entry.$2, args),
-        );
-      } else {
-        deeper
-            .putIfAbsent(entry.$1.hops[depth + 1].field.name, () => [])
-            .add(entry);
-      }
-    }
-
-    for (final group in deeper.values) {
-      parts.add(
-        _existsTree(ctx, hop.target.name, alias, group, depth + 1, args),
-      );
-    }
+    final rest = hops.sublist(depth + 1);
+    final reached = toEnd ? rest.isEmpty : _allMany2one(rest);
+    final body = reached
+        ? inner(alias, rest)
+        : _existsChain(
+            ctx,
+            hop.target.name,
+            alias,
+            hops,
+            depth + 1,
+            args,
+            inner,
+            toEnd: toEnd,
+          );
 
     return 'EXISTS (SELECT 1 FROM $from '
-        'WHERE $link AND $alias._workspace = ? AND ${parts.join(' AND ')})';
+        'WHERE $link AND $alias._workspace = ? AND $body)';
   }
 
   /// Whether the path only traverses single-valued (m2o) hops — compiled as
@@ -1144,6 +1167,31 @@ class ReplicaQueryCompiler {
     _ =>
       leaf.relationKind == LocalRelationKind.none && leaf.sqlAffinity == 'TEXT',
   };
+
+  /// The hops of a path whose last segment is a relation (the `any` operand).
+  List<_Hop> _relationHops(
+    _Context ctx,
+    LocalModelSchema root,
+    String fieldPath,
+  ) {
+    final hops = <_Hop>[];
+    var current = root;
+
+    for (final segment in fieldPath.split('.')) {
+      final field = current.fields[segment];
+
+      if (field == null) {
+        throw InvalidFilterException(
+          'Unknown field "$segment" on model "${current.name}"',
+        );
+      }
+
+      hops.add(_hop(ctx, current, field, fieldPath));
+      current = hops.last.target;
+    }
+
+    return hops;
+  }
 
   _Path _resolvePath(_Context ctx, LocalModelSchema root, String fieldPath) {
     final segments = fieldPath.split('.');

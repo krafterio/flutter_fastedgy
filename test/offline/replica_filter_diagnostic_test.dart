@@ -215,6 +215,33 @@ void main() {
       expect(filterFieldPaths(filter), {'user', 'sequence', 'project'});
     });
 
+    test('descends into the sub-filter of an any rule', () {
+      final filter = parseFilter([
+        '&',
+        [
+          ['name', '=', 'Trip'],
+          [
+            'favorites',
+            'any',
+            [
+              '&',
+              [
+                ['user', '=', 2],
+                ['sequence', '>', 1],
+              ],
+            ],
+          ],
+        ],
+      ]);
+
+      expect(filterFieldPaths(filter), {
+        'name',
+        'favorites',
+        'favorites.user',
+        'favorites.sequence',
+      });
+    });
+
     test('strips the direction from an order_by', () {
       expect(orderByFieldPaths(['-sequence', 'name:asc']), {
         'sequence',

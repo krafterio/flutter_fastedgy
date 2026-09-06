@@ -274,9 +274,9 @@ void main() {
       );
     });
 
-    test('AND rules on the same to-many path hit the same related row', () async {
-      // ws1 has ADMIN=Ada and MEMBER=Grace: independent EXISTS would match it,
-      // the server's joined-lookup semantics must not.
+    test('AND rules on the same to-many path are independent', () async {
+      // ws1 has ADMIN=Ada and MEMBER=Grace, on two different members: each
+      // rule reaches it, so their conjunction does too.
       final result = await query(
         'workspace',
         filter: [
@@ -285,7 +285,56 @@ void main() {
         ],
       );
 
+      expect(names(result.records), ['Krafter', 'Beta']);
+    });
+
+    test('any asks the same related row', () async {
+      final result = await query(
+        'workspace',
+        filter: [
+          'members',
+          'any',
+          [
+            '&',
+            [
+              ['role', '=', 'ADMIN'],
+              ['user.name', '=', 'Grace'],
+            ],
+          ],
+        ],
+      );
+
       expect(names(result.records), ['Beta']);
+    });
+
+    test('not any negates it, and matches what carries nothing', () async {
+      final result = await query(
+        'workspace',
+        filter: [
+          'members',
+          'not any',
+          ['role', '=', 'ADMIN'],
+        ],
+      );
+
+      expect(names(result.records), []);
+
+      final empty = await query('workspace', filter: ['members', 'not any']);
+
+      expect(names(empty.records), []);
+    });
+
+    test('an empty sub-filter asks what the relation carries', () async {
+      expect(
+        names((await query('workspace', filter: ['members', 'any'])).records),
+        ['Krafter', 'Beta'],
+      );
+      expect(
+        names((await query('workspace', filter: ['owner', 'any'])).records),
+        names(
+          (await query('workspace', filter: ['owner', 'is not empty'])).records,
+        ),
+      );
     });
 
     test('OR branches get independent EXISTS', () async {
