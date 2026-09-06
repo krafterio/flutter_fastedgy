@@ -66,13 +66,13 @@ class CachedApiImageProvider extends ImageProvider<CachedApiImageProvider> {
     // Otherwise, try to infer from ImageConfiguration.size
     if (configurationSize != null) {
       final inferredWidth = configurationSize.width.isFinite
-          ? ImageDimensionsHelper.calculatePhysicalDimension(
+          ? ImageDimensionsHelper.inferPhysicalDimension(
               context,
               configurationSize.width,
             )
           : null;
       final inferredHeight = configurationSize.height.isFinite
-          ? ImageDimensionsHelper.calculatePhysicalDimension(
+          ? ImageDimensionsHelper.inferPhysicalDimension(
               context,
               configurationSize.height,
             )

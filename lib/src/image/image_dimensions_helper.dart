@@ -66,6 +66,30 @@ class ImageDimensionsHelper {
     return (physicalWidth, physicalHeight);
   }
 
+  /// Step, in physical pixels, an inferred dimension is rounded up to.
+  static const int inferredDimensionStep = 64;
+
+  /// Physical dimension for a size read off the layout, rounded up to
+  /// [inferredDimensionStep].
+  ///
+  /// A widget sized by its parent is measured again at every frame of a resize
+  /// animation, and each distinct value is another rendition to download and
+  /// another variant for the server to encode from the original file. Rounding
+  /// up collapses a whole animation onto one or two renditions, and gives
+  /// devices of different pixel ratios a chance to share them.
+  static int? inferPhysicalDimension(
+    BuildContext context,
+    double? logicalSize,
+  ) {
+    final physical = calculatePhysicalDimension(context, logicalSize);
+
+    if (physical == null || physical <= 0) return physical;
+
+    const step = inferredDimensionStep;
+
+    return ((physical + step - 1) ~/ step) * step;
+  }
+
   /// Infer dimension from BoxConstraints
   ///
   /// Useful when you want to fill available space.
@@ -96,6 +120,6 @@ class ImageDimensionsHelper {
 
     if (!maxSize.isFinite) return null;
 
-    return calculatePhysicalDimension(context, maxSize);
+    return inferPhysicalDimension(context, maxSize);
   }
 }

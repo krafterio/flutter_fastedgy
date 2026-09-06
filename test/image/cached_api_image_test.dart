@@ -21,6 +21,7 @@ final _png = base64Decode(
 class _ScriptedAdapter implements HttpClientAdapter {
   bool offline = false;
   final List<String> calls = [];
+  final List<String> renditions = [];
 
   @override
   Future<ResponseBody> fetch(
@@ -29,6 +30,9 @@ class _ScriptedAdapter implements HttpClientAdapter {
     Future<void>? cancelFuture,
   ) async {
     calls.add('${options.method} ${options.path}');
+    renditions.add(
+      '${options.queryParameters['w']}x${options.queryParameters['h']}',
+    );
 
     if (offline) {
       throw DioException(
@@ -175,6 +179,43 @@ void main() {
       await pumpImage(tester, path: 'avatars/missing.png');
 
       expect(find.text('failed'), findsOneWidget);
+    });
+
+    testWidgets('downloads one rendition across a resize animation', (
+      tester,
+    ) async {
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      // A widget sized by its parent is measured again at every frame: without
+      // rounding, the sizes below are eleven renditions to download and eleven
+      // variants for the server to encode from the original file.
+      for (var side = 80.0; side >= 74.0; side -= 0.6) {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: Center(
+                child: SizedBox(
+                  width: side,
+                  height: side,
+                  child: const CachedApiImage(
+                    path: 'recipes/a.png',
+                    mode: ImageMode.cover,
+                    format: 'webp',
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+
+      for (var round = 0; round < 30; round++) {
+        await tester.pump(const Duration(milliseconds: 10));
+      }
+
+      expect(adapter.renditions, ['256x256']);
     });
 
     testWidgets(
