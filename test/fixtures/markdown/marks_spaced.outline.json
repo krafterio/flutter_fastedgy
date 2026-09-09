@@ -1,0 +1,26 @@
+[
+    {
+        "type": "paragraph",
+        "indent": 0,
+        "attrs": {},
+        "runs": [
+            {
+                "t": "avant ",
+                "m": [],
+                "href": null
+            },
+            {
+                "t": "mot",
+                "m": [
+                    "bold"
+                ],
+                "href": null
+            },
+            {
+                "t": " après",
+                "m": [],
+                "href": null
+            }
+        ]
+    }
+]

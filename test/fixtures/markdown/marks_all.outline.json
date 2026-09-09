@@ -1,0 +1,87 @@
+[
+    {
+        "type": "paragraph",
+        "indent": 0,
+        "attrs": {},
+        "runs": [
+            {
+                "t": "gras",
+                "m": [
+                    "bold"
+                ],
+                "href": null
+            },
+            {
+                "t": " ",
+                "m": [],
+                "href": null
+            },
+            {
+                "t": "italique",
+                "m": [
+                    "italic"
+                ],
+                "href": null
+            },
+            {
+                "t": " ",
+                "m": [],
+                "href": null
+            },
+            {
+                "t": "les deux",
+                "m": [
+                    "bold",
+                    "italic"
+                ],
+                "href": null
+            },
+            {
+                "t": " ",
+                "m": [],
+                "href": null
+            },
+            {
+                "t": "barré",
+                "m": [
+                    "strike"
+                ],
+                "href": null
+            },
+            {
+                "t": " ",
+                "m": [],
+                "href": null
+            },
+            {
+                "t": "souligné",
+                "m": [
+                    "underline"
+                ],
+                "href": null
+            },
+            {
+                "t": " ",
+                "m": [],
+                "href": null
+            },
+            {
+                "t": "code",
+                "m": [
+                    "code"
+                ],
+                "href": null
+            },
+            {
+                "t": " ",
+                "m": [],
+                "href": null
+            },
+            {
+                "t": "un lien",
+                "m": [],
+                "href": "https://melimelo.app"
+            }
+        ]
+    }
+]

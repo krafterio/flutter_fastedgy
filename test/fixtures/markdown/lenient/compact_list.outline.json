@@ -1,0 +1,38 @@
+[
+    {
+        "type": "bullet",
+        "indent": 0,
+        "attrs": {},
+        "runs": [
+            {
+                "t": "a",
+                "m": [],
+                "href": null
+            }
+        ]
+    },
+    {
+        "type": "bullet",
+        "indent": 0,
+        "attrs": {},
+        "runs": [
+            {
+                "t": "b",
+                "m": [],
+                "href": null
+            }
+        ]
+    },
+    {
+        "type": "bullet",
+        "indent": 0,
+        "attrs": {},
+        "runs": [
+            {
+                "t": "c",
+                "m": [],
+                "href": null
+            }
+        ]
+    }
+]

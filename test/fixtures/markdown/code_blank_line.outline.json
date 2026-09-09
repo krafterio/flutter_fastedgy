@@ -1,0 +1,28 @@
+[
+    {
+        "type": "code",
+        "indent": 0,
+        "attrs": {
+            "language": "javascript"
+        },
+        "runs": [
+            {
+                "t": "const a = 1;\n\nconst b = 2;",
+                "m": [],
+                "href": null
+            }
+        ]
+    },
+    {
+        "type": "paragraph",
+        "indent": 0,
+        "attrs": {},
+        "runs": [
+            {
+                "t": "après",
+                "m": [],
+                "href": null
+            }
+        ]
+    }
+]
