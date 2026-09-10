@@ -1,0 +1,34 @@
+[
+    {
+        "type": "paragraph",
+        "indent": 0,
+        "attrs": {},
+        "runs": [
+            {
+                "t": "avant",
+                "m": [],
+                "href": null
+            }
+        ]
+    },
+    {
+        "type": "image",
+        "indent": 0,
+        "attrs": {
+            "src": "data:image/png;base64,iVBORw0KGgo="
+        },
+        "runs": []
+    },
+    {
+        "type": "paragraph",
+        "indent": 0,
+        "attrs": {},
+        "runs": [
+            {
+                "t": "après",
+                "m": [],
+                "href": null
+            }
+        ]
+    }
+]

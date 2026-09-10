@@ -1,0 +1,23 @@
+[
+    {
+        "type": "paragraph",
+        "indent": 0,
+        "attrs": {},
+        "runs": [
+            {
+                "t": "avec ",
+                "m": [],
+                "href": null
+            },
+            {
+                "t": "jean@melimelo.app",
+                "m": [],
+                "href": null,
+                "mention": {
+                    "model": "user",
+                    "id": 9
+                }
+            }
+        ]
+    }
+]

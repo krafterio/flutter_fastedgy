@@ -56,7 +56,17 @@ void main() {
   /// it went. Content stored by an older editor lives here.
   void fromMarkdown(String name, String markdown) => write(lenient, name, markdown);
 
+  /// A fixture whose source is written by hand, held to the same three
+  /// assertions as one the encoder produced. What a table is made of is far
+  /// easier to say in markdown than in nodes, and the round trip is what the
+  /// corpus asserts either way.
+  void fromCanonicalMarkdown(String name, String markdown) {
+    expect(codec.encode(codec.decode(markdown)), markdown, reason: name);
+    write(directory, name, markdown);
+  }
+
   test('writes the shared markdown corpus', () {
+    useCorpusServices();
     directory.createSync(recursive: true);
     lenient.createSync(recursive: true);
 
@@ -170,6 +180,47 @@ void main() {
         paragraphNode(delta: Delta()..insert('après')),
       ]),
     );
+
+    fromDocument(
+      'image_attachment',
+      documentOf([imageNode(url: 'attachment:15', width: 420, height: 280)]),
+    );
+
+    fromDocument(
+      'image_in_document',
+      documentOf([
+        paragraphNode(delta: Delta()..insert('avant')),
+        imageNode(url: 'data:image/png;base64,iVBORw0KGgo='),
+        paragraphNode(delta: Delta()..insert('après')),
+      ]),
+    );
+
+    fromCanonicalMarkdown('mention_note', 'voir [Courses de la semaine](/notes/12) ce soir');
+    fromCanonicalMarkdown('mention_member', 'avec [François](/household/members/7)');
+    fromCanonicalMarkdown('mention_email_label', 'avec [jean\\@melimelo.app](/household/members/9)');
+    fromCanonicalMarkdown(
+      'mention_in_cell',
+      '|qui|quand|\n|-|-|\n|[François](/household/members/7)|demain|',
+    );
+
+    fromCanonicalMarkdown('table_plain', '|a|b|\n|-|-|\n|c|d|');
+    fromCanonicalMarkdown('table_empty_cell', '|a||\n|-|-|\n||d|');
+    fromCanonicalMarkdown('table_cell_pipe', '|a\\|b|c|\n|-|-|\n|d|e|');
+    fromCanonicalMarkdown('table_cell_break', '|ligne 1<br>ligne 2|b|\n|-|-|\n|c|d|');
+    fromCanonicalMarkdown('table_widths', '|a|b|\n|-|-|\n|c|d|\n<!-- cols:180,240 -->');
+
+    // Found on real notes, and none of them was in the corpus: an item with
+    // nothing in it, a line cut inside a block, and a bare URL whose letters
+    // were spelt one way or the other.
+    fromCanonicalMarkdown('list_empty_items', '*\n\n*\n\n* Tapis');
+    fromCanonicalMarkdown('line_breaks', 'un\ndeux\ntrois');
+    fromCanonicalMarkdown('link_bare_encoded', 'https://a.fr/jeans-%C3%A9cussons');
+    fromCanonicalMarkdown('link_bare_letters', 'https://a.fr/décoration');
+
+    // A fence holding a fence: read back as far as the format can, and not
+    // expected to come back as it went. The inner ``` closes the block for any
+    // reader, this one included, and what follows lands beside it.
+    fromMarkdown('code_fence_inside', '```markdown\n```\nune fence dans la fence\n```\n```\n\naprès');
 
     fromMarkdown('nesting_tabs', 'a\n\n\tb\n\n\t\tc\n\nd');
     fromMarkdown('plus_underline', '++venu de Fleather++ et C++ and C++');

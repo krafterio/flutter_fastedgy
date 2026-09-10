@@ -1,0 +1,28 @@
+[
+    {
+        "type": "paragraph",
+        "indent": 0,
+        "attrs": {},
+        "runs": [
+            {
+                "t": "voir ",
+                "m": [],
+                "href": null
+            },
+            {
+                "t": "Courses de la semaine",
+                "m": [],
+                "href": null,
+                "mention": {
+                    "model": "note",
+                    "id": 12
+                }
+            },
+            {
+                "t": " ce soir",
+                "m": [],
+                "href": null
+            }
+        ]
+    }
+]

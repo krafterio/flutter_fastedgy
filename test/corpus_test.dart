@@ -15,6 +15,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'corpus_support.dart';
 
 void main() {
+  useCorpusServices();
+
   List<String> namesIn(Directory directory) =>
       directory
           .listSync()
@@ -33,19 +35,19 @@ void main() {
   final canonical = Directory(corpusDirectory);
   final lenient = Directory('$corpusDirectory/lenient');
 
-  group('corpus canonique', () {
+  group('canonical corpus', () {
     for (final name in namesIn(canonical)) {
       final fixture = read(canonical, name);
 
-      test('$name : la lecture donne le document attendu', () {
+      test('$name: reading gives the expected document', () {
         expect(outlineOf(corpusCodec.decode(fixture.markdown)), fixture.outline);
       });
 
-      test("$name : l'écriture redonne la source", () {
+      test('$name: writing gives the source back', () {
         expect(corpusCodec.encode(corpusCodec.decode(fixture.markdown)), fixture.markdown);
       });
 
-      test('$name : un second tour ne bouge plus', () {
+      test('$name: a second round moves nothing', () {
         final once = corpusCodec.encode(corpusCodec.decode(fixture.markdown));
 
         expect(corpusCodec.encode(corpusCodec.decode(once)), once);
@@ -53,15 +55,15 @@ void main() {
     }
   });
 
-  group('corpus toléré', () {
+  group('lenient corpus', () {
     for (final name in namesIn(lenient)) {
       final fixture = read(lenient, name);
 
-      test('$name : la lecture donne le document attendu', () {
+      test('$name: reading gives the expected document', () {
         expect(outlineOf(corpusCodec.decode(fixture.markdown)), fixture.outline);
       });
 
-      test('$name : ce qui en est réécrit est stable', () {
+      test('$name: what is rewritten from it is stable', () {
         final once = corpusCodec.encode(corpusCodec.decode(fixture.markdown));
 
         expect(corpusCodec.encode(corpusCodec.decode(once)), once);

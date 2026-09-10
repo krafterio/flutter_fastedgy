@@ -35,6 +35,9 @@ class LinkFeature extends RichTextFeature {
   Document beforeMarkdown(Document document) => withoutSelfLinks(document);
 
   @override
+  Document afterMarkdown(Document document) => withReadableSelfLinks(document);
+
+  @override
   List<ToolbarItem> get toolbarItems => [
     ToolbarItem(
       id: id,

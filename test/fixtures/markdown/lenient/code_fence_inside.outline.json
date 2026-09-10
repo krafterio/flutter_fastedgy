@@ -1,0 +1,40 @@
+[
+    {
+        "type": "code",
+        "indent": 0,
+        "attrs": {
+            "language": "markdown"
+        },
+        "runs": []
+    },
+    {
+        "type": "paragraph",
+        "indent": 0,
+        "attrs": {},
+        "runs": [
+            {
+                "t": "une fence dans la fence",
+                "m": [],
+                "href": null
+            }
+        ]
+    },
+    {
+        "type": "code",
+        "indent": 0,
+        "attrs": {},
+        "runs": []
+    },
+    {
+        "type": "paragraph",
+        "indent": 0,
+        "attrs": {},
+        "runs": [
+            {
+                "t": "après",
+                "m": [],
+                "href": null
+            }
+        ]
+    }
+]
