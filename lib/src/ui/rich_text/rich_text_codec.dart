@@ -63,7 +63,9 @@ class MarkdownRichTextCodec extends RichTextCodec {
   String encode(Document document) => RichTextCodec.isCleared(document)
       ? ''
       : encodeNestedMarkdown(
-          features.beforeMarkdown(_spaceOutsideMarks(document)),
+          features.beforeMarkdown(
+            _withoutTrailingBlank(_spaceOutsideMarks(document)),
+          ),
           _written,
         );
 
@@ -299,6 +301,48 @@ final _trailing = RegExp(r'\s+$');
 ///
 /// `**` around ` x ` becomes ` **x** `: the same words, the same emphasis, and
 /// markdown able to say it.
+/// The blocks a caret has nowhere to go after: the last line has to be made.
+const _holdsNoCaret = {
+  ImageBlockKeys.type,
+  TableBlockKeys.type,
+  DividerBlockKeys.type,
+};
+
+/// The document without the line a picture at its end forced somebody to make.
+///
+/// A picture, a table or a rule at the end of a note leaves nowhere to put the
+/// caret, so getting out of it means making a paragraph after it — and that
+/// paragraph, in which nobody has written a word yet, would be stored as an
+/// empty line. Every note would gain one the moment somebody stepped out of a
+/// picture.
+///
+/// Only there: an empty line somebody left after a sentence was left on
+/// purpose, and stays.
+Document _withoutTrailingBlank(Document document) {
+  final children = document.root.children;
+
+  if (children.length < 2) {
+    return document;
+  }
+
+  final last = children.last;
+
+  if (last.type != ParagraphBlockKeys.type ||
+      last.children.isNotEmpty ||
+      (last.delta?.toPlainText() ?? '').isNotEmpty ||
+      !_holdsNoCaret.contains(children[children.length - 2].type)) {
+    return document;
+  }
+
+  final json =
+      jsonDecode(jsonEncode(document.toJson())) as Map<String, dynamic>;
+  final blocks = (json['document'] as Map)['children'] as List;
+
+  blocks.removeLast();
+
+  return Document.fromJson(json);
+}
+
 Document _spaceOutsideMarks(Document document) {
   final json =
       jsonDecode(jsonEncode(document.toJson())) as Map<String, dynamic>;
