@@ -201,6 +201,34 @@ void main() {
     expect(find.text('Avant', findRichText: true), findsOneWidget);
   });
 
+  testWidgets(
+    'offers the language of a code block to be chosen only where it is written',
+    (tester) async {
+      EditorState code() => stateOf([
+        codeBlockNode(
+          delta: Delta()..insert('print("hi")'),
+          language: 'python',
+        ),
+      ]);
+
+      await pump(
+        tester,
+        RichTextViewer(features: defaultRichTextFeatures, editorState: code()),
+      );
+
+      expect(find.byType(CodeBlockComponentWidget), findsOneWidget);
+      expect(find.text('Python'), findsNothing);
+
+      await pump(
+        tester,
+        RichTextEditor(features: defaultRichTextFeatures, editorState: code()),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Python'), findsOneWidget);
+    },
+  );
+
   testWidgets('takes the height of what it holds', (tester) async {
     await pump(
       tester,

@@ -178,11 +178,14 @@ class _CodeBlockComponentWidgetState extends State<CodeBlockComponentWidget>
             padding: const EdgeInsets.fromLTRB(8, 6, 8, 0),
             child: Row(
               children: [
-                _LanguageSelector(
-                  language: _language,
-                  detected: result?.language,
-                  onSelect: _setLanguage,
-                ),
+                // Only where the document can be written: read, a language is
+                // not chosen.
+                if (editorState.editable)
+                  _LanguageSelector(
+                    language: _language,
+                    detected: result?.language,
+                    onSelect: _setLanguage,
+                  ),
                 const Spacer(),
                 controls.tappable(
                   context,
