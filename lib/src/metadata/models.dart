@@ -17,6 +17,9 @@ class MetadataField {
   final List<String>? targets;
   final Map<String, String>? choices;
 
+  /// The value a new record starts with when none is given.
+  final Object? defaultValue;
+
   /// Template to interpolate as a provisional value while the server-generated
   /// one is missing (e.g. `DRAFT-{seq}` on a business reference).
   ///
@@ -36,6 +39,7 @@ class MetadataField {
     this.target,
     this.targets,
     this.choices,
+    this.defaultValue,
     this.localPlaceholder,
   });
 
@@ -66,6 +70,7 @@ class MetadataField {
       choices: (json['choices'] as Map<String, dynamic>?)?.map(
         (key, value) => MapEntry(key, value as String),
       ),
+      defaultValue: json['default'],
       localPlaceholder: json['local_placeholder'] as String?,
     );
   }
@@ -84,6 +89,7 @@ class MetadataField {
       'target': target,
       'targets': targets,
       'choices': choices,
+      'default': defaultValue,
       'local_placeholder': localPlaceholder,
     };
   }

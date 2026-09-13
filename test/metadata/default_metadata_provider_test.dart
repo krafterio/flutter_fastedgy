@@ -94,6 +94,7 @@ const _metadatasPayload = {
         'target': null,
         'targets': null,
         'choices': {'ADMIN': 'Admin', 'MEMBER': 'Member'},
+        'default': 'MEMBER',
       },
       'reference': {
         'name': 'reference',
@@ -173,6 +174,15 @@ void main() {
 
       expect(metadatas?['workspace_user']?.apiName, 'workspace_users');
       expect(await store.get('/dataset/metadatas', 'metadatas'), isNotNull);
+    });
+
+    test('parses the default a field declares', () async {
+      adapter.routes['GET /dataset/metadatas'] = (options) => _metadatasPayload;
+
+      final model = (await provider.getMetadatas())?['workspace_user'];
+
+      expect(model?.fields['role']?.defaultValue, 'MEMBER');
+      expect(model?.fields['reference']?.defaultValue, isNull);
     });
 
     test('parses the replication regime and the placeholders', () async {
