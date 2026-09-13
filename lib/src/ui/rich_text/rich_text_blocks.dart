@@ -38,6 +38,7 @@ Map<String, BlockComponentBuilder> richTextBlocks({
   ShowPlaceholder? showPlaceholder,
   String Function(Node node)? placeholderText,
   BlockComponentBuilder? pageBuilder,
+  EdgeInsets textBlockPadding = const EdgeInsets.symmetric(vertical: 3),
   EdgeInsets listItemPadding = const EdgeInsets.symmetric(vertical: 3),
   TextStyle Function(int level)? headingText,
   EdgeInsets Function(int level)? headingMargin,
@@ -102,7 +103,7 @@ Map<String, BlockComponentBuilder> richTextBlocks({
       padding: (_) => switch (type) {
         DividerBlockKeys.type when dividerPadding != null => dividerPadding,
         _ when _listTypes.contains(type) => listItemPadding,
-        _ => const EdgeInsets.symmetric(vertical: 3),
+        _ => textBlockPadding,
       },
       // Null leaves the package's own, which every block but a heading keeps.
       margin: type == HeadingBlockKeys.type && headingMargin != null

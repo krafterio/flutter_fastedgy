@@ -516,6 +516,7 @@ class RichTextEditorState extends State<RichTextEditor> {
     return richTextBlocks(
       features: widget.features,
       blockActions: widget.blockActions,
+      textBlockPadding: theme.textBlockPadding,
       listItemPadding: theme.listItemPadding,
       headingText: theme.headingAt,
       headingMargin: theme.headingMarginAt,
