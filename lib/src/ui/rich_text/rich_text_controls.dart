@@ -255,22 +255,30 @@ Widget _fallbackTappable(BuildContext context, RichTextTapSpec spec) {
 Widget _fallbackPicker(BuildContext context, RichTextPickerSpec spec) {
   final theme = RichTextTheme.of(context);
 
-  return PopupMenuButton<String?>(
-    tooltip: '',
-    onSelected: spec.onSelect,
-    itemBuilder: (context) => [
-      for (final option in spec.options)
-        PopupMenuItem<String?>(value: option.value, child: Text(option.label)),
-    ],
-    child: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          spec.label,
-          style: theme.codeText.copyWith(color: theme.mutedText),
-        ),
-        ?spec.indicator,
+  // Its own surface: the host's may be the `flutter/material.dart` `Material`,
+  // a class `material_ui` does not recognise.
+  return Material(
+    type: MaterialType.transparency,
+    child: PopupMenuButton<String?>(
+      tooltip: '',
+      onSelected: spec.onSelect,
+      itemBuilder: (context) => [
+        for (final option in spec.options)
+          PopupMenuItem<String?>(
+            value: option.value,
+            child: Text(option.label),
+          ),
       ],
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            spec.label,
+            style: theme.codeText.copyWith(color: theme.mutedText),
+          ),
+          ?spec.indicator,
+        ],
+      ),
     ),
   );
 }
@@ -295,18 +303,23 @@ Widget _fallbackButton(BuildContext context, RichTextButtonSpec spec) {
 Widget _fallbackField(BuildContext context, RichTextFieldSpec spec) {
   final theme = RichTextTheme.of(context);
 
-  return TextField(
-    controller: spec.controller,
-    autofocus: spec.autofocus,
-    onChanged: spec.onChanged,
-    onSubmitted: spec.onSubmit == null ? null : (_) => spec.onSubmit!(),
-    style: theme.fieldText,
-    decoration: InputDecoration(
-      labelText: spec.label,
-      hintText: spec.placeholder,
-      prefixIcon: spec.leading,
-      isDense: true,
-      border: OutlineInputBorder(borderRadius: theme.chipRadius),
+  // Its own surface: the host's may be the `flutter/material.dart` `Material`,
+  // a class `material_ui` does not recognise.
+  return Material(
+    type: MaterialType.transparency,
+    child: TextField(
+      controller: spec.controller,
+      autofocus: spec.autofocus,
+      onChanged: spec.onChanged,
+      onSubmitted: spec.onSubmit == null ? null : (_) => spec.onSubmit!(),
+      style: theme.fieldText,
+      decoration: InputDecoration(
+        labelText: spec.label,
+        hintText: spec.placeholder,
+        prefixIcon: spec.leading,
+        isDense: true,
+        border: OutlineInputBorder(borderRadius: theme.chipRadius),
+      ),
     ),
   );
 }

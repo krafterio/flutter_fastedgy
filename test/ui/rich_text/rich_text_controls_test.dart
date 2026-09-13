@@ -3,6 +3,7 @@
  * MIT License (see LICENSE file).
  */
 
+import 'package:flutter/material.dart' as flutter show MaterialApp;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_fastedgy/ui.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -122,6 +123,69 @@ void main() {
 
       await tester.tap(find.text('Auto'));
       expect(chosen, 'dart');
+    });
+
+    // What an application mounts: a `flutter/material.dart` app, whose
+    // `Material` is a class `material_ui` does not recognise, with the
+    // `material_ui` localizations `fastEdgyLocalizationDelegates` registers.
+    testWidgets('the fallback picker chooses under a flutter/material app', (
+      tester,
+    ) async {
+      String? chosen = 'before';
+
+      await tester.pumpWidget(
+        flutter.MaterialApp(
+          localizationsDelegates: const [GlobalMaterialLocalizations.delegate],
+          home: Builder(
+            builder: (context) => RichTextControls.fallback.picker(
+              context,
+              RichTextPickerSpec(
+                label: 'Auto',
+                selected: null,
+                onSelect: (value) => chosen = value,
+                options: const [
+                  RichTextPickerOption(value: null, label: 'Auto'),
+                  RichTextPickerOption(value: 'dart', label: 'Dart'),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Auto'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Dart'));
+      await tester.pumpAndSettle();
+
+      expect(chosen, 'dart');
+    });
+
+    testWidgets('the fallback field types under a flutter/material app', (
+      tester,
+    ) async {
+      final controller = TextEditingController();
+      addTearDown(controller.dispose);
+
+      await tester.pumpWidget(
+        flutter.MaterialApp(
+          localizationsDelegates: const [GlobalMaterialLocalizations.delegate],
+          home: Builder(
+            builder: (context) => RichTextControls.fallback.field(
+              context,
+              RichTextFieldSpec(
+                label: 'URL',
+                placeholder: 'https://',
+                controller: controller,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.enterText(find.byType(TextField), 'kascade.io');
+
+      expect(controller.text, 'kascade.io');
     });
   });
 
