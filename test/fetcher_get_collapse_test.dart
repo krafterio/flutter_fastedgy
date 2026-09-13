@@ -188,4 +188,56 @@ void main() {
     await expectLater(fetcher.get('/acme/users'), throwsA(isA<HttpError>()));
     expect(seen, hasLength(2));
   });
+
+  test('a read asked after a change never rides one sent before it', () async {
+    final seen = <MockRequest>[];
+    final gates = <Completer<void>>[];
+    final fetcher = createMockFetcher((request) async {
+      seen.add(request);
+      final answer = seen.length;
+      final gate = Completer<void>();
+      gates.add(gate);
+      await gate.future;
+
+      return MockResponse.json({'answer': answer});
+    }, enableAuth: false);
+
+    final before = fetcher.get('/acme/flows');
+    await pumpEventQueue();
+
+    getService<Bus>().fire(const ResourceChangedEvent(null, model: 'flow'));
+    await pumpEventQueue();
+
+    final after = fetcher.get('/acme/flows');
+    await pumpEventQueue();
+
+    // The read sent before settles first, and leaves the key to the one after.
+    gates.first.complete();
+    await before;
+
+    final later = fetcher.get('/acme/flows');
+    await pumpEventQueue();
+
+    for (final gate in gates.where((one) => !one.isCompleted)) {
+      gate.complete();
+    }
+
+    expect((await after).data, {'answer': 2});
+    expect((await later).data, {'answer': 2});
+    expect(seen, hasLength(2));
+  });
+
+  test('a read asked after a stale notice goes out on its own', () async {
+    final held = heldFetcher({'items': []});
+
+    final before = held.fetcher.get('/acme/flows');
+    getService<Bus>().fire(const ResourcesStaleEvent());
+    await pumpEventQueue();
+    final after = held.fetcher.get('/acme/flows');
+
+    held.release();
+    await Future.wait([before, after]);
+
+    expect(held.seen, hasLength(2));
+  });
 }

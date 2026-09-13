@@ -3,6 +3,7 @@
  * MIT License (see LICENSE file).
  */
 
+import 'dart:async' show StreamSubscription, unawaited;
 import 'dart:convert' show jsonEncode;
 import 'dart:typed_data' show TypedData;
 
@@ -10,10 +11,12 @@ import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
+import '../api/api_model_engine.dart' show ResourceChangedEvent;
 import '../bus/bus.dart';
 import '../container/container.dart';
 import '../auth/token_storage.dart';
 import '../realtime/origin.dart';
+import '../realtime/realtime_events.dart' show ResourcesStaleEvent;
 import '../auth/auth_provider.dart';
 import 'events.dart';
 import 'http_error.dart';
@@ -30,6 +33,7 @@ class Fetcher {
   final Bus _bus;
   final Map<String, CancelToken> _cancelTokens = {};
   final CancelToken _globalCancelToken = CancelToken();
+  final List<StreamSubscription<Object?>> _changes = [];
 
   /// GET requests in flight, by what makes their answer: several holders
   /// mounting at once ask for the same rows, and each of them used to open its
@@ -37,12 +41,18 @@ class Fetcher {
   /// pickable users, of the pickable projects, and of the same avatar.
   ///
   /// Only concurrent reads share — an entry goes as soon as its request
-  /// settles, so this is a collapse, never a cache.
+  /// settles, so this is a collapse, never a cache. And only until something
+  /// changes: a read sent before a write may answer what the write replaced,
+  /// so the read the change asks for goes out on its own.
   final Map<String, Future<Response>> _pendingGets = {};
 
   Fetcher._({Dio? dio, Bus? bus})
     : _dio = dio ?? Dio(),
-      _bus = bus ?? getService<Bus>();
+      _bus = bus ?? getService<Bus>() {
+    _changes
+      ..add(_bus.on<ResourceChangedEvent>().listen((_) => _pendingGets.clear()))
+      ..add(_bus.on<ResourcesStaleEvent>().listen((_) => _pendingGets.clear()));
+  }
 
   /// Create a new Fetcher instance with configurable interceptors
   ///
@@ -255,8 +265,13 @@ class Fetcher {
 
     _pendingGets[key] = request;
     // Detached from what the callers get, so the failure they handle is not
-    // reported a second time here.
-    request.whenComplete(() => _pendingGets.remove(key)).ignore();
+    // reported a second time here. Only its own entry: once something changed,
+    // a later read holds the key.
+    request.whenComplete(() {
+      if (identical(_pendingGets[key], request)) {
+        _pendingGets.remove(key);
+      }
+    }).ignore();
 
     return request;
   }
@@ -651,6 +666,10 @@ class Fetcher {
 
   /// Dispose and clean up resources
   void dispose() {
+    for (final subscription in _changes) {
+      unawaited(subscription.cancel());
+    }
+
     abort(); // Cancel all pending requests
   }
 }
