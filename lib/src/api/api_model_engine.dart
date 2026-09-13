@@ -5,7 +5,10 @@
 
 import 'package:dio/dio.dart';
 
+import '../container/container.dart';
 import '../fetcher/client.dart';
+import '../realtime/origin.dart';
+import '../realtime/realtime_socket.dart';
 import 'api_helpers.dart';
 import 'api_model.dart';
 import 'api_query.dart';
@@ -16,44 +19,88 @@ import 'record_result.dart';
 enum ResourceChangeType { created, updated, deleted }
 
 class ResourceChangedEvent {
-  final String basePath;
+  /// The path of the instance that fired it; an announcement has none.
+  final String? basePath;
+
+  /// The metadata name of the model, `flow`.
+  final String? model;
+
+  /// Null when nobody says what happened, which asks for a read.
   final ResourceChangeType? type;
   final Object? id;
 
-  /// True when the cross-instance relay re-fired this event from another
-  /// process. The relay only rebroadcasts local (non-relayed) events, so this
-  /// flag is what breaks the echo loop between instances.
-  final bool relayed;
-
-  /// What the write asked to change, when it said so.
-  ///
-  /// The keys of the payload that was sent — never everything the server ended
-  /// up touching, which it does not report: a save also stamps whatever the
-  /// model stamps on every write. So this answers "did the writer aim at any of
-  /// this?", and a holder that reads none of these fields *and* nothing the
-  /// server stamps has nothing to learn from the event.
-  ///
-  /// Null where the write did not say, which has to be taken as everything.
+  /// What the write moved: the keys of the payload for a write of this
+  /// instance, the columns the server wrote for an announced update, stamped
+  /// ones included. Null where nobody said, which reads as everything.
   final Set<String>? fields;
+
+  /// What the server carried with the id: `model`, `id` and the columns the
+  /// model declared.
+  final Map<String, dynamic>? data;
+
+  /// The client instance behind the write, when known.
+  final String? origin;
+
+  /// The server left [data] behind.
+  final bool truncated;
+
+  /// Fired by the realtime socket from an announcement, rather than by this
+  /// process for a write of its own.
+  final bool announced;
+
+  /// Re-fired by the relay from another instance, which is what keeps the
+  /// relay from sending it back.
+  final bool relayed;
 
   const ResourceChangedEvent(
     this.basePath, {
+    this.model,
     this.type,
     this.id,
-    this.relayed = false,
     this.fields,
+    this.data,
+    this.origin,
+    this.truncated = false,
+    this.announced = false,
+    this.relayed = false,
   });
+
+  /// Whether this event is about what [api] holds: by model when the event
+  /// names one, by path otherwise. Every api that has not resolved yet answers
+  /// the bare prefix, so a named event compared by path would reach them all.
+  bool isAbout(ApiModel<dynamic> api) =>
+      model != null ? model == api.modelName : basePath == api.resolvedBasePath;
+
+  /// Whether this event can be about records holding [columns]: a column it
+  /// does not carry, or carries empty, says nothing, and a carried one compares
+  /// as a string, an id from JSON matching one from a route.
+  bool mayBeAbout(Map<String, Object?> columns) {
+    final carried = data;
+
+    if (carried == null) {
+      return true;
+    }
+
+    for (final column in columns.entries) {
+      final value = carried[column.key];
+
+      if (value != null && value != '' && '$value' != '${column.value}') {
+        return false;
+      }
+    }
+
+    return true;
+  }
 
   /// Whether something reading [read] has anything to learn from this event.
   ///
   /// Anything but an update always has: a row appearing or going changes a list
-  /// whatever its columns are. An update with nothing declared has too — an
-  /// event that says nothing means everything.
+  /// whatever its columns are. So has an update that declared nothing, and so
+  /// has a holder that reads nothing in particular.
   ///
   /// A dotted path counts either way round, `project` moving being news to a
-  /// holder reading `project.name`.
-  /// Reading nothing in particular is reading everything: a holder that has not
-  /// said what it is after cannot be told it is not concerned.
+  /// holder reading `project.name`, and so does a custom field with the `extra`
+  /// column the server stores it in.
   bool touches(Iterable<String> read) {
     final moved = fields;
 
@@ -64,21 +111,26 @@ class ResourceChangedEvent {
       return true;
     }
 
-    return read.any(
-      (one) => moved.any(
-        (other) =>
-            one == other ||
-            one.startsWith('$other.') ||
-            other.startsWith('$one.'),
-      ),
-    );
+    return read.any((one) => moved.any((other) => _sameColumn(one, other)));
   }
 
+  static const _extraColumn = 'extra';
+  static const _extraFieldPrefix = 'extra_';
+
+  static bool _sameColumn(String one, String other) =>
+      one == other ||
+      one.startsWith('$other.') ||
+      other.startsWith('$one.') ||
+      (one == _extraColumn && other.startsWith(_extraFieldPrefix)) ||
+      (other == _extraColumn && one.startsWith(_extraFieldPrefix));
+
   Map<String, dynamic> toJson() => {
-    'basePath': basePath,
+    if (basePath != null) 'basePath': basePath,
+    if (model != null) 'model': model,
     if (type != null) 'type': type!.name,
     if (id != null) 'id': id,
     if (fields != null) 'fields': fields!.toList(),
+    if (origin != null) 'origin': origin,
   };
 
   factory ResourceChangedEvent.fromJson(
@@ -97,11 +149,13 @@ class ResourceChangedEvent {
     final fields = json['fields'];
 
     return ResourceChangedEvent(
-      json['basePath'] as String,
+      json['basePath'] as String?,
+      model: json['model'] as String?,
       type: type,
       id: json['id'],
-      relayed: relayed,
       fields: fields is List ? {for (final field in fields) '$field'} : null,
+      origin: json['origin'] as String?,
+      relayed: relayed,
     );
   }
 }
@@ -187,6 +241,19 @@ class ApiModelEngine<T extends BaseModel<T>> {
   /// keep it.
   bool get bufferizesWrites => false;
 
+  /// Stamps a write with an origin of its own, and has the socket expect its
+  /// echo before the request leaves.
+  Map<String, dynamic> _expectEcho(Map<String, dynamic>? headers, Object? id) {
+    final origin = requestOrigin();
+    final model = owner.modelName;
+
+    if (model != null && hasService<RealtimeSocket>()) {
+      getService<RealtimeSocket>().expect(origin, model, id);
+    }
+
+    return {...?headers, originHeader: origin};
+  }
+
   Future<T> create(
     DynamicSchema<T> payload, {
     FieldsOptions? options,
@@ -207,7 +274,7 @@ class ApiModelEngine<T extends BaseModel<T>> {
     final response = await fetcher.post(
       await owner.resolvePath(),
       payload.toJson(),
-      headers: headers,
+      headers: _expectEcho(headers, null),
     );
 
     final entity = owner.fromJson(response.data);
@@ -240,7 +307,7 @@ class ApiModelEngine<T extends BaseModel<T>> {
     final response = await fetcher.patch(
       '${await owner.resolvePath()}/${id.toString()}',
       payload.toJson(),
-      headers: headers,
+      headers: _expectEcho(headers, id),
     );
 
     owner.notifyChanged(
@@ -261,7 +328,7 @@ class ApiModelEngine<T extends BaseModel<T>> {
 
     await fetcher.delete(
       '${await owner.resolvePath()}/${id.toString()}',
-      headers: headers,
+      headers: _expectEcho(headers, id),
     );
     owner.notifyChanged(ResourceChangeType.deleted, id);
   }

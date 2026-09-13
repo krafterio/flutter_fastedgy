@@ -13,6 +13,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../bus/bus.dart';
 import '../container/container.dart';
 import '../auth/token_storage.dart';
+import '../realtime/origin.dart';
 import '../auth/auth_provider.dart';
 import 'events.dart';
 import 'http_error.dart';
@@ -54,6 +55,7 @@ class Fetcher {
   /// Interceptors are sorted by priority (highest first).
   ///
   /// Default priorities:
+  /// - Origin: 54
   /// - Auth: 50
   /// - Timezone: 45
   /// - RefreshToken: 40
@@ -127,6 +129,8 @@ class Fetcher {
         InterceptorConfig(effectiveUserAgentInterceptor, priority: 55),
       );
     }
+
+    allInterceptors.add(InterceptorConfig(OriginInterceptor(), priority: 54));
 
     if (enableAuth && hasService<TokenStorage>()) {
       allInterceptors.add(

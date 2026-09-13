@@ -10,6 +10,7 @@ import '../container/container.dart';
 import '../fetcher/client.dart';
 import '../metadata/metadata_provider.dart';
 import '../metadata/models.dart';
+import '../realtime/origin.dart';
 import 'api_model_engine.dart';
 import 'api_query.dart';
 import 'base_model.dart';
@@ -167,7 +168,14 @@ abstract class ApiModel<T extends BaseModel<T>> {
     Object? id,
     Set<String>? fields,
   ]) => getService<Bus>().fire(
-    ResourceChangedEvent(resolvedBasePath, type: type, id: id, fields: fields),
+    ResourceChangedEvent(
+      resolvedBasePath,
+      model: modelName,
+      type: type,
+      id: id,
+      fields: fields,
+      origin: originId,
+    ),
   );
 
   Future<PaginationResult<T>> list({

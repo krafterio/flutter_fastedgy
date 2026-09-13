@@ -1,10 +1,8 @@
-import 'dart:async';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 
-import '../bus/bus.dart';
-import '../container/container.dart';
+import '../fetcher/http_error.dart';
+import '../realtime/resource_watch.dart';
 import 'api_model.dart';
 import 'api_query.dart';
 import 'base_model.dart';
@@ -26,9 +24,6 @@ import 'data_availability.dart';
 class ApiRecord<T extends BaseModel<T>> extends ChangeNotifier
     with DataAvailabilityState<T> {
   ApiRecord(this.api, {dynamic fields}) : _configFields = fields {
-    _sub = getService<Bus>().on<ResourceChangedEvent>().listen(
-      _onResourceChanged,
-    );
     listenAvailability();
   }
 
@@ -36,7 +31,17 @@ class ApiRecord<T extends BaseModel<T>> extends ChangeNotifier
   final ApiModel<T> api;
   dynamic _configFields;
 
-  late final StreamSubscription<ResourceChangedEvent> _sub;
+  ResourceWatch? _watch;
+  bool _active = true;
+
+  /// Whether its screen can be seen: off screen, what changes is owed as one
+  /// read when it is shown again.
+  bool get active => _active;
+
+  set active(bool value) {
+    _active = value;
+    _watch?.active = value;
+  }
 
   Object? _id;
   T? _value;
@@ -75,6 +80,20 @@ class ApiRecord<T extends BaseModel<T>> extends ChangeNotifier
   /// Keeps the previous [value] until the new one arrives (no null flash on reload).
   Future<bool> load(Object id, {dynamic fields}) async {
     _id = id;
+
+    final watch = _watch;
+
+    if (watch == null) {
+      _watch = watchResource(
+        api,
+        _onResourceChanged,
+        id: id,
+        refreshDelay: Duration.zero,
+      )..active = _active;
+    } else {
+      watch.id = id;
+    }
+
     _loaded = true;
     _deleted = false;
     if (fields != null) _configFields = fields;
@@ -102,14 +121,18 @@ class ApiRecord<T extends BaseModel<T>> extends ChangeNotifier
 
   Future<void> _onResourceChanged(ResourceChangedEvent event) async {
     if (!_loaded || _disposed || _id == null) return;
-    if (event.basePath != api.resolvedBasePath || event.id != _id) return;
-    if (event.type == ResourceChangeType.deleted) {
-      _deleted = true;
-      _value = null;
-      _safeNotify();
+    // An event naming no record may be about this one: a read tells.
+    if (event.type == ResourceChangeType.deleted && event.id != null) {
+      _markDeleted();
       return;
     }
     await _refresh();
+  }
+
+  void _markDeleted() {
+    _deleted = true;
+    _value = null;
+    _safeNotify();
   }
 
   // Silent re-fetch (no loader) — the bound record was mutated elsewhere.
@@ -123,6 +146,10 @@ class ApiRecord<T extends BaseModel<T>> extends ChangeNotifier
       resolveRead(fromCache: result.fromCache);
       await resolveModelFacts();
       _safeNotify();
+    } on HttpError catch (error) {
+      if (error.statusCode == 404 && !_disposed) {
+        _markDeleted();
+      }
     } catch (_) {
       // A silent refresh that fails leaves the availability alone: the record on
       // screen did not change.
@@ -152,7 +179,7 @@ class ApiRecord<T extends BaseModel<T>> extends ChangeNotifier
   @override
   void dispose() {
     _disposed = true;
-    _sub.cancel();
+    _watch?.cancel();
     disposeAvailability();
     super.dispose();
   }

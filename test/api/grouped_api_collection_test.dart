@@ -404,6 +404,54 @@ void main() {
         'None',
       ]);
     });
+
+    test('re-reads its buckets on a write the server announced', () async {
+      final collection = await grouped('status');
+      await collection.load();
+      final before = requests.length;
+
+      getService<Bus>().fire(
+        const ResourceChangedEvent(
+          null,
+          model: 'flow',
+          type: ResourceChangeType.updated,
+          id: 1,
+          announced: true,
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+
+      expect(requests.sublist(before).map(bucketOf), [
+        'status=3',
+        'status=7',
+        'status=empty',
+      ]);
+    });
+
+    test('reloads its axis when the model behind it changes, on the socket as on the bus', () async {
+      final collection = await grouped('status');
+      await collection.load();
+      statuses = [
+        {'id': 3, 'name': 'To do'},
+        {'id': 9, 'name': 'Done'},
+      ];
+
+      getService<Bus>().fire(
+        const ResourceChangedEvent(
+          null,
+          model: 'flow_status',
+          type: ResourceChangeType.created,
+          announced: true,
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+
+      expect(collection.entries.map((entry) => entry.group.label), [
+        'To do',
+        'Done',
+        'None',
+      ]);
+    });
   });
 
   group('notifications', () {

@@ -44,6 +44,7 @@ import 'offline/sync_engine.dart';
 import 'sync/sync_status.dart';
 import 'storage/storage_downloader.dart';
 import 'storage/storage_uploader.dart';
+import 'realtime/realtime_socket.dart';
 
 /// Initialize FastEdgy with default configuration
 ///
@@ -91,6 +92,10 @@ Future<void> initializeFastEdgy({
   bool enableUserAgent = true,
 
   String? storagePrefix,
+
+  // The live half of the API (opt-in): one socket following the session, the
+  // lifecycle and the scope the application names, feeding the resource events.
+  bool realtime = false,
 
   // Offline local store (opt-in): when enabled, server records (and the
   // images their declared fields reference) can be mirrored locally through
@@ -382,5 +387,13 @@ Future<void> initializeFastEdgy({
                 : null,
           ),
     );
+  }
+
+  if (realtime) {
+    if (!hasService<RealtimeSocket>()) {
+      container.registerSingleton<RealtimeSocket>(RealtimeSocket());
+    }
+
+    await getService<RealtimeSocket>().start();
   }
 }

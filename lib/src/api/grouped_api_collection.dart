@@ -8,8 +8,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 
-import '../bus/bus.dart';
-import '../container/container.dart';
+import '../realtime/resource_watch.dart';
 import 'api_collection.dart';
 import 'api_helpers.dart';
 import 'api_model.dart';
@@ -58,9 +57,14 @@ class GroupedApiCollection<T extends BaseModel<T>> extends ChangeNotifier
        // are built with, rather than re-read right after their first page.
        _orderBy = sort.isEmpty ? orderBy : sort.toOrderBy(),
        _sort = sort {
-    _sub = getService<Bus>().on<ResourceChangedEvent>().listen(
-      _onResourceChanged,
-    );
+    _rows = watchResource(api, _onRowsChanged, refreshDelay: Duration.zero);
+
+    final axis = source.watchApi;
+
+    if (axis != null) {
+      _axis = watchResource(axis, _onAxisChanged, refreshDelay: Duration.zero);
+    }
+
     listenAvailability();
   }
 
@@ -111,9 +115,19 @@ class GroupedApiCollection<T extends BaseModel<T>> extends ChangeNotifier
   bool _batchNotify = false;
   Timer? _refresh;
   Timer? _axisRefresh;
-  late final StreamSubscription<ResourceChangedEvent> _sub;
+  late final ResourceWatch _rows;
+  ResourceWatch? _axis;
 
   List<GroupedEntry<T>> get entries => _entries;
+
+  /// Whether its screen can be seen: off screen, what changes is owed as one
+  /// read when it is shown again.
+  bool get active => _rows.active;
+
+  set active(bool value) {
+    _rows.active = value;
+    _axis?.active = value;
+  }
 
   bool get isLoaded => _loaded;
 
@@ -358,41 +372,41 @@ class GroupedApiCollection<T extends BaseModel<T>> extends ChangeNotifier
     _scheduleNotify();
   }
 
-  Future<void> _onResourceChanged(ResourceChangedEvent event) async {
+  Future<void> _onRowsChanged(ResourceChangedEvent event) async {
     if (!_loaded || _disposed) {
       return;
     }
 
-    if (event.basePath == api.resolvedBasePath) {
-      if (event.type == ResourceChangeType.deleted) {
-        // Zero requests: the bucket holding the row drops it and adjusts its
-        // own total.
-        for (final entry in _entries) {
-          if (entry.collection.removeLocal(event.id)) {
-            break;
-          }
+    if (event.type == ResourceChangeType.deleted && event.id != null) {
+      // Zero requests: the bucket holding the row drops it and adjusts its own
+      // total.
+      for (final entry in _entries) {
+        if (entry.collection.removeLocal(event.id)) {
+          break;
         }
-
-        await _settle();
-
-        return;
       }
 
-      // What the holder depends on, never what it happens to read.
-      if (!event.touches(_watched)) {
-        return;
-      }
-
-      _refresh?.cancel();
-      _refresh = Timer(refreshDelay, _refreshEntries);
+      await _settle();
 
       return;
     }
 
-    if (source.watchPath != null && event.basePath == source.watchPath) {
-      _axisRefresh?.cancel();
-      _axisRefresh = Timer(refreshDelay, _reloadAxis);
+    // What the holder depends on, never what it happens to read.
+    if (!event.touches(_watched)) {
+      return;
     }
+
+    _refresh?.cancel();
+    _refresh = Timer(refreshDelay, _refreshEntries);
+  }
+
+  void _onAxisChanged(ResourceChangedEvent event) {
+    if (!_loaded || _disposed) {
+      return;
+    }
+
+    _axisRefresh?.cancel();
+    _axisRefresh = Timer(refreshDelay, _reloadAxis);
   }
 
   /// Re-reads every visible bucket, once, after a burst of writes settled.
@@ -502,7 +516,8 @@ class GroupedApiCollection<T extends BaseModel<T>> extends ChangeNotifier
     _disposed = true;
     _refresh?.cancel();
     _axisRefresh?.cancel();
-    _sub.cancel();
+    _rows.cancel();
+    _axis?.cancel();
     disposeAvailability();
 
     for (final entry in _entries) {

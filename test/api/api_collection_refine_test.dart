@@ -85,6 +85,7 @@ void main() {
     bool autoRefreshOnChange = true,
     Duration refreshDelay = const Duration(milliseconds: 10),
     Object? watchFields,
+    bool Function(ResourceChangedEvent event)? where,
   }) {
     final collection = ApiCollection<_Thing>(
       api,
@@ -94,6 +95,7 @@ void main() {
       autoRefreshOnChange: autoRefreshOnChange,
       refreshDelay: refreshDelay,
       watchFields: watchFields,
+      where: where,
     );
 
     // Torn down here rather than at the end of each test: a failing expectation
@@ -474,5 +476,108 @@ void main() {
 
       expect(requests.length, before + 1);
     });
+
+    test('a custom field it shows is read when extra moved', () async {
+      seed(2);
+      final collection = collectionOf(
+        fields: ['id', 'name', 'extra_priority'],
+        watchFields: true,
+        limit: 20,
+      );
+      await collection.load();
+      final before = requests.length;
+
+      getService<Bus>().fire(
+        const ResourceChangedEvent(
+          '/things',
+          type: ResourceChangeType.updated,
+          fields: {'extra', 'updated_at'},
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+
+      expect(requests.length, before + 1);
+    });
+
+    test(
+      'a delete naming no record is read, having no row to remove',
+      () async {
+        seed(2);
+        final collection = collectionOf(limit: 20);
+        await collection.load();
+        final before = requests.length;
+
+        getService<Bus>().fire(
+          const ResourceChangedEvent(
+            '/things',
+            type: ResourceChangeType.deleted,
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 40));
+
+        expect(requests.length, before + 1);
+      },
+    );
+
+    test('the loaded range is read again when the socket comes back', () async {
+      seed(2);
+      final collection = collectionOf(limit: 20);
+      await collection.load();
+      final before = requests.length;
+
+      getService<Bus>().fire(const ResourcesStaleEvent());
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+
+      expect(requests.length, before + 1);
+    });
+
+    test('what where refuses is left alone', () async {
+      seed(2);
+      final collection = collectionOf(
+        limit: 20,
+        where: (event) => event.mayBeAbout({'owner': 1}),
+      );
+      await collection.load();
+      final before = requests.length;
+
+      getService<Bus>().fire(
+        const ResourceChangedEvent(
+          '/things',
+          type: ResourceChangeType.created,
+          data: {'owner': 2},
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+
+      expect(requests.length, before);
+    });
+
+    test(
+      'off screen, a burst is owed as one read when it shows again',
+      () async {
+        seed(2);
+        final collection = collectionOf(limit: 20)..active = false;
+        await collection.load();
+        final before = requests.length;
+
+        for (var i = 0; i < 3; i++) {
+          getService<Bus>().fire(
+            const ResourceChangedEvent(
+              '/things',
+              type: ResourceChangeType.created,
+            ),
+          );
+        }
+
+        await Future<void>.delayed(const Duration(milliseconds: 40));
+
+        expect(requests.length, before);
+
+        collection.active = true;
+        await Future<void>.delayed(const Duration(milliseconds: 40));
+
+        expect(requests.length, before + 1);
+      },
+    );
   });
 }

@@ -6,6 +6,7 @@
 import '../bus/bus.dart';
 import '../container/container.dart';
 import '../fetcher/client.dart';
+import '../realtime/origin.dart';
 import 'api_model.dart';
 
 /// Base class for manual API services consuming a resource directly.
@@ -41,6 +42,6 @@ abstract class ApiResource {
   /// [ResourceChangedEvent] on the bus, like [ApiModel]).
   void notifyChanged([ResourceChangeType? type, Object? id]) =>
       getService<Bus>().fire(
-        ResourceChangedEvent(basePath, type: type, id: id),
+        ResourceChangedEvent(basePath, type: type, id: id, origin: originId),
       );
 }

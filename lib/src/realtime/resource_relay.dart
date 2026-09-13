@@ -53,10 +53,10 @@ class ResourceEventRelay {
       return;
     }
 
-    // Local mutations (relayed == false) go out; relayed ones are skipped to
-    // avoid an echo loop back onto the wire.
+    // Relayed events would loop back onto the wire, and announced ones reach
+    // every instance through its own socket already.
     _outSub = _bus.on<ResourceChangedEvent>().listen((event) {
-      if (_disposed || event.relayed) {
+      if (_disposed || event.relayed || event.announced) {
         return;
       }
       _transport.broadcast(event.toJson());

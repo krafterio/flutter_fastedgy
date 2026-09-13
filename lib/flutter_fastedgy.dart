@@ -62,8 +62,12 @@ export 'src/sync/sync_status.dart';
 // Offline
 export 'src/offline/offline.dart';
 
-// Realtime relay (cross-instance live sync)
+// Realtime
+export 'src/realtime/origin.dart';
+export 'src/realtime/realtime_events.dart';
+export 'src/realtime/realtime_socket.dart';
 export 'src/realtime/resource_relay.dart';
+export 'src/realtime/resource_watch.dart';
 
 // Image
 export 'src/image/image.dart';

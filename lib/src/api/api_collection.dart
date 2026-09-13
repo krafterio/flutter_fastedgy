@@ -3,8 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 
-import '../bus/bus.dart';
-import '../container/container.dart';
+import '../realtime/resource_watch.dart';
 import 'api_helpers.dart';
 import 'api_model.dart';
 import 'api_query.dart';
@@ -22,11 +21,17 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
     bool autoRefreshOnChange = true,
     this.refreshDelay = const Duration(milliseconds: 250),
     this._watchFields,
+    bool Function(ResourceChangedEvent event)? where,
   }) : _configFields = fields,
        _configOrderBy = orderBy {
     if (autoRefreshOnChange) {
-      _sub = getService<Bus>().on<ResourceChangedEvent>().listen(
+      // Its own collapse rather than the watch's: a delete removes its row at
+      // once instead of after the burst.
+      _watch = watchResource(
+        api,
         _onResourceChanged,
+        where: where,
+        refreshDelay: Duration.zero,
       );
     }
 
@@ -75,8 +80,14 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
   /// The same collapse [GroupedApiCollection] already runs on its buckets.
   final Duration refreshDelay;
 
-  StreamSubscription<ResourceChangedEvent>? _sub;
+  ResourceWatch? _watch;
   Timer? _refresh;
+
+  /// Whether its screen can be seen: off screen, what changes is owed as one
+  /// read when it is shown again.
+  bool get active => _watch?.active ?? true;
+
+  set active(bool value) => _watch?.active = value;
 
   List<T> _items = [];
   bool _isLoading = false;
@@ -289,8 +300,9 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
   Future<void> refreshQuietly() => _refreshLoadedRange();
 
   Future<void> _onResourceChanged(ResourceChangedEvent event) async {
-    if (!_loaded || _disposed || event.basePath != api.resolvedBasePath) return;
-    if (event.type == ResourceChangeType.deleted) {
+    if (!_loaded || _disposed) return;
+    // A delete naming no record, a truncated one, has no row to remove.
+    if (event.type == ResourceChangeType.deleted && event.id != null) {
       removeLocal(event.id);
       return;
     }
@@ -467,7 +479,7 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
   @override
   void dispose() {
     _disposed = true;
-    _sub?.cancel();
+    _watch?.cancel();
     _refresh?.cancel();
     disposeAvailability();
     super.dispose();

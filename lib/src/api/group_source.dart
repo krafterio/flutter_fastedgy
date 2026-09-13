@@ -51,7 +51,7 @@ class ListGroup {
 /// and a pagination of its own.
 ///
 /// A source is a plain object, not a listenable: it is read when the caller
-/// loads it or turns its page. [watchPath] is what a caller watches to know the
+/// loads it or turns its page. [watchApi] is what a caller watches to know the
 /// axis itself went stale.
 abstract class GroupSource {
   /// Buckets of the current page, in the order the header shows them.
@@ -86,9 +86,9 @@ abstract class GroupSource {
   /// retry rather than a connection notice.
   Object? get error;
 
-  /// Resource path whose changes invalidate the axis, null for an axis that
-  /// needs no request. A caller watching the bus reloads on it.
-  String? get watchPath;
+  /// The model whose changes invalidate the axis, null for an axis that needs
+  /// no request. A grouped list watches it, on the bus and on the socket.
+  ApiModel<dynamic>? get watchApi;
 
   bool get hasNextPage => page < totalPages;
 
@@ -189,7 +189,7 @@ class ChoiceGroupSource extends GroupSource {
   Object? get error => null;
 
   @override
-  String? get watchPath => null;
+  ApiModel<dynamic>? get watchApi => null;
 
   @override
   Future<bool> load() async => true;
@@ -290,7 +290,7 @@ class RelationGroupSource extends GroupSource {
   Object? get error => _collection.error;
 
   @override
-  String? get watchPath => _target.resolvedBasePath;
+  ApiModel<dynamic>? get watchApi => _target;
 
   @override
   Future<bool> load() => _collection.load(
