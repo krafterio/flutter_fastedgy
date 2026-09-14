@@ -1,6 +1,6 @@
 name: flutter_fastedgy
 description: Flutter package to facilitate integration between a FastEdgy server and a Flutter application. Inspired by vue-fastedgy.
-version: 0.1.0
+version: 1.2.2
 repository: https://github.com/krafterio/flutter-fastedgy
 issue_tracker: https://github.com/krafterio/flutter-fastedgy/issues
 homepage: https://fastedgy.krafter.io
