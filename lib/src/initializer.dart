@@ -17,6 +17,7 @@ import 'auth/default_auth_provider.dart';
 import 'auth/token_storage.dart';
 import 'fetcher/client.dart';
 import 'fetcher/interceptors/user_agent_interceptor.dart';
+import 'fetcher/timezone_provider.dart';
 import 'bus/bus.dart';
 import 'metadata/metadata_provider.dart';
 import 'metadata/default_metadata_provider.dart';
@@ -179,6 +180,13 @@ Future<void> initializeFastEdgy({
   } else if (hasService<UserAgentInterceptor>()) {
     userAgentInterceptor = getService<UserAgentInterceptor>();
   }
+
+  // TimezoneProvider (read before the Fetcher, so its first request already
+  // carries the device timezone)
+  if (!hasService<TimezoneProvider>()) {
+    container.registerSingleton<TimezoneProvider>(TimezoneProvider());
+  }
+  await getService<TimezoneProvider>().initialize();
 
   // Fetcher (can now use AuthProvider for refresh token interceptor)
   if (!hasService<Fetcher>()) {

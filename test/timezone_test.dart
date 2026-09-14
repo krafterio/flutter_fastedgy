@@ -3,117 +3,90 @@
  * MIT License (see LICENSE file).
  */
 
-import 'package:flutter_test/flutter_test.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_fastedgy/flutter_fastedgy.dart';
+import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   // Initialize dotenv for tests (required by Fetcher.create)
   setUpAll(() async {
-    // Create a test .env file content in memory
     dotenv.loadFromString(envString: 'API_BASE_URL=http://localhost:8000');
   });
 
   group('TimezoneProvider', () {
-    test('returns UTC before initialization', () {
-      final provider = TimezoneProvider();
-      expect(provider.getTimezone(), equals('UTC'));
+    test('knows no timezone before initialization', () {
+      expect(TimezoneProvider().getTimezone(), isNull);
     });
 
-    test('initializes and caches timezone', () async {
-      final provider = TimezoneProvider();
+    test('initializes from the device timezone', () async {
+      final provider = _SequenceTimezoneProvider(['Europe/Paris']);
       await provider.initialize();
 
-      final timezone = provider.getTimezone();
-      expect(timezone, isNotEmpty);
-      expect(timezone, isA<String>());
-
-      // Should return same value on subsequent calls (cached)
-      final timezone2 = provider.getTimezone();
-      expect(timezone2, equals(timezone));
+      expect(provider.getTimezone(), equals('Europe/Paris'));
     });
 
-    test('clearCache resets timezone to UTC', () async {
-      final provider = TimezoneProvider();
+    test('keeps the last known timezone when it cannot be read', () async {
+      final provider = _SequenceTimezoneProvider(['Europe/Paris', null]);
+      await provider.initialize();
+      await provider.refresh();
+
+      expect(provider.getTimezone(), equals('Europe/Paris'));
+    });
+
+    test('reads the timezone again when the application resumes', () async {
+      final provider = _SequenceTimezoneProvider([
+        'Europe/Paris',
+        'America/Guadeloupe',
+      ]);
       await provider.initialize();
 
-      final timezone = provider.getTimezone();
-      expect(timezone, isNotEmpty);
+      provider.didChangeAppLifecycleState(AppLifecycleState.resumed);
+      await pumpEventQueue();
+
+      expect(provider.getTimezone(), equals('America/Guadeloupe'));
+    });
+
+    test('clearCache forgets the timezone', () async {
+      final provider = _SequenceTimezoneProvider(['Europe/Paris']);
+      await provider.initialize();
 
       provider.clearCache();
-      expect(provider.getTimezone(), equals('UTC'));
-    });
 
-    test('can re-initialize after clearing cache', () async {
-      final provider = TimezoneProvider();
-      await provider.initialize();
-
-      final timezone1 = provider.getTimezone();
-      expect(timezone1, isNotEmpty);
-
-      provider.clearCache();
-      expect(provider.getTimezone(), equals('UTC'));
-
-      await provider.initialize();
-      final timezone2 = provider.getTimezone();
-      expect(timezone2, equals(timezone1));
-    });
-
-    test('initialize is idempotent', () async {
-      final provider = TimezoneProvider();
-
-      await provider.initialize();
-      final timezone1 = provider.getTimezone();
-
-      // Second initialization should not change the value
-      await provider.initialize();
-      final timezone2 = provider.getTimezone();
-
-      expect(timezone2, equals(timezone1));
+      expect(provider.getTimezone(), isNull);
     });
   });
 
   group('TimezoneInterceptor', () {
-    late TimezoneProvider provider;
-    late TimezoneInterceptor interceptor;
-
-    setUp(() async {
-      provider = TimezoneProvider();
-      await provider.initialize();
-      interceptor = TimezoneInterceptor(provider);
-    });
-
     test('adds X-Timezone header to request', () async {
-      final options = RequestOptions(path: '/test');
+      final provider = _SequenceTimezoneProvider(['America/Guadeloupe']);
+      await provider.initialize();
       final handler = _MockRequestInterceptorHandler();
 
-      await interceptor.onRequest(options, handler);
+      await TimezoneInterceptor(provider)
+          .onRequest(RequestOptions(path: '/test'), handler);
 
-      expect(handler.options!.headers['X-Timezone'], isNotEmpty);
       expect(
         handler.options!.headers['X-Timezone'],
-        equals(provider.getTimezone()),
+        equals('America/Guadeloupe'),
       );
     });
 
-    test('uses UTC when provider not initialized', () async {
-      final uninitializedProvider = TimezoneProvider();
-      final uninitializedInterceptor = TimezoneInterceptor(
-        uninitializedProvider,
-      );
-
-      final options = RequestOptions(path: '/test');
+    test('sends no header while the timezone is unknown', () async {
       final handler = _MockRequestInterceptorHandler();
 
-      await uninitializedInterceptor.onRequest(options, handler);
+      await TimezoneInterceptor(TimezoneProvider())
+          .onRequest(RequestOptions(path: '/test'), handler);
 
-      expect(handler.options!.headers['X-Timezone'], equals('UTC'));
+      expect(handler.options!.headers.containsKey('X-Timezone'), isFalse);
     });
 
     test('preserves existing headers', () async {
+      final provider = _SequenceTimezoneProvider(['Europe/Paris']);
+      await provider.initialize();
       final options = RequestOptions(
         path: '/test',
         headers: {
@@ -123,14 +96,14 @@ void main() {
       );
       final handler = _MockRequestInterceptorHandler();
 
-      await interceptor.onRequest(options, handler);
+      await TimezoneInterceptor(provider).onRequest(options, handler);
 
       expect(
         handler.options!.headers['Authorization'],
         equals('Bearer token123'),
       );
       expect(handler.options!.headers['Custom-Header'], equals('custom-value'));
-      expect(handler.options!.headers['X-Timezone'], isNotEmpty);
+      expect(handler.options!.headers['X-Timezone'], equals('Europe/Paris'));
     });
   });
 
@@ -238,6 +211,22 @@ void main() {
       );
     });
   });
+}
+
+/// Provider reading its timezones from a list, the last one repeating.
+class _SequenceTimezoneProvider extends TimezoneProvider {
+  _SequenceTimezoneProvider(this._timezones);
+
+  final List<String?> _timezones;
+  int _reads = 0;
+
+  @override
+  Future<String?> detect() async {
+    final index = _reads < _timezones.length ? _reads : _timezones.length - 1;
+    _reads++;
+
+    return _timezones[index];
+  }
 }
 
 /// Mock handler for testing interceptors

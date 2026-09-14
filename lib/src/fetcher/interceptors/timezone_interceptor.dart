@@ -36,11 +36,11 @@ class TimezoneInterceptor extends Interceptor {
     RequestOptions options,
     RequestInterceptorHandler handler,
   ) async {
-    // Get the device timezone
     final timezone = _timezoneProvider.getTimezone();
 
-    // Add X-Timezone header
-    options.headers['X-Timezone'] = timezone;
+    if (timezone != null) {
+      options.headers['X-Timezone'] = timezone;
+    }
 
     handler.next(options);
   }
