@@ -229,6 +229,37 @@ void main() {
     },
   );
 
+  testWidgets('gives every cell of a row the height of its tallest', (
+    tester,
+  ) async {
+    final table = TableNode.fromList([
+      ['Ticket', '1602'],
+      [
+        'Content',
+        'A cell long enough to wrap over several lines within the default '
+            'width of its column, and a good deal more than that.',
+      ],
+    ]);
+
+    await pump(
+      tester,
+      RichTextViewer(
+        editorState: stateOf([table.node]),
+        features: defaultRichTextFeatures,
+      ),
+    );
+    await tester.pump();
+
+    final heights = [
+      for (var col = 0; col < table.colsLen; col++)
+        table.getCell(col, 1).attributes[TableCellBlockKeys.height],
+    ];
+
+    expect(heights.first, isA<double>());
+    expect(heights.first, greaterThan(table.config.rowDefaultHeight));
+    expect(heights.toSet(), hasLength(1));
+  });
+
   testWidgets('takes the height of what it holds', (tester) async {
     await pump(
       tester,

@@ -104,9 +104,32 @@ class _AlignedTable extends BlockComponentStatelessWidget {
       child: table,
     );
 
+    if (!context.read<EditorState>().editable) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (context.mounted) _fitRows();
+      });
+    }
+
     return hasHoverPointer
         ? aligned
         : _TouchHandles(table: node, child: aligned);
+  }
+
+  /// Every cell of a row at the height of its tallest one, when read.
+  ///
+  /// The package measures the rows after each frame but hands the cell heights
+  /// to a transaction, and a read-only state drops every transaction: only the
+  /// table's total height was kept, so each column stood that tall with its
+  /// cells at the default height, centred in it. Written straight on the nodes
+  /// here, as the package already does for that total.
+  // ponytail: runs when the table block rebuilds, not when a cell's text alone
+  // changes under a live viewer; listen to the cells if a diff ever needs it.
+  void _fitRows() {
+    final table = TableNode(node: node);
+
+    for (var row = 0; row < table.rowsLen; row++) {
+      table.updateRowHeight(row);
+    }
   }
 }
 
