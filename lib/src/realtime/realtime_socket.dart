@@ -150,8 +150,8 @@ class RealtimeSocket with WidgetsBindingObserver {
     }
   }
 
-  /// Reads [scope] from now on, a workspace slug or null. The socket knows
-  /// nothing of what a scope is: whoever knows the tenant says so.
+  /// Reads [scope] from now on, a slug or null. The socket knows nothing of
+  /// what a scope is: whoever knows it says so.
   void watch(String? scope) {
     if (scope == _scope) {
       return;

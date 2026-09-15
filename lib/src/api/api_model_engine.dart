@@ -41,7 +41,7 @@ class ResourceChangedEvent {
   /// The client instance behind the write, when known.
   final String? origin;
 
-  /// The server left [data] behind.
+  /// The server left the declared columns behind: [data] names the record alone.
   final bool truncated;
 
   /// Fired by the realtime socket from an announcement, rather than by this

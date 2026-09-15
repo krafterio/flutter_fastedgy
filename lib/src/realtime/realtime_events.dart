@@ -9,7 +9,7 @@ import '../bus/events.dart';
 ///
 /// Fired by the realtime socket on a handshake that follows an earlier one, and
 /// by an application whose screens outlive a change of what they show, a
-/// workspace switch for one.
+/// scope switch for one.
 class ResourcesStaleEvent extends Event {
   const ResourcesStaleEvent();
 }
