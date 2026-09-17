@@ -4,6 +4,7 @@
  */
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 import '../../app_info/user_agent.dart';
 
@@ -18,7 +19,10 @@ class UserAgentInterceptor extends Interceptor {
 
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
-    options.headers['User-Agent'] = userAgent.value;
+    // A browser sets the User-Agent itself and refuses the header.
+    if (!kIsWeb) {
+      options.headers['User-Agent'] = userAgent.value;
+    }
     handler.next(options);
   }
 }

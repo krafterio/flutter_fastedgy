@@ -5,6 +5,8 @@
 
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
+
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
@@ -51,6 +53,9 @@ class AppInfo {
 
   static Future<String> _osVersion() async {
     final deviceInfo = DeviceInfoPlugin();
+    if (kIsWeb) {
+      return (await deviceInfo.webBrowserInfo).appVersion ?? '';
+    }
     if (Platform.isIOS) {
       return (await deviceInfo.iosInfo).systemVersion;
     }

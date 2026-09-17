@@ -5,6 +5,8 @@
 
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
+
 import 'models.dart';
 
 /// The application User-Agent, built once from [AppInfo] + platform info.
@@ -27,7 +29,7 @@ class UserAgent {
 
   /// Build from [AppInfo] and the current platform (OS + cleaned OS version).
   factory UserAgent.fromAppInfo(AppInfo appInfo) {
-    final os = Platform.operatingSystem;
+    final os = kIsWeb ? 'web' : Platform.operatingSystem;
     final storeSuffix =
         (appInfo.installerStore != null && appInfo.installerStore!.isNotEmpty)
         ? '; ${appInfo.installerStore}'
