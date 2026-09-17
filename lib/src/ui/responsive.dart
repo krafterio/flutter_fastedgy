@@ -3,6 +3,8 @@
  * MIT License (see LICENSE file).
  */
 
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/widgets.dart';
 
 import 'theme/breakpoints.dart';
@@ -59,7 +61,34 @@ class ResponsiveBuilder extends StatelessWidget {
   Widget build(BuildContext context) => builder(context, context.breakpoint);
 }
 
-extension BreakpointContext on BuildContext {
+enum DeviceType {
+  mobile,
+  desktop,
+  web;
+
+  static DeviceType get current {
+    if (kIsWeb) {
+      return web;
+    }
+
+    return switch (defaultTargetPlatform) {
+      TargetPlatform.macOS ||
+      TargetPlatform.windows ||
+      TargetPlatform.linux => desktop,
+      TargetPlatform.android ||
+      TargetPlatform.iOS ||
+      TargetPlatform.fuchsia => mobile,
+    };
+  }
+}
+
+bool get isMobile => DeviceType.current == DeviceType.mobile;
+
+bool get isDesktop => DeviceType.current == DeviceType.desktop;
+
+bool get isWeb => DeviceType.current == DeviceType.web;
+
+extension ResponsiveContext on BuildContext {
   Breakpoint get breakpoint => BreakpointScope.of(this);
 
   Breakpoints get breakpoints => FastEdgyTheme.of(this).breakpoints;

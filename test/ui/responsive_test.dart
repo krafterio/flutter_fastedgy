@@ -184,4 +184,20 @@ void main() {
       expect(seen.last, isA<BreakpointXL>());
     });
   });
+
+  group('DeviceType', () {
+    testWidgets('a desktop platform is a desktop', (tester) async {
+      expect(DeviceType.current, DeviceType.desktop);
+      expect(isDesktop, isTrue);
+      expect(isMobile, isFalse);
+      expect(isWeb, isFalse);
+    }, variant: TargetPlatformVariant.desktop());
+
+    testWidgets('a mobile platform is a mobile', (tester) async {
+      expect(DeviceType.current, DeviceType.mobile);
+      expect(isMobile, isTrue);
+      expect(isDesktop, isFalse);
+      expect(isWeb, isFalse);
+    }, variant: TargetPlatformVariant.mobile());
+  });
 }
