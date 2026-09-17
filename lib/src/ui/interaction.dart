@@ -4,7 +4,10 @@
  */
 
 import 'package:flutter/foundation.dart'
-    show TargetPlatform, defaultTargetPlatform;
+    show TargetPlatform, ValueNotifier, defaultTargetPlatform;
+import 'package:flutter/gestures.dart'
+    show GestureBinding, PointerDeviceKind, PointerEvent;
+import 'package:flutter/widgets.dart';
 
 /// Whether what aims at this screen can hover.
 ///
@@ -21,3 +24,62 @@ bool get hasHoverPointer => switch (defaultTargetPlatform) {
   TargetPlatform.linux => true,
   _ => false,
 };
+
+class HoverPointerScope extends StatefulWidget {
+  final Widget child;
+
+  const HoverPointerScope({required this.child, super.key});
+
+  static bool of(BuildContext context) {
+    return context
+            .dependOnInheritedWidgetOfExactType<_HoverPointer>()
+            ?.notifier
+            ?.value ??
+        hasHoverPointer;
+  }
+
+  @override
+  State<HoverPointerScope> createState() => _HoverPointerScopeState();
+}
+
+class _HoverPointerScopeState extends State<HoverPointerScope> {
+  final _canHover = ValueNotifier(
+    hasHoverPointer || WidgetsBinding.instance.mouseTracker.mouseIsConnected,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    GestureBinding.instance.pointerRouter.addGlobalRoute(_onPointer);
+  }
+
+  @override
+  void dispose() {
+    GestureBinding.instance.pointerRouter.removeGlobalRoute(_onPointer);
+    _canHover.dispose();
+    super.dispose();
+  }
+
+  void _onPointer(PointerEvent event) {
+    _canHover.value = switch (event.kind) {
+      PointerDeviceKind.mouse || PointerDeviceKind.trackpad => true,
+      PointerDeviceKind.touch ||
+      PointerDeviceKind.stylus ||
+      PointerDeviceKind.invertedStylus => false,
+      PointerDeviceKind.unknown => _canHover.value,
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _HoverPointer(notifier: _canHover, child: widget.child);
+  }
+}
+
+class _HoverPointer extends InheritedNotifier<ValueNotifier<bool>> {
+  const _HoverPointer({required super.notifier, required super.child});
+}
+
+extension HoverPointerContext on BuildContext {
+  bool get canHover => HoverPointerScope.of(this);
+}
