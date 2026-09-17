@@ -7,6 +7,7 @@ import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/widgets.dart';
 
+import 'breakpoints.dart';
 import 'color_scheme.dart';
 import 'component_theme.dart';
 import 'scaling.dart';
@@ -32,6 +33,7 @@ class FastEdgyThemeData {
 
   final AdaptiveScaling scaling;
   final Density density;
+  final Breakpoints breakpoints;
 
   /// What each package that draws something is drawn with, keyed by its type.
   ///
@@ -49,6 +51,7 @@ class FastEdgyThemeData {
     this.spacing = 4.0,
     this.scaling = AdaptiveScaling.desktop,
     this.density = Density.standard,
+    this.breakpoints = const Breakpoints(),
     this.components = const {},
   });
 
@@ -67,6 +70,7 @@ class FastEdgyThemeData {
     double? spacing,
     AdaptiveScaling? scaling,
     Density? density,
+    Breakpoints? breakpoints,
     Map<Type, ComponentThemeData>? components,
   }) {
     return FastEdgyThemeData(
@@ -76,6 +80,7 @@ class FastEdgyThemeData {
       spacing: spacing ?? this.spacing,
       scaling: scaling ?? this.scaling,
       density: density ?? this.density,
+      breakpoints: breakpoints ?? this.breakpoints,
       components: components ?? this.components,
     );
   }
@@ -93,6 +98,7 @@ class FastEdgyThemeData {
       scaling: AdaptiveScaling.lerp(a.scaling, b.scaling, t),
       // Discrete: an interpolated density would be a fourth value nobody named.
       density: t < 0.5 ? a.density : b.density,
+      breakpoints: t < 0.5 ? a.breakpoints : b.breakpoints,
       // Discrete too: a package theme knows how to interpolate itself or does
       // not, and the engine cannot know which.
       components: t < 0.5 ? a.components : b.components,
@@ -112,6 +118,7 @@ class FastEdgyThemeData {
         other.spacing == spacing &&
         other.scaling == scaling &&
         other.density == density &&
+        other.breakpoints == breakpoints &&
         other.components.length == components.length &&
         other.components.entries.every((e) => components[e.key] == e.value);
   }
@@ -124,6 +131,7 @@ class FastEdgyThemeData {
     spacing,
     scaling,
     density,
+    breakpoints,
     components.length,
   );
 }
