@@ -11,6 +11,9 @@ import 'package:dio/dio.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as path;
 
+import '../api/api_model_engine.dart';
+import '../bus/bus.dart';
+import '../container/container.dart';
 import '../fetcher/client.dart';
 import '../fetcher/http_error.dart';
 import '../logging/logger.dart';
@@ -85,6 +88,24 @@ class StorageUploader {
     final apiName = (await metadatas?.getMetadata(model))?.apiName;
 
     return '/${apiName ?? model}';
+  }
+
+  /// Tells the holders of [model] that the file field [field] of [modelId]
+  /// moved: the storage route writes the record itself, so no api write
+  /// announces it.
+  Future<void> _announce(String model, int modelId, String field) async {
+    if (!hasService<Bus>()) {
+      return;
+    }
+
+    getService<Bus>().fire(
+      ResourceChangedEvent(
+        await _resourcePath(model),
+        type: ResourceChangeType.updated,
+        id: modelId,
+        fields: {field},
+      ),
+    );
   }
 
   /// Whether a failed upload can be buffered for a later replay.
@@ -166,6 +187,7 @@ class StorageUploader {
 
       final result = StorageUploadResult(response.data);
       _logger.fine('Upload successful: ${result.path}');
+      await _announce(model, modelId, field);
 
       return result;
     } on Object catch (error) {
@@ -224,6 +246,7 @@ class StorageUploader {
     await _fetcher.delete(url);
 
     _logger.fine('File deleted successfully');
+    await _announce(model, modelId, field);
   }
 
   /// Check if file is an image based on extension

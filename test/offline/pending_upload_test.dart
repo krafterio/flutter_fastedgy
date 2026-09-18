@@ -667,6 +667,65 @@ void main() {
     });
   });
 
+  group('model field writes', () {
+    late List<ResourceChangedEvent> announced;
+
+    setUp(() {
+      announced = [];
+      getService<Bus>().on<ResourceChangedEvent>().listen(announced.add);
+    });
+
+    test('an upload announces the field it wrote on the record', () async {
+      adapter.handler = (_) => {'path': 'user/real.png'};
+      final file = File('${tempDir.path}/avatar.png')
+        ..writeAsBytesSync([1, 2, 3]);
+
+      await uploader.uploadModelField(
+        model: 'user',
+        modelId: 7,
+        field: 'avatar',
+        file: file,
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(announced, hasLength(1));
+      expect(announced.single.basePath, '/user');
+      expect(announced.single.type, ResourceChangeType.updated);
+      expect(announced.single.id, 7);
+      expect(announced.single.fields, {'avatar'});
+    });
+
+    test('a buffered upload announces nothing before its replay', () async {
+      adapter.offline = true;
+      final file = File('${tempDir.path}/avatar.png')
+        ..writeAsBytesSync([1, 2, 3]);
+
+      await uploader.uploadModelField(
+        model: 'user',
+        modelId: 7,
+        field: 'avatar',
+        file: file,
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(announced, isEmpty);
+    });
+
+    test('deleting a field announces it', () async {
+      adapter.handler = (_) => <String, dynamic>{};
+
+      await uploader.deleteModelField(
+        model: 'user',
+        modelId: 7,
+        field: 'avatar',
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(announced.single.id, 7);
+      expect(announced.single.fields, {'avatar'});
+    });
+  });
+
   group('buffered model field upload', () {
     test('buffers and replays a model field upload', () async {
       adapter.offline = true;
