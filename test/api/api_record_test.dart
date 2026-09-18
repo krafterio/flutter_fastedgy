@@ -63,6 +63,42 @@ void main() {
 
   void fire(ResourceChangedEvent event) => getService<Bus>().fire(event);
 
+  test(
+    'shows its seed without a loader, then reads it again silently',
+    () async {
+      final record = ApiRecord<_Thing>(api);
+      final loading = <bool>[];
+
+      addTearDown(record.dispose);
+      record.addListener(() => loading.add(record.isLoading));
+
+      final load = record.load(7, seed: _Thing({'id': 7, 'name': 'Seed'}));
+
+      expect(record.value?.data['name'], 'Seed');
+      expect(record.isLoading, isFalse);
+
+      await load;
+
+      expect(requests.length, 1);
+      expect(record.value?.data['name'], 'Krafter');
+      expect(loading, everyElement(isFalse));
+    },
+  );
+
+  test('keeps its seed without reading when told not to read again', () async {
+    final record = ApiRecord<_Thing>(api);
+
+    addTearDown(record.dispose);
+    await record.load(
+      7,
+      seed: _Thing({'id': 7, 'name': 'Seed'}),
+      reread: false,
+    );
+
+    expect(requests, isEmpty);
+    expect(record.value?.data['name'], 'Seed');
+  });
+
   test('re-reads on an event that names no record', () async {
     final record = await loaded();
     final before = requests.length;

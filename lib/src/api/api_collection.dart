@@ -5,6 +5,7 @@ import 'package:flutter/scheduler.dart';
 
 import '../realtime/resource_watch.dart';
 import 'api_helpers.dart';
+import 'api_holders.dart';
 import 'api_model.dart';
 import 'api_query.dart';
 import 'base_model.dart';
@@ -12,7 +13,8 @@ import 'data_availability.dart';
 import 'list_sort.dart';
 
 class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
-    with DataAvailabilityState<T> {
+    with DataAvailabilityState<T>
+    implements ApiHolder {
   ApiCollection(
     this.api, {
     dynamic fields,
@@ -99,6 +101,7 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
   /// Whether the collection already holds loaded data. A screen can read this
   /// before [load] to decide whether to play its entry animation (skip it when
   /// the collection — kept alive by a durable holder — is already populated).
+  @override
   bool get isLoaded => _loaded;
 
   /// Last known scroll offset of the list bound to this collection. The screen
@@ -134,8 +137,10 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
           availability == DataAvailability.cached);
 
   List<T> get items => _items;
+  @override
   bool get isLoading => _isLoading;
   bool get isLoadingMore => _isLoadingMore;
+  @override
   Object? get error => _error;
   int get page => _page;
   int get total => _total;
@@ -164,12 +169,49 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
     return null;
   }
 
-  Future<bool> load({ListQuery? query}) {
+  /// Reads the first page of [query].
+  ///
+  /// A [seed] is the rows the caller already holds, [seedTotal] their total
+  /// when it is more than the rows: they are shown at once, without a loader,
+  /// then the range they cover is read again silently unless [reread] is false.
+  Future<bool> load({
+    ListQuery? query,
+    List<T>? seed,
+    int? seedTotal,
+    bool reread = true,
+  }) async {
     _query = query;
     _sort = ListSort.empty;
     _loaded = true;
     final size = query?.size ?? query?.limit;
     if (size != null) _limit = size;
+
+    if (seed != null) {
+      final pageSize = _limit;
+
+      _generation++;
+      _items = seed;
+      _total = seedTotal ?? seed.length;
+      _page = pageSize != null && pageSize > 0 && seed.length > pageSize
+          ? (seed.length / pageSize).ceil()
+          : 1;
+      _totalPages = pageSize != null && pageSize > 0
+          ? (_total / pageSize).ceil()
+          : (_total > 0 ? 1 : 0);
+      _isLoading = false;
+      _error = null;
+      resolveRead(fromCache: false);
+      _safeNotify();
+
+      if (reread) {
+        await _refreshLoadedRange();
+      } else {
+        await resolveModelFacts();
+      }
+
+      return true;
+    }
+
     return _fetch(1, append: false);
   }
 
@@ -262,6 +304,7 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
     return _fetch(page ?? 1, append: false, through: (page ?? 1) > 1);
   }
 
+  @override
   Future<bool> reload() => _fetch(1, append: false);
 
   /// Applies a new item order in place (optimistic reorder) — no fetch, no

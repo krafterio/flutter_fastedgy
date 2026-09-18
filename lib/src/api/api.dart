@@ -5,6 +5,7 @@
 
 export 'api_collection.dart';
 export 'api_record.dart';
+export 'api_holders.dart';
 export 'list_sort.dart';
 export 'group_source.dart';
 export 'grouped_api_collection.dart';

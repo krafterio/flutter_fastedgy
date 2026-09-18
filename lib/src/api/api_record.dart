@@ -3,6 +3,7 @@ import 'package:flutter/scheduler.dart';
 
 import '../fetcher/http_error.dart';
 import '../realtime/resource_watch.dart';
+import 'api_holders.dart';
 import 'api_model.dart';
 import 'api_query.dart';
 import 'base_model.dart';
@@ -22,7 +23,8 @@ import 'data_availability.dart';
 /// listens to it (re-sync its UI on change, close when [isDeleted]) and
 /// [dispose]s it. Same wiring as [ApiCollection], minus the pagination.
 class ApiRecord<T extends BaseModel<T>> extends ChangeNotifier
-    with DataAvailabilityState<T> {
+    with DataAvailabilityState<T>
+    implements ApiHolder {
   ApiRecord(this.api, {dynamic fields}) : _configFields = fields {
     listenAvailability();
   }
@@ -63,14 +65,17 @@ class ApiRecord<T extends BaseModel<T>> extends ChangeNotifier
   /// The id currently bound, set by [load].
   Object? get id => _id;
 
+  @override
   bool get isLoading => _isLoading;
 
   /// Whether [load] has run at least once (the holder holds — or held — a record).
+  @override
   bool get isLoaded => _loaded;
 
   /// True once the bound record was deleted elsewhere — the screen should close.
   bool get isDeleted => _deleted;
 
+  @override
   Object? get error => _error;
 
   FieldsOptions? get _options =>
@@ -78,7 +83,16 @@ class ApiRecord<T extends BaseModel<T>> extends ChangeNotifier
 
   /// Fetch [id] (loader shown). [fields] overrides the constructor field selection.
   /// Keeps the previous [value] until the new one arrives (no null flash on reload).
-  Future<bool> load(Object id, {dynamic fields}) async {
+  ///
+  /// A [seed] is the record the caller already holds (the row a list opened):
+  /// it is shown at once, without a loader, then read again silently unless
+  /// [reread] is false.
+  Future<bool> load(
+    Object id, {
+    dynamic fields,
+    T? seed,
+    bool reread = true,
+  }) async {
     _id = id;
 
     final watch = _watch;
@@ -97,6 +111,23 @@ class ApiRecord<T extends BaseModel<T>> extends ChangeNotifier
     _loaded = true;
     _deleted = false;
     if (fields != null) _configFields = fields;
+
+    if (seed != null) {
+      _value = seed;
+      _isLoading = false;
+      _error = null;
+      resolveRead(fromCache: false);
+      _safeNotify();
+
+      if (reread) {
+        await _refresh();
+      } else {
+        await resolveModelFacts();
+      }
+
+      return true;
+    }
+
     _isLoading = true;
     _error = null;
     beginRead();
@@ -117,6 +148,7 @@ class ApiRecord<T extends BaseModel<T>> extends ChangeNotifier
     }
   }
 
+  @override
   Future<bool> reload() => _id != null ? load(_id!) : Future.value(false);
 
   Future<void> _onResourceChanged(ResourceChangedEvent event) async {

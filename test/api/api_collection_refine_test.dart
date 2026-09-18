@@ -119,6 +119,88 @@ void main() {
     total = serverTotal ?? count;
   }
 
+  group('seed', () {
+    test(
+      'shows its rows without a loader, then reads their range again silently',
+      () async {
+        seed(30, serverTotal: 60);
+        final collection = collectionOf(limit: 20);
+        final loading = <bool>[];
+
+        collection.addListener(() => loading.add(collection.isLoading));
+
+        final load = collection.load(
+          seed: [
+            for (var i = 1; i <= 25; i++) _Thing({'id': i}),
+          ],
+          seedTotal: 60,
+        );
+
+        expect(collection.items.length, 25);
+        expect(collection.total, 60);
+        expect(collection.page, 2);
+        expect(collection.isLoading, isFalse);
+
+        await load;
+
+        expect(requests.length, 1);
+        expect('${requests.single.queryParameters['limit']}', '40');
+        expect(collection.items.length, 30);
+        expect(loading, everyElement(isFalse));
+      },
+    );
+
+    test(
+      'keeps its rows without reading when told not to read again',
+      () async {
+        final collection = collectionOf();
+
+        await collection.load(
+          seed: [
+            _Thing({'id': 1}),
+          ],
+          reread: false,
+        );
+
+        expect(requests, isEmpty);
+        expect(collection.items.length, 1);
+        expect(collection.total, 1);
+      },
+    );
+  });
+
+  group('holders', () {
+    test('are loading while any of them is, and tell each change', () async {
+      seed(2);
+      final first = collectionOf();
+      final second = collectionOf();
+      final holders = ApiHolders([first, second]);
+      var notified = 0;
+
+      addTearDown(holders.dispose);
+      holders.addListener(() => notified++);
+
+      expect(holders.isLoaded, isFalse);
+
+      final gates = gate(2);
+      final reads = [first.load(), second.load()];
+
+      expect(holders.isLoading, isTrue);
+
+      gates[0].complete();
+      await reads[0];
+
+      expect(holders.isLoading, isTrue);
+
+      gates[1].complete();
+      await reads[1];
+
+      expect(holders.isLoading, isFalse);
+      expect(holders.isLoaded, isTrue);
+      expect(notified, greaterThan(0));
+    });
+  });
+
   group('merge', () {
     test('a new filter keeps the fields and the ordering', () async {
       seed(2);
