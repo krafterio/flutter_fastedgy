@@ -437,6 +437,31 @@ void main() {
       expect(collection.removeLocal(2), isFalse);
     });
 
+    test(
+      'a row that arrived whole takes its place without a request',
+      () async {
+        seed(3, serverTotal: 3);
+        final collection = collectionOf(limit: 20);
+        await collection.load();
+        final before = requests.length;
+
+        expect(
+          collection.upsertLocal(_Thing({'id': 2, 'name': 'renamed'})),
+          isFalse,
+        );
+        expect(
+          collection.upsertLocal(_Thing({'id': 9}), prepend: true),
+          isTrue,
+        );
+        expect(collection.upsertLocal(_Thing({'id': 10})), isTrue);
+
+        expect(requests.length, before);
+        expect(collection.items.map((row) => row.id), [9, 1, 2, 3, 10]);
+        expect(collection.items[2].getString('name'), 'renamed');
+        expect(collection.total, 5);
+      },
+    );
+
     test('a collection opted out of auto-refresh ignores the bus', () async {
       seed(2);
       final collection = collectionOf(limit: 20, autoRefreshOnChange: false);

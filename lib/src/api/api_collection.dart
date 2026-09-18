@@ -337,6 +337,32 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
     return true;
   }
 
+  /// Puts [item] in place of the row holding its id, or adds it at the start
+  /// when [prepend] is set and at the end otherwise, without a request: what a
+  /// row that arrived whole costs, a message pushed by another device for one.
+  /// Returns whether the row is new to the collection.
+  bool upsertLocal(T item, {bool prepend = false}) {
+    final index = _items.indexWhere((e) => e.id == item.id);
+
+    if (index != -1) {
+      _items = [..._items]..[index] = item;
+      _safeNotify();
+
+      return false;
+    }
+
+    _items = prepend ? [item, ..._items] : [..._items, item];
+    _total += 1;
+
+    if (_limit != null && _limit! > 0) {
+      _totalPages = (_total / _limit!).ceil();
+    }
+
+    _safeNotify();
+
+    return true;
+  }
+
   /// Re-reads the loaded range without a loading state, keeping the current
   /// rows if it fails. The refresh path of a holder driven from outside (a
   /// mutation elsewhere, connectivity coming back).
