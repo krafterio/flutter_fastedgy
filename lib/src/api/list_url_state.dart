@@ -62,6 +62,8 @@ mixin ListUrlState<W extends StatefulWidget> on State<W> {
     _urlDebounce = Timer(debounce, () {
       if (!mounted) return;
       final state = GoRouterState.of(context);
+      final shown = GoRouter.maybeOf(context)?.state.uri.path;
+      if (shown != null && shown != state.uri.path) return;
       final query = Map<String, String>.from(state.uri.queryParameters);
       params.forEach((key, value) {
         if (value == null || value.isEmpty) {
