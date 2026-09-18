@@ -462,6 +462,48 @@ void main() {
       },
     );
 
+    test(
+      'a row deleted outside the loaded range reads the range again',
+      () async {
+        seed(1, serverTotal: 3);
+        final collection = collectionOf(limit: 1);
+        await collection.load();
+        final before = requests.length;
+
+        total = 2;
+        getService<Bus>().fire(
+          const ResourceChangedEvent(
+            '/things',
+            type: ResourceChangeType.deleted,
+            id: 3,
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 40));
+
+        expect(requests.length, before + 1);
+        expect(collection.total, 2);
+      },
+    );
+
+    test('a row deleted outside a whole collection costs no request', () async {
+      seed(2);
+      final collection = collectionOf(limit: 20);
+      await collection.load();
+      final before = requests.length;
+
+      getService<Bus>().fire(
+        const ResourceChangedEvent(
+          '/things',
+          type: ResourceChangeType.deleted,
+          id: 9,
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+
+      expect(requests.length, before);
+      expect(collection.total, 2);
+    });
+
     test('a collection opted out of auto-refresh ignores the bus', () async {
       seed(2);
       final collection = collectionOf(limit: 20, autoRefreshOnChange: false);

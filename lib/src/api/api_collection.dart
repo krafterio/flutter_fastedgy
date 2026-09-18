@@ -370,16 +370,17 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
 
   Future<void> _onResourceChanged(ResourceChangedEvent event) async {
     if (!_loaded || _disposed) return;
-    // A delete naming no record, a truncated one, has no row to remove.
+    // A delete naming no record, a truncated one, has no row to remove. One
+    // outside the loaded range still moves the total, a count read on a single
+    // row for one, so a partial collection reads its range again.
     if (event.type == ResourceChangeType.deleted && event.id != null) {
-      removeLocal(event.id);
-      return;
-    }
-
-    // A write that touched nothing these rows depend on is news to somebody
-    // else. Only what the holder declared counts: what it reads says nothing
-    // about what would change on screen.
-    if (!event.touches(_watched)) {
+      if (removeLocal(event.id) || _items.length >= _total) {
+        return;
+      }
+    } else if (!event.touches(_watched)) {
+      // A write that touched nothing these rows depend on is news to somebody
+      // else. Only what the holder declared counts: what it reads says nothing
+      // about what would change on screen.
       return;
     }
 
