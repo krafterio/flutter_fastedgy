@@ -276,6 +276,22 @@ void main() {
       });
     });
 
+    testWidgets('une marge étroite donne la poignée seule, sans déborder', (
+      tester,
+    ) async {
+      await onPlatform(TargetPlatform.macOS, () async {
+        await pumpPage(
+          tester,
+          mounted: DocumentLayout.standard.copyWith(horizontalPadding: 24),
+        );
+
+        expect(tester.takeException(), isNull);
+        expect(handles(FastEdgyGlyph.add), findsNothing);
+        expect(handles(FastEdgyGlyph.gripRow), findsNWidgets(3));
+        expect(find.byType(Draggable<Node>), findsNWidgets(3));
+      });
+    });
+
     testWidgets('la poignée part au premier mouvement', (tester) async {
       await onPlatform(TargetPlatform.macOS, () async {
         await pumpPage(tester);

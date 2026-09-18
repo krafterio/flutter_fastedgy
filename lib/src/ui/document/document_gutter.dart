@@ -335,36 +335,46 @@ class _DocumentGutterState extends State<DocumentGutter> {
     valueListenable: _editorState.selectionNotifier,
     builder: (context, selection, _) => !_dragging && !_holdsCaret(selection)
         ? const SizedBox.shrink()
-        : RichTextControls.of(context).menu(
-            context,
-            RichTextMenuSpec(
-              actions: [
-                RichTextMenuAction(
-                  label: t('Insert a paragraph below'),
-                  icon: FastEdgyIcons.of(context)[FastEdgyGlyph.add],
-                  onTap: _insertParagraphBelow,
-                ),
-              ],
-              anchor: (context, isOpen, toggle) => RichTextHoldsCaret(
-                editorState: _editorState,
-                open: isOpen,
-                child: _draggable(
-                  _GutterButton(
-                    icon: FastEdgyIcons.of(context)[FastEdgyGlyph.gripRow],
-                    // As wide as the margin allows, and no taller than the two
-                    // buttons a pointer gets: the gutter stands in a Row beside
-                    // the block, which takes the height of its tallest child, so
-                    // a taller handle pushes the blocks apart. Width is free,
-                    // height is not — and this is where the room came from.
-                    width: widget.gutterWidth - 2,
-                    iconSize: _touchIconSize,
-                    active: isOpen,
-                    onTap: toggle,
-                  ),
-                ),
-              ),
-            ),
+        : _handle(context),
+  );
+
+  /// Whether the margin holds the two buttons side by side. A narrow page
+  /// gives the pointer the single handle a finger gets, rather than buttons
+  /// that overflow the margin.
+  bool get _fitsBothButtons => widget.gutterWidth - 2 >= 2 * _buttonSize;
+
+  Widget _handle(BuildContext context) => RichTextControls.of(context).menu(
+    context,
+    RichTextMenuSpec(
+      actions: [
+        RichTextMenuAction(
+          label: t('Insert a paragraph below'),
+          icon: FastEdgyIcons.of(context)[FastEdgyGlyph.add],
+          onTap: _insertParagraphBelow,
+        ),
+      ],
+      anchor: (context, isOpen, toggle) => RichTextHoldsCaret(
+        editorState: _editorState,
+        open: isOpen,
+        child: _draggable(
+          _GutterButton(
+            icon: FastEdgyIcons.of(context)[FastEdgyGlyph.gripRow],
+            // As wide as the margin allows, and no taller than the two
+            // buttons a pointer gets: the gutter stands in a Row beside
+            // the block, which takes the height of its tallest child, so
+            // a taller handle pushes the blocks apart. Width is free,
+            // height is not — and this is where the room came from.
+            width: widget.gutterWidth - 2,
+            iconSize: _touchIconSize,
+            cursor: hasHoverPointer
+                ? SystemMouseCursors.grab
+                : SystemMouseCursors.click,
+            active: isOpen,
+            onTap: toggle,
           ),
+        ),
+      ),
+    ),
   );
 
   /// The first line of the block, as it was last laid out, and where in it the
@@ -435,7 +445,11 @@ class _DocumentGutterState extends State<DocumentGutter> {
       height: _hang?.height,
       child: Padding(
         padding: EdgeInsets.only(top: _hang?.top ?? 6, right: 2),
-        child: hasHoverPointer ? _forPointer(context) : _forTouch(context),
+        child: !hasHoverPointer
+            ? _forTouch(context)
+            : _fitsBothButtons
+            ? _forPointer(context)
+            : _handle(context),
       ),
     );
   }
