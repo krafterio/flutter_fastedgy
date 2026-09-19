@@ -93,6 +93,17 @@ abstract class ApiModel<T extends BaseModel<T>> {
 
   List<SyncImageField> get syncImageFields => const [];
 
+  String? _metadataName;
+
+  /// The name the server announces this model's writes under: [modelName], else
+  /// the metadata name of the model served on [basePath], once
+  /// [resolveModelName] has read it.
+  String? get eventModelName => modelName ?? _metadataName;
+
+  /// [modelName], else the metadata name of the model served on [basePath].
+  Future<String?> resolveModelName() async =>
+      modelName ?? (_metadataName ??= (await metadata())?.name);
+
   /// Metadata resolved by [modelName], else by the last [basePath] segment.
   Future<MetadataModel?> metadata() async {
     if (!hasService<MetadataProvider>()) {

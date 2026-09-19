@@ -51,6 +51,7 @@ class ResourceWatch {
 
   late final StreamSubscription<ResourceChangedEvent> _changes;
   late final StreamSubscription<ResourcesStaleEvent> _stale;
+  (String, Object?)? _channel;
   Object? _id;
   Timer? _pending;
   bool _active = true;
@@ -165,19 +166,46 @@ class ResourceWatch {
     _onChanged(event);
   }
 
+  // A model declared by its path alone is named by its metadata: its channel
+  // waits for that name, and is dropped if the watch moved or ended meanwhile.
   void _subscribe() {
-    final model = _api.modelName;
+    final socket = _socket;
+
+    if (socket == null) {
+      return;
+    }
+
+    final id = _id;
+    final model = _api.eventModelName;
 
     if (model != null) {
-      _socket?.subscribe(model, _id);
+      _hold(socket, model, id);
+
+      return;
     }
+
+    unawaited(
+      _api.resolveModelName().then((name) {
+        if (name != null && !_cancelled && _channel == null && id == _id) {
+          _hold(socket, name, id);
+        }
+      }, onError: (Object _) {}),
+    );
+  }
+
+  void _hold(RealtimeSocket socket, String model, Object? id) {
+    socket.subscribe(model, id);
+    _channel = (model, id);
   }
 
   void _unsubscribe() {
-    final model = _api.modelName;
+    final channel = _channel;
 
-    if (model != null) {
-      _socket?.unsubscribe(model, _id);
+    if (channel == null) {
+      return;
     }
+
+    _channel = null;
+    _socket?.unsubscribe(channel.$1, channel.$2);
   }
 }

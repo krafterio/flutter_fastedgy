@@ -63,6 +63,43 @@ class _Socket extends RealtimeSocket {
       calls.add('-${channelOf(model, id)}');
 }
 
+class _Metadatas implements MetadataProvider {
+  static const _thing = MetadataModel(
+    name: 'thing',
+    apiName: 'things',
+    label: 'Thing',
+    labelPlural: 'Things',
+    searchable: false,
+    sortable: false,
+    fields: {},
+  );
+
+  @override
+  Future<void> fetchMetadatas() async {}
+
+  @override
+  Future<Map<String, MetadataModel>?> getMetadatas() async => {'thing': _thing};
+
+  @override
+  Future<MetadataModel?> getMetadata(String modelName) async =>
+      modelName == 'thing' ? _thing : null;
+
+  @override
+  bool get loading => false;
+
+  @override
+  dynamic get error => null;
+
+  @override
+  String? get prefix => null;
+
+  @override
+  String get scope => '';
+
+  @override
+  void setPrefix(String? newPrefix) {}
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -223,6 +260,41 @@ void main() {
     watch(on: _ThingApi('/things', fetcher: fetcher)).cancel();
 
     expect(spy.calls, isEmpty);
+  });
+
+  group('a model declared by its path', () {
+    setUp(() => container.registerSingleton<MetadataProvider>(_Metadatas()));
+
+    tearDown(() => container.unregister<MetadataProvider>());
+
+    test('subscribes and hears under the name its metadata give', () async {
+      final spy = socket();
+
+      watch(on: _ThingApi('/things', fetcher: fetcher), id: 3);
+      await Future<void>.delayed(Duration.zero);
+      await fire(const ResourceChangedEvent(null, model: 'thing', id: 3));
+
+      expect(spy.calls, ['+thing:3']);
+      expect(heard, hasLength(1));
+    });
+
+    test('subscribes only the record it moved to before being named', () async {
+      final spy = socket();
+
+      watch(on: _ThingApi('/things', fetcher: fetcher), id: 3).id = 4;
+      await Future<void>.delayed(Duration.zero);
+
+      expect(spy.calls, ['+thing:4']);
+    });
+
+    test('subscribes nothing once cancelled before being named', () async {
+      final spy = socket();
+
+      watch(on: _ThingApi('/things', fetcher: fetcher)).cancel();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(spy.calls, isEmpty);
+    });
   });
 
   test('hears an event fired with a path alone', () async {

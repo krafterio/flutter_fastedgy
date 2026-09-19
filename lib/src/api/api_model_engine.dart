@@ -68,8 +68,9 @@ class ResourceChangedEvent {
   /// Whether this event is about what [api] holds: by model when the event
   /// names one, by path otherwise. Every api that has not resolved yet answers
   /// the bare prefix, so a named event compared by path would reach them all.
-  bool isAbout(ApiModel<dynamic> api) =>
-      model != null ? model == api.modelName : basePath == api.resolvedBasePath;
+  bool isAbout(ApiModel<dynamic> api) => model != null
+      ? model == api.eventModelName
+      : basePath == api.resolvedBasePath;
 
   /// Whether this event can be about records holding [columns]: a column it
   /// does not carry, or carries empty, says nothing, and a carried one compares
@@ -245,7 +246,7 @@ class ApiModelEngine<T extends BaseModel<T>> {
   /// echo before the request leaves.
   Map<String, dynamic> _expectEcho(Map<String, dynamic>? headers, Object? id) {
     final origin = requestOrigin();
-    final model = owner.modelName;
+    final model = owner.eventModelName;
 
     if (model != null && hasService<RealtimeSocket>()) {
       getService<RealtimeSocket>().expect(origin, model, id);
