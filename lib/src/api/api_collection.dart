@@ -363,6 +363,14 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
     return true;
   }
 
+  /// Reads the row [id] with the fields of this collection, without putting it
+  /// in place: a row announced by its id alone (a push from another device)
+  /// then goes through [upsertLocal], or through an animated insertion.
+  Future<T> readItem(Object id) => api.get(
+    id,
+    options: fields == null ? null : FieldsOptions(fields: fields),
+  );
+
   /// Re-reads the loaded range without a loading state, keeping the current
   /// rows if it fails. The refresh path of a holder driven from outside (a
   /// mutation elsewhere, connectivity coming back).
