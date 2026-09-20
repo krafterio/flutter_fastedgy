@@ -130,6 +130,21 @@ abstract class OfflineApiResource extends ApiResource {
     }
   }
 
+  /// [remoteOrCached] for a payload that is not a model: the raw JSON is cached
+  /// and handed back, for the caller to map with its own factory.
+  Future<Map<String, dynamic>> remoteOrCachedJson(
+    Future<Map<String, dynamic>> Function() remote, {
+    Object key = _defaultKey,
+  }) async {
+    final record = await remoteOrCached(
+      _JsonRecord.new,
+      () async => _JsonRecord(await remote()),
+      key: key,
+    );
+
+    return record.toJson();
+  }
+
   /// Emit the cached record (when present), then the fresh [remote] result
   /// (also cached).
   ///
@@ -206,4 +221,8 @@ abstract class OfflineApiResource extends ApiResource {
     await localStore?.clear(cacheModel);
     await imageMirror?.refreshNamespace(cacheModel, syncImageFields);
   }
+}
+
+class _JsonRecord extends DynamicSchema<_JsonRecord> {
+  _JsonRecord(super.data);
 }

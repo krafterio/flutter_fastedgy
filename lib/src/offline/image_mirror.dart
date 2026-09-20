@@ -67,11 +67,7 @@ class ImageMirror {
 
     for (final record in currentRecords) {
       for (final field in fields) {
-        final path = record[field.field];
-
-        if (path is String && path.isNotEmpty) {
-          current.add(path);
-        }
+        current.addAll(imagePathsOf(record, field.field));
       }
     }
 
@@ -114,13 +110,12 @@ class ImageMirror {
     final changed = <String>{};
 
     for (final field in fields) {
-      final value = record[field.field];
-
-      if (value is String &&
-          value.isNotEmpty &&
-          value != previous?[field.field]) {
-        changed.add(value);
-      }
+      changed.addAll(
+        imagePathsOf(
+          record,
+          field.field,
+        ).difference(imagePathsOf(previous, field.field)),
+      );
     }
 
     return changed;
@@ -180,5 +175,34 @@ class ImageMirror {
     }
 
     return false;
+  }
+}
+
+/// Every non-empty string held under [field] in [value], at any depth: a
+/// payload carries its images on the record itself, on the relations its field
+/// selection embedded, and on the rows of an envelope.
+Set<String> imagePathsOf(Object? value, String field) {
+  final paths = <String>{};
+
+  _collectImagePaths(value, field, paths);
+
+  return paths;
+}
+
+void _collectImagePaths(Object? value, String field, Set<String> into) {
+  if (value is Map) {
+    for (final entry in value.entries) {
+      final nested = entry.value;
+
+      if (entry.key == field && nested is String && nested.isNotEmpty) {
+        into.add(nested);
+      } else {
+        _collectImagePaths(nested, field, into);
+      }
+    }
+  } else if (value is List) {
+    for (final item in value) {
+      _collectImagePaths(item, field, into);
+    }
   }
 }

@@ -1111,9 +1111,7 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
   Set<String> _imagePaths(Iterable<Map<String, dynamic>> records) => {
     for (final record in records)
       for (final field in owner.syncImageFields)
-        if (record[field.field] is String &&
-            (record[field.field] as String).isNotEmpty)
-          record[field.field] as String,
+        ...imagePathsOf(record, field.field),
   };
 
   int _totalPages(int total, int? limit) => limit == null || limit == 0

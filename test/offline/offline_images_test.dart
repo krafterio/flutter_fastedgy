@@ -299,6 +299,39 @@ void main() {
       expect(request.queryParameters['e'], 'webp');
     });
 
+    test('mirrors the images a payload nests', () async {
+      adapter.routes['GET /items'] = (options) => _page([
+        {
+          'id': 1,
+          'name': 'One',
+          'household': {'avatar': 'avatars/home.png'},
+          'members': [
+            {'avatar': 'avatars/ada.png'},
+            {'avatar': 'avatars/linus.png'},
+          ],
+        },
+      ]);
+
+      for (final path in [
+        'avatars/home.png',
+        'avatars/ada.png',
+        'avatars/linus.png',
+      ]) {
+        adapter.byteRoutes['GET /storage/download/$path'] = (options) =>
+            Uint8List.fromList([7]);
+      }
+
+      await api.sync();
+
+      for (final path in [
+        'avatars/home.png',
+        'avatars/ada.png',
+        'avatars/linus.png',
+      ]) {
+        expect(await imageStore.hasVariant(path, variantKey), isTrue);
+      }
+    });
+
     test('never tries to download a file awaiting its upload', () async {
       // A record can reference a file that only exists locally, until its
       // buffered upload is replayed. The server knows no such path, so asking

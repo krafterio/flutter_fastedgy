@@ -28,6 +28,11 @@ class _ProfileApi extends OfflineApiResource {
         _Profile((await fetcher.get(basePath)).data as Map<String, dynamic>),
   );
 
+  Future<Map<String, dynamic>> getSettings() => remoteOrCachedJson(
+    () async => (await fetcher.get('/settings')).data as Map<String, dynamic>,
+    key: 'settings',
+  );
+
   Stream<_Profile> watchProfile() => cacheThenRemote(
     _Profile.new,
     () async =>
@@ -134,6 +139,21 @@ void main() {
       final profile = await api.getProfile();
 
       expect(profile.name, 'Ada');
+    });
+
+    test('caches a payload that is not a model', () async {
+      adapter.routes['GET /settings'] = () => {
+        'max_attachment_size': 10,
+        'update': {'update_available': true},
+      };
+
+      expect((await api.getSettings())['max_attachment_size'], 10);
+
+      adapter.offline = true;
+      final cached = await api.getSettings();
+
+      expect(cached['max_attachment_size'], 10);
+      expect((cached['update'] as Map)['update_available'], isTrue);
     });
 
     test('rethrows offline errors when nothing is cached', () async {
