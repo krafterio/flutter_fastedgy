@@ -11,6 +11,8 @@ import 'package:dio/dio.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_fastedgy/flutter_fastedgy.dart';
+import 'package:flutter_fastedgy/ui.dart'
+    show documentImagePaths, richTextImages;
 
 /// Marks `items` synchronizable so the `/items` API mirrors offline.
 class _MockMetadataProvider implements MetadataProvider {
@@ -74,11 +76,15 @@ class _ItemApi extends ApiModel<_Item> {
        );
 
   @override
-  List<String>? get syncFields => const ['id', 'name', 'avatar'];
+  List<String>? get syncFields => const ['id', 'name', 'avatar', 'body'];
 
   @override
-  List<SyncImageField> get syncImageFields => const [
-    SyncImageField('avatar', variants: [ImageVariant(width: 64, height: 64)]),
+  List<SyncImageField> get syncImageFields => [
+    const SyncImageField(
+      'avatar',
+      variants: [ImageVariant(width: 64, height: 64)],
+    ),
+    richTextImages('body'),
   ];
 
   @override
@@ -280,6 +286,8 @@ void main() {
     });
   });
 
+  _documentPaths();
+
   group('ImageMirror through ApiModel', () {
     test('sync prefetches the declared variants', () async {
       adapter.routes['GET /items'] = (options) => _page([
@@ -292,7 +300,9 @@ void main() {
 
       expect(await imageStore.hasVariant('avatars/a.png', variantKey), isTrue);
 
-      final request = adapter.requests.last;
+      final request = adapter.requests.firstWhere(
+        (options) => options.path.endsWith('avatars/a.png'),
+      );
       expect(request.queryParameters['w'], '64');
       expect(request.queryParameters['h'], '64');
       expect(request.queryParameters['m'], 'cover');
@@ -330,6 +340,89 @@ void main() {
       ]) {
         expect(await imageStore.hasVariant(path, variantKey), isTrue);
       }
+    });
+
+    test('mirrors the pictures a document holds in its text', () async {
+      adapter.routes['GET /items'] = (options) => _page([
+        {
+          'id': 1,
+          'name': 'One',
+          'body': 'Avant\n\n![](attachment:15?w=420&h=280)\n\nAprès ![](attachment:16)',
+        },
+      ]);
+
+      for (final id in [15, 16]) {
+        adapter.byteRoutes['GET /storage/download/attachments/$id'] = (
+          options,
+        ) => Uint8List.fromList([4]);
+      }
+
+      await api.sync();
+
+      // The width the document reads them at, whatever size they are drawn.
+      for (final id in [15, 16]) {
+        expect(
+          await imageStore.hasVariant('attachments/$id', '720xauto|cover|webp'),
+          isTrue,
+        );
+      }
+    });
+
+    test('a later sync catches up a picture the mirror never got', () async {
+      adapter.routes['GET /items'] = (options) => _page([
+        {'id': 1, 'name': 'One', 'body': '![](attachment:21)'},
+      ]);
+      // The server has nothing to serve for it yet: the download fails and the
+      // variant stays missing.
+      await api.sync();
+      expect(
+        await imageStore.hasVariant('attachments/21', '720xauto|cover|webp'),
+        isFalse,
+      );
+
+      adapter.byteRoutes['GET /storage/download/attachments/21'] = (options) =>
+          Uint8List.fromList([2]);
+
+      // The record has not changed: only a pass that looks at every mirrored
+      // path can still fetch it.
+      await api.sync();
+
+      expect(
+        await imageStore.hasVariant('attachments/21', '720xauto|cover|webp'),
+        isTrue,
+      );
+    });
+
+    test('reading a record again re-indexes nothing else', () async {
+      adapter.routes['GET /items'] = (options) => _page([
+        {'id': 1, 'name': 'One', 'avatar': 'avatars/a.png'},
+        {'id': 2, 'name': 'Two', 'avatar': 'avatars/b.png'},
+      ]);
+
+      for (final name in ['a', 'b']) {
+        adapter.byteRoutes['GET /storage/download/avatars/$name.png'] = (
+          options,
+        ) => Uint8List.fromList([1]);
+      }
+
+      await api.sync();
+      final downloads = adapter.requests
+          .where((options) => options.path.contains('/storage/'))
+          .length;
+
+      adapter.routes['GET /items/1'] = (options) => {
+        'id': 1,
+        'name': 'One',
+        'avatar': 'avatars/a.png',
+      };
+      await api.get(1);
+
+      // Nothing new in that record: no download, and no walk over the other
+      // mirrored records to find that out.
+      expect(
+        adapter.requests.where((options) => options.path.contains('/storage/')),
+        hasLength(downloads),
+      );
     });
 
     test('never tries to download a file awaiting its upload', () async {
@@ -452,6 +545,23 @@ void main() {
         await imageStore.hasVariant('avatars/missing.png', variantKey),
         isFalse,
       );
+    });
+  });
+}
+
+void _documentPaths() {
+  group('documentImagePaths', () {
+    test('reads the attachments a text points at, and nothing else', () {
+      expect(
+        documentImagePaths(
+          '![](attachment:15?w=420) puis ![](attachment:16) et ![](https://ailleurs/x.png)',
+        ),
+        {'attachments/15', 'attachments/16'},
+      );
+    });
+
+    test('a text without a picture names none', () {
+      expect(documentImagePaths('Rien du tout'), isEmpty);
     });
   });
 }

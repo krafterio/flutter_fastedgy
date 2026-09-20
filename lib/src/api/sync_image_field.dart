@@ -65,7 +65,12 @@ class SyncImageField {
   /// Renditions to prefetch; empty downloads the original file.
   final List<ImageVariant> variants;
 
-  const SyncImageField(this.field, {this.variants = const []});
+  /// How the field's value names the images it holds, when it is not one
+  /// itself: a rich text holds its pictures inside the text, as references to
+  /// the attachments they were stored as.
+  final Set<String> Function(String value)? paths;
+
+  const SyncImageField(this.field, {this.variants = const [], this.paths});
 
   /// The variants to mirror ([ImageVariant.original] when none declared).
   List<ImageVariant> get effectiveVariants =>

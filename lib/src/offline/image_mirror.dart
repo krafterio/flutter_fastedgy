@@ -36,7 +36,7 @@ class ImageMirror {
   Future<void> refreshNamespace(
     String namespace,
     List<SyncImageField> fields, {
-    Iterable<String> prefetchPaths = const [],
+    Iterable<String>? prefetchPaths,
   }) async {
     if (fields.isEmpty) {
       return;
@@ -53,24 +53,37 @@ class ImageMirror {
   /// Same as [refreshNamespace] with the current records provided by the
   /// caller (e.g. a replica table instead of the JSON record store) —
   /// [namespace] only keys the path index.
+  /// [prefetchPaths] narrows what is downloaded to the paths a single write
+  /// touched; left out, every mirrored path is checked and whatever variant is
+  /// missing is fetched. A sync leaves it out: a picture whose download failed,
+  /// or whose field was declared after the record was mirrored, is only ever
+  /// caught up by a pass that looks at all of them.
   Future<void> refresh(
     String namespace,
     Iterable<Map<String, dynamic>> currentRecords,
     List<SyncImageField> fields, {
-    Iterable<String> prefetchPaths = const [],
+    Iterable<String>? prefetchPaths,
   }) async {
     if (fields.isEmpty) {
       return;
     }
 
-    final current = <String>{};
+    // Each path is kept with the variants of the field that named it: the
+    // cover of a note and the pictures its text holds are not read at the same
+    // size.
+    final variantsByPath = <String, Set<ImageVariant>>{};
 
     for (final record in currentRecords) {
       for (final field in fields) {
-        current.addAll(imagePathsOf(record, field.field));
+        for (final path in imagePathsOfField(record, field)) {
+          variantsByPath
+              .putIfAbsent(path, () => {})
+              .addAll(field.effectiveVariants);
+        }
       }
     }
 
+    final current = variantsByPath.keys.toSet();
     final previous = await _namespacePaths(namespace);
     await _records.put(_indexNamespace, namespace, {
       _pathsKey: current.toList(),
@@ -82,20 +95,56 @@ class ImageMirror {
       }
     }
 
+    final wanted = prefetchPaths == null
+        ? current
+        : current.intersection(prefetchPaths.toSet());
+
+    for (final path in wanted) {
+      await _prefetch(path, variantsByPath[path]!);
+    }
+  }
+
+  /// Take one record into the index and fetch what it brought.
+  ///
+  /// A read merges one record at a time, and re-indexing the whole namespace
+  /// for each of them costs reading every mirrored record and re-reading every
+  /// text they hold. Nothing is purged here: what a record stops referencing is
+  /// dropped by the next [refresh], which is the pass that sees all of them.
+  Future<void> mergeRecord(
+    String namespace,
+    Map<String, dynamic>? previous,
+    Map<String, dynamic> record,
+    List<SyncImageField> fields,
+  ) async {
+    if (fields.isEmpty) {
+      return;
+    }
+
     final variantsByPath = <String, Set<ImageVariant>>{};
 
     for (final field in fields) {
-      for (final path in prefetchPaths) {
-        if (current.contains(path)) {
-          variantsByPath
-              .putIfAbsent(path, () => {})
-              .addAll(field.effectiveVariants);
-        }
+      for (final path in imagePathsOfField(record, field)) {
+        variantsByPath
+            .putIfAbsent(path, () => {})
+            .addAll(field.effectiveVariants);
       }
     }
 
-    for (final entry in variantsByPath.entries) {
-      await _prefetch(entry.key, entry.value);
+    final known = await _namespacePaths(namespace);
+    final added = variantsByPath.keys.toSet().difference(known);
+
+    if (added.isNotEmpty) {
+      await _records.put(_indexNamespace, namespace, {
+        _pathsKey: known.union(added).toList(),
+      });
+    }
+
+    for (final path in changedPaths(previous, record, fields)) {
+      final variants = variantsByPath[path];
+
+      if (variants != null) {
+        await _prefetch(path, variants);
+      }
     }
   }
 
@@ -111,10 +160,10 @@ class ImageMirror {
 
     for (final field in fields) {
       changed.addAll(
-        imagePathsOf(
+        imagePathsOfField(
           record,
-          field.field,
-        ).difference(imagePathsOf(previous, field.field)),
+          field,
+        ).difference(imagePathsOfField(previous, field)),
       );
     }
 
@@ -176,6 +225,20 @@ class ImageMirror {
 
     return false;
   }
+}
+
+/// The image paths [field] holds in [value]: the values found under its name,
+/// or what its own reader makes of them (a rich text names its pictures inside
+/// the text rather than being one).
+Set<String> imagePathsOfField(Object? value, SyncImageField field) {
+  final found = imagePathsOf(value, field.field);
+  final read = field.paths;
+
+  if (read == null) {
+    return found;
+  }
+
+  return {for (final value in found) ...read(value)};
 }
 
 /// Every non-empty string held under [field] in [value], at any depth: a

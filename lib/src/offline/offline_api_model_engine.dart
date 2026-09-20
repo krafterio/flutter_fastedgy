@@ -768,7 +768,6 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
         ctx.imageNamespace,
         await ctx.replica.store.getAll(ctx.model.name, ctx.scope),
         owner.syncImageFields,
-        prefetchPaths: _imagePaths(records),
       );
 
       if (serverState != null) {
@@ -795,11 +794,7 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
       for (final record in records) '${record['id']}': record,
     });
     await _reapplyPending(pendingByRecord);
-    await imageMirror?.refreshNamespace(
-      cacheModel,
-      owner.syncImageFields,
-      prefetchPaths: _imagePaths(records),
-    );
+    await imageMirror?.refreshNamespace(cacheModel, owner.syncImageFields);
   }
 
   /// Refresh the image mirror against the records already held locally, without
@@ -1180,16 +1175,30 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
         await ctx.replica.store.upsertAll(ctx.model, ctx.scope, [merged]);
 
         if (mirror != null) {
-          await mirror.refresh(
-            ctx.imageNamespace,
-            await ctx.replica.store.getAll(ctx.model.name, ctx.scope),
-            owner.syncImageFields,
-            prefetchPaths: mirror.changedPaths(
+          // A record that stopped pointing at a picture may have left it
+          // unreferenced: only a pass over the whole namespace can tell, so it
+          // is paid then, and not on the reads that add or change nothing.
+          if (mirror
+              .changedPaths(merged, existing ?? const {}, owner.syncImageFields)
+              .isEmpty) {
+            await mirror.mergeRecord(
+              ctx.imageNamespace,
               existing,
               merged,
               owner.syncImageFields,
-            ),
-          );
+            );
+          } else {
+            await mirror.refresh(
+              ctx.imageNamespace,
+              await ctx.replica.store.getAll(ctx.model.name, ctx.scope),
+              owner.syncImageFields,
+              prefetchPaths: mirror.changedPaths(
+                existing,
+                merged,
+                owner.syncImageFields,
+              ),
+            );
+          }
         }
       } catch (error) {
         _warnReplicaFailure('record mirroring', error);
@@ -1209,15 +1218,26 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
     await store.put(cacheModel, id, merged);
 
     if (mirror != null) {
-      await mirror.refreshNamespace(
-        cacheModel,
-        owner.syncImageFields,
-        prefetchPaths: mirror.changedPaths(
+      if (mirror
+          .changedPaths(merged, existing ?? const {}, owner.syncImageFields)
+          .isEmpty) {
+        await mirror.mergeRecord(
+          cacheModel,
           existing,
           merged,
           owner.syncImageFields,
-        ),
-      );
+        );
+      } else {
+        await mirror.refreshNamespace(
+          cacheModel,
+          owner.syncImageFields,
+          prefetchPaths: mirror.changedPaths(
+            existing,
+            merged,
+            owner.syncImageFields,
+          ),
+        );
+      }
     }
   }
 
@@ -1327,12 +1347,6 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
 
     return jsonEncode(entry.value) == jsonEncode(current);
   });
-
-  Set<String> _imagePaths(Iterable<Map<String, dynamic>> records) => {
-    for (final record in records)
-      for (final field in owner.syncImageFields)
-        ...imagePathsOf(record, field.field),
-  };
 
   int _totalPages(int total, int? limit) => limit == null || limit == 0
       ? (total == 0 ? 0 : 1)

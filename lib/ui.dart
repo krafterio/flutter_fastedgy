@@ -32,6 +32,7 @@ export 'src/ui/rich_text/features/image/image_feature.dart';
 export 'src/ui/rich_text/features/image/image_markdown.dart';
 export 'src/ui/rich_text/features/image/image_menu.dart';
 export 'src/ui/rich_text/features/image/image_source.dart';
+export 'src/ui/rich_text/features/image/image_sync.dart';
 export 'src/ui/rich_text/features/image/image_store.dart';
 export 'src/ui/rich_text/features/link/link_feature.dart';
 export 'src/ui/rich_text/features/link/link_gestures.dart';
