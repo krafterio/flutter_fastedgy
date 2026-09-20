@@ -379,6 +379,14 @@ Future<void> initializeFastEdgy({
     );
   }
 
+  if (offline) {
+    // What the layer actually mounted: a store short-circuited by a hasService
+    // leaves the mode looking enabled while it is not.
+    getLogger('initializer').info(
+      'Offline stores: ${[if (hasService<LocalStore>()) 'cache', if (hasService<ReplicaStore>()) 'replica', if (hasService<Outbox>()) 'outbox', if (hasService<ConflictStore>()) 'conflicts', if (hasService<SyncEngine>()) 'sync', if (hasService<PendingUploadStore>()) 'uploads', if (hasService<LocalImageStore>()) 'images', if (hasService<LocalSequence>()) 'sequence'].join(', ')}',
+    );
+  }
+
   // StorageUploader: registered after the offline stores so it can buffer an
   // upload the server cannot receive, instead of failing.
   if (!hasService<StorageUploader>()) {
