@@ -28,15 +28,17 @@ abstract class ApiResource {
   /// The base path of this resource (e.g., '/me')
   final String basePath;
 
-  /// The HTTP client used for requests
-  final Fetcher fetcher;
+  final Fetcher? _fetcherOverride;
+
+  /// The HTTP client used for requests, resolved on first use: a service built
+  /// before the container is populated is a normal thing to do.
+  Fetcher get fetcher => _fetcherOverride ?? getService<Fetcher>();
 
   /// Create a manual API service for a specific resource
   ///
   /// [basePath] is the base URL path of this resource (e.g., '/me')
   /// [fetcher] is optional; if not provided, uses the global Fetcher from DI
-  ApiResource(this.basePath, {Fetcher? fetcher})
-    : fetcher = fetcher ?? getService<Fetcher>();
+  ApiResource(this.basePath, {Fetcher? fetcher}) : _fetcherOverride = fetcher;
 
   /// Notify listeners that this resource changed (fires a
   /// [ResourceChangedEvent] on the bus, like [ApiModel]).

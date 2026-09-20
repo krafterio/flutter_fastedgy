@@ -34,7 +34,6 @@ abstract interface class OfflineBindings {}
 abstract class ApiModel<T extends BaseModel<T>> {
   final String basePath;
   final String? modelName;
-  final Fetcher fetcher;
   final OfflineBindings? offlineBindings;
 
   /// Resource segment to use instead of asking the metadata for the model's
@@ -49,13 +48,19 @@ abstract class ApiModel<T extends BaseModel<T>> {
   String? _resolvedPath;
   ApiModelEngine<T>? _engine;
 
+  final Fetcher? _fetcherOverride;
+
+  /// The HTTP client used for requests, resolved on first use: a resource built
+  /// before the container is populated is a normal thing to do.
+  Fetcher get fetcher => _fetcherOverride ?? getService<Fetcher>();
+
   ApiModel(
     this.basePath, {
     this.modelName,
     this.apiName,
     Fetcher? fetcher,
     this.offlineBindings,
-  }) : fetcher = fetcher ?? getService<Fetcher>();
+  }) : _fetcherOverride = fetcher;
 
   Future<ApiModelEngine<T>> _resolveEngine() async {
     final existing = _engine;
