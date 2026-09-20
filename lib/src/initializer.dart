@@ -34,6 +34,7 @@ import 'offline/offline_context_params.dart';
 import 'offline/local_image_store.dart';
 import 'offline/local_sequence.dart';
 import 'offline/local_store.dart';
+import 'offline/offline_mode.dart';
 import 'offline/offline_database.dart';
 import 'offline/outbox.dart';
 import 'offline/pending_upload_store.dart';
@@ -242,6 +243,12 @@ Future<void> initializeFastEdgy({
   OfflineDatabase? offlineDb;
   OfflineDatabase sharedDb() =>
       offlineDb ??= OfflineDatabase.open(offlineDbName ?? 'data.db');
+
+  // Live switch of the local layer: registered first so every offline service
+  // below reads the same state.
+  if (offline && !hasService<OfflineMode>()) {
+    container.registerSingleton<OfflineMode>(OfflineMode());
+  }
 
   // Offline context registry: apps register resolvers providing the values
   // of the params their resource paths declare (replica scoping, buffered

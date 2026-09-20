@@ -67,4 +67,35 @@ void main() {
     // The path is still substitutable: only the mirror has nowhere to go.
     expect(params.contextFor('/{workspace}'), {'workspace': 'acme'});
   });
+
+  test('a global resolver scopes a path that declares no param', () {
+    final params = OfflineContextParams()
+      ..register(_MockTenant(), global: true);
+
+    expect(params.scopeOf('/notes'), '7');
+    // Nothing to substitute: the path carries no param.
+    expect(params.contextFor('/notes'), isEmpty);
+  });
+
+  test('a path without param stays unscoped without a global resolver', () {
+    final params = OfflineContextParams()..register(_MockTenant());
+
+    expect(params.scopeOf('/notes'), '');
+  });
+
+  test('the scope survives the path gaining its param', () {
+    final params = OfflineContextParams()
+      ..register(_MockTenant(), global: true);
+
+    // What a route prefix would change tomorrow: the mirror keeps its key, so
+    // nothing has to be rebuilt.
+    expect(params.scopeOf('/{workspace}/notes'), params.scopeOf('/notes'));
+  });
+
+  test('an unresolved global scope leaves the resource global', () {
+    final params = OfflineContextParams()
+      ..register(_MockTenant()..id = null, global: true);
+
+    expect(params.scopeOf('/notes'), '');
+  });
 }

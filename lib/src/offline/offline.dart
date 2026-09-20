@@ -18,6 +18,7 @@ export 'offline_api_model_engine.dart';
 export 'offline_api_resource.dart';
 export 'offline_database.dart';
 export 'offline_error.dart';
+export 'offline_mode.dart';
 export 'outbox.dart';
 export 'pending_upload_store.dart';
 export 'reference_resolver.dart';

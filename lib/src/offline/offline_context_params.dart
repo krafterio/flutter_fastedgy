@@ -31,12 +31,23 @@ class OfflineContextParams {
   static final _paramPattern = RegExp(r'\{([A-Za-z0-9_]+)\}');
 
   final List<OfflineContextParamsResolver> _resolvers = [];
+  final List<OfflineContextParamsResolver> _globals = [];
 
-  void register(OfflineContextParamsResolver resolver) =>
-      _resolvers.add(resolver);
+  /// Registers [resolver]. A [global] one also scopes the resources whose path
+  /// declares no param, for an API that carries its tenant in the session
+  /// rather than in the URL.
+  void register(OfflineContextParamsResolver resolver, {bool global = false}) {
+    _resolvers.add(resolver);
 
-  void unregister(OfflineContextParamsResolver resolver) =>
-      _resolvers.remove(resolver);
+    if (global) {
+      _globals.add(resolver);
+    }
+  }
+
+  void unregister(OfflineContextParamsResolver resolver) {
+    _resolvers.remove(resolver);
+    _globals.remove(resolver);
+  }
 
   static List<String> paramsOf(String path) =>
       _paramPattern.allMatches(path).map((match) => match.group(1)!).toList();
@@ -85,10 +96,34 @@ class OfflineContextParams {
   /// its path later, so they must stay what the server matches on.
   Map<String, String> contextFor(String path) => _valuesFor(path, resolve());
 
-  /// Replica scope of a resource at [path]: its scope values joined by `/`;
-  /// '' for a global (param-less or unresolved) resource.
-  String scopeOf(String path) =>
-      _valuesFor(path, resolveScope()).values.join('/');
+  /// Replica scope of a resource at [path]: its scope values joined by `/`.
+  ///
+  /// A path without param takes the scope of the resolvers registered as
+  /// global, and '' when there is none — an unscoped mirror, as before.
+  String scopeOf(String path) {
+    if (paramsOf(path).isEmpty) {
+      return _globalScope();
+    }
+
+    return _valuesFor(path, resolveScope()).values.join('/');
+  }
+
+  String _globalScope() {
+    final values = <String, Object?>{};
+
+    for (final resolver in _globals) {
+      values.addAll(
+        resolver is OfflineScopeParamsResolver
+            ? resolver.resolveScope()
+            : resolver.resolve(),
+      );
+    }
+
+    return values.values
+        .where((value) => value != null && '$value'.isNotEmpty)
+        .map((value) => '$value')
+        .join('/');
+  }
 
   Map<String, String> _valuesFor(String path, Map<String, Object?> values) {
     final params = paramsOf(path);

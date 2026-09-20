@@ -638,6 +638,72 @@ void main() {
     });
   });
 
+  group('offline mode switch', () {
+    late OfflineMode mode;
+
+    setUp(() {
+      if (!hasService<OfflineMode>()) {
+        container.registerSingleton<OfflineMode>(OfflineMode());
+      }
+
+      mode = getService<OfflineMode>();
+      mode.enabled = true;
+    });
+
+    tearDown(() => mode.enabled = true);
+
+    test('reads stop falling back to the mirror once disabled', () async {
+      adapter.routes['GET /items'] = _paginated([
+        {'id': 1, 'name': 'One'},
+      ]);
+      await api.sync();
+
+      adapter.offline = true;
+      expect((await api.list()).items, hasLength(1));
+
+      mode.enabled = false;
+
+      await expectLater(api.list(), throwsA(isA<NetworkError>()));
+    });
+
+    test('writes stop being buffered once disabled', () async {
+      final outbox = Outbox(store);
+      final bufferedApi = _ItemApi(
+        fetcher: fetcher,
+        localStore: store,
+        outbox: outbox,
+      );
+
+      mode.enabled = false;
+      adapter.offline = true;
+
+      expect(await bufferedApi.bufferizesWrites(), isFalse);
+      await expectLater(
+        bufferedApi.update(1, _Item({'name': 'Patched'})),
+        throwsA(isA<NetworkError>()),
+      );
+      expect(await outbox.all(), isEmpty);
+
+      mode.enabled = true;
+
+      expect(await bufferedApi.bufferizesWrites(), isTrue);
+      await bufferedApi.update(1, _Item({'name': 'Patched'}));
+      expect(await outbox.all(), hasLength(1));
+    });
+
+    test('notifies on a change only', () {
+      final standalone = OfflineMode();
+      var notifications = 0;
+
+      standalone.addListener(() => notifications++);
+      standalone.enabled = false;
+      standalone.enabled = false;
+      standalone.enabled = true;
+
+      expect(notifications, 2);
+    });
+  });
+
   group('ApiModel replicated mode', replicatedModeTests);
 }
 

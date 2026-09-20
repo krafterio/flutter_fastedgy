@@ -21,6 +21,7 @@ import '../metadata/metadata_provider.dart';
 import '../api/base/attachment_api.dart';
 import '../offline/local_image_store.dart';
 import '../offline/local_sequence.dart';
+import '../offline/offline_mode.dart';
 import '../offline/outbox.dart';
 import '../offline/pending_upload_store.dart';
 import 'models.dart';
@@ -109,7 +110,8 @@ class StorageUploader {
   }
 
   /// Whether a failed upload can be buffered for a later replay.
-  bool get canBuffer => outbox != null && uploads != null;
+  bool get canBuffer =>
+      outbox != null && uploads != null && OfflineMode.isEnabled;
 
   bool _shouldBuffer(Object error) => canBuffer && isServerUnavailable(error);
 

@@ -19,6 +19,7 @@ import 'local_schema.dart';
 import 'local_sequence.dart';
 import 'local_store.dart';
 import 'offline_error.dart';
+import 'offline_mode.dart';
 import 'outbox.dart';
 import 'replica.dart';
 import 'sync_engine.dart';
@@ -46,12 +47,13 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
     ).warning('Replica $operation failed for "$cacheModel" - degraded: $error');
   }
 
-  LocalStore? get localStore =>
-      _stores?.localStore ??
-      (hasService<LocalStore>() ? getService<LocalStore>() : null);
+  LocalStore? get localStore => !OfflineMode.isEnabled
+      ? null
+      : _stores?.localStore ??
+            (hasService<LocalStore>() ? getService<LocalStore>() : null);
 
   ImageMirror? get imageMirror {
-    if (owner.syncImageFields.isEmpty) {
+    if (owner.syncImageFields.isEmpty || !OfflineMode.isEnabled) {
       return null;
     }
 
@@ -76,20 +78,23 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
     );
   }
 
-  Replica? get replica =>
-      _stores?.replica ??
-      (owner.modelName != null && hasService<Replica>()
-          ? getService<Replica>()
-          : null);
+  Replica? get replica => !OfflineMode.isEnabled
+      ? null
+      : _stores?.replica ??
+            (owner.modelName != null && hasService<Replica>()
+                ? getService<Replica>()
+                : null);
 
-  Outbox? get outbox =>
-      _stores?.outbox ?? (hasService<Outbox>() ? getService<Outbox>() : null);
+  Outbox? get outbox => !OfflineMode.isEnabled
+      ? null
+      : _stores?.outbox ?? (hasService<Outbox>() ? getService<Outbox>() : null);
 
   String get cacheModel => owner.cacheModel;
 
-  LocalSequence? get sequence =>
-      _stores?.sequence ??
-      (hasService<LocalSequence>() ? getService<LocalSequence>() : null);
+  LocalSequence? get sequence => !OfflineMode.isEnabled
+      ? null
+      : _stores?.sequence ??
+            (hasService<LocalSequence>() ? getService<LocalSequence>() : null);
 
   /// Temporary id of an optimistic offline create: negative, allocated from the
   /// model's own sequence.
