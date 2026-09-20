@@ -14,6 +14,7 @@ import 'api_model.dart';
 import 'api_query.dart';
 import 'base_model.dart';
 import 'pagination_result.dart';
+import '../offline/sync_state.dart';
 import 'record_result.dart';
 
 enum ResourceChangeType { created, updated, deleted }
@@ -406,7 +407,12 @@ class ApiModelEngine<T extends BaseModel<T>> {
     );
   }
 
-  Future<void> sync({ApiParams? params}) async {}
+  /// Bring the local mirror in line with the server.
+  ///
+  /// [state] is what the server holds for this model, when the caller already
+  /// asked for every model at once: the engine then skips the request it would
+  /// make to find out.
+  Future<void> sync({ApiParams? params, SyncModelState? state}) async {}
 
   Future<List<T>> cachedList() async => <T>[];
 

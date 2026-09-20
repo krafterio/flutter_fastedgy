@@ -24,6 +24,8 @@ import 'offline_error.dart';
 import 'offline_mode.dart';
 import 'outbox.dart';
 import 'replica.dart';
+import 'replica_store.dart';
+import 'sync_state.dart';
 import 'sync_engine.dart';
 
 /// Offline engine: mirrors an [ApiModel]'s records locally (replicated tables
@@ -432,7 +434,7 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
   }
 
   @override
-  Future<void> sync({ApiParams? params}) async {
+  Future<void> sync({ApiParams? params, SyncModelState? state}) async {
     final ctx = await _replicaContext();
 
     if (ctx == null && localStore == null) {
@@ -478,7 +480,77 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
       }
     }
 
-    // 1) Paginated server manifest: id → updated_at.
+    // 1) What the server holds for this model: one light request, or none at
+    // all when the caller already asked for every model at once. A mirror with
+    // no replica has nowhere to keep a cursor, so it has nothing to compare and
+    // does not ask.
+    final serverState = ctx == null ? null : state ?? await _serverState();
+    final cursor = ctx == null
+        ? null
+        : await ctx.replica.store.cursor(ctx.model.name, ctx.scope);
+
+    // Nothing moved since the sync that set the cursor: no manifest, no delta.
+    if (serverState != null &&
+        cursor != null &&
+        cursor.updatedAt == serverState.updatedAt &&
+        cursor.count == serverState.count) {
+      await _refreshMirroredImages(ctx);
+
+      return;
+    }
+
+    final localManifest = ctx != null
+        ? await ctx.replica.store.manifest(ctx.model, ctx.scope)
+        : {
+            for (final record in await localStore!.getAll(cacheModel))
+              '${record['id']}': record['updated_at'] as String?,
+          };
+    final records = <Map<String, dynamic>>[];
+    var toDelete = <String>[];
+
+    // 2) A mirror that knows where it left off pulls the delta: what was
+    // written since, by `updated_at`. The cursor is only ever moved by a
+    // completed sync, so the delta cannot skip a record a screen happened to
+    // read ahead of it.
+    if (serverState != null && cursor?.updatedAt != null) {
+      records.addAll(
+        await _fetchWhere([
+          'updated_at',
+          '>=',
+          cursor!.updatedAt,
+        ], params: params),
+      );
+
+      // Deletions leave no trace in a delta: the record count is what gives
+      // them away, and the id manifest is only paid for when it disagrees. A
+      // buffered create counts locally without existing server-side yet, so it
+      // can cost one extra walk until it is replayed.
+      final mirrored = localManifest.keys
+          .where((id) => !id.startsWith('-'))
+          .toSet()
+          .union({for (final record in records) '${record['id']}'});
+
+      if (mirrored.length != serverState.count) {
+        toDelete = _pruned(
+          await _serverIds(params: params),
+          localManifest,
+          pendingByRecord,
+        );
+      }
+
+      await _applyPull(
+        ctx,
+        records,
+        toDelete,
+        pendingByRecord,
+        serverState: serverState,
+      );
+
+      return;
+    }
+
+    // 3) No cursor (first sync) or no answer from the server (an older one, an
+    // unreachable one): the manifest walk, which needs neither.
     final serverManifest = <String, String?>{};
     var offset = 0;
 
@@ -506,14 +578,6 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
       }
     }
 
-    // 2) Diff against the local manifest.
-    final localManifest = ctx != null
-        ? await ctx.replica.store.manifest(ctx.model, ctx.scope)
-        : {
-            for (final record in await localStore!.getAll(cacheModel))
-              '${record['id']}': record['updated_at'] as String?,
-          };
-
     final toFetch = <String>[
       for (final entry in serverManifest.entries)
         if (localManifest[entry.key] == null ||
@@ -523,17 +587,13 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
     ];
     // Records with buffered writes are never pruned nor clobbered blindly: the
     // outbox replay is the authority on their fate.
-    final toDelete = <String>[
-      for (final id in localManifest.keys)
-        if (!serverManifest.containsKey(id) &&
-            !id.startsWith('-') &&
-            !pendingByRecord.containsKey(id))
-          id,
-    ];
+    toDelete = _pruned(
+      serverManifest.keys.toSet(),
+      localManifest,
+      pendingByRecord,
+    );
 
-    // 3) Batched fetch of the needed records only.
-    final records = <Map<String, dynamic>>[];
-
+    // 4) Batched fetch of the needed records only.
     for (var start = 0; start < toFetch.length; start += owner.syncPageSize) {
       final end = start + owner.syncPageSize > toFetch.length
           ? toFetch.length
@@ -570,7 +630,132 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
       }
     }
 
-    // 4) Transactional apply + image mirror refresh.
+    await _applyPull(
+      ctx,
+      records,
+      toDelete,
+      pendingByRecord,
+      serverState: serverState,
+    );
+  }
+
+  /// What the server holds for this model alone.
+  ///
+  /// Null when it cannot say (a server without the route, an unreachable one):
+  /// the caller walks the manifest rather than trusting numbers it does not
+  /// have.
+  Future<SyncModelState?> _serverState() async {
+    // The metadata name is what the route answers to; a model that did not
+    // declare one is named after the api name it was read under.
+    final name = owner.modelName ?? (await owner.metadata())?.name;
+
+    if (name == null) {
+      return null;
+    }
+
+    final probe = hasService<SyncStateProbe>()
+        ? getService<SyncStateProbe>()
+        : SyncStateProbe(fetcher: owner.fetcher);
+
+    return (await probe.fetch(models: [name]))?[name];
+  }
+
+  /// Every record matching [rule], paginated with the sync field selection.
+  Future<List<Map<String, dynamic>>> _fetchWhere(
+    List<Object?> rule, {
+    ApiParams? params,
+  }) async {
+    final records = <Map<String, dynamic>>[];
+    var offset = 0;
+
+    while (true) {
+      final page = await super.list(
+        query: ListQuery(
+          fields: await _resolveSyncFields(),
+          filter: rule,
+          limit: owner.syncPageSize,
+          offset: offset,
+          orderBy: 'id',
+        ),
+        params: params,
+      );
+
+      for (final item in page.items) {
+        if (item.id != null) {
+          records.add(item.toJson());
+        }
+      }
+
+      offset += page.items.length;
+
+      if (page.items.isEmpty || offset >= page.total) {
+        break;
+      }
+    }
+
+    return records;
+  }
+
+  /// The ids the server holds, and nothing else: what a delta cannot tell.
+  Future<Set<String>> _serverIds({ApiParams? params}) async {
+    final ids = <String>{};
+    var offset = 0;
+
+    while (true) {
+      final page = await super.list(
+        query: ListQuery(
+          fields: 'id',
+          limit: owner.syncPageSize,
+          offset: offset,
+          orderBy: 'id',
+        ),
+        params: params,
+      );
+
+      for (final item in page.items) {
+        if (item.id != null) {
+          ids.add('${item.id}');
+        }
+      }
+
+      offset += page.items.length;
+
+      if (page.items.isEmpty || offset >= page.total) {
+        break;
+      }
+    }
+
+    return ids;
+  }
+
+  /// The mirrored records the server no longer holds.
+  ///
+  /// A record with a buffered write is never pruned: the outbox replay is the
+  /// authority on its fate, and an optimistic create (negative id) has no
+  /// server-side counterpart to be missing from.
+  List<String> _pruned(
+    Set<String> serverIds,
+    Map<String, String?> localManifest,
+    Map<String, List<PendingOperation>> pendingByRecord,
+  ) {
+    return [
+      for (final id in localManifest.keys)
+        if (!serverIds.contains(id) &&
+            !id.startsWith('-') &&
+            !pendingByRecord.containsKey(id))
+          id,
+    ];
+  }
+
+  /// Write a pull to the mirror: records, prunes, the optimistic writes put
+  /// back on top, the images, and the cursor the next sync starts from.
+  Future<void> _applyPull(
+    _ReplicaContext? ctx,
+    List<Map<String, dynamic>> records,
+    List<String> toDelete,
+    Map<String, List<PendingOperation>> pendingByRecord, {
+    SyncModelState? serverState,
+  }) async {
     if (ctx != null) {
       await ctx.replica.store.applyDelta(
         ctx.model,
@@ -585,23 +770,36 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
         owner.syncImageFields,
         prefetchPaths: _imagePaths(records),
       );
-    } else {
-      final store = localStore!;
 
-      for (final id in toDelete) {
-        await store.delete(cacheModel, id);
+      if (serverState != null) {
+        await ctx.replica.store.setCursor(
+          ctx.model.name,
+          ctx.scope,
+          ReplicaCursor(
+            updatedAt: serverState.updatedAt,
+            count: serverState.count,
+          ),
+        );
       }
 
-      await store.putAll(cacheModel, {
-        for (final record in records) '${record['id']}': record,
-      });
-      await _reapplyPending(pendingByRecord);
-      await imageMirror?.refreshNamespace(
-        cacheModel,
-        owner.syncImageFields,
-        prefetchPaths: _imagePaths(records),
-      );
+      return;
     }
+
+    final store = localStore!;
+
+    for (final id in toDelete) {
+      await store.delete(cacheModel, id);
+    }
+
+    await store.putAll(cacheModel, {
+      for (final record in records) '${record['id']}': record,
+    });
+    await _reapplyPending(pendingByRecord);
+    await imageMirror?.refreshNamespace(
+      cacheModel,
+      owner.syncImageFields,
+      prefetchPaths: _imagePaths(records),
+    );
   }
 
   /// Refresh the image mirror against the records already held locally, without

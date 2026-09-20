@@ -35,6 +35,7 @@ import 'offline/local_image_store.dart';
 import 'offline/local_sequence.dart';
 import 'offline/local_store.dart';
 import 'offline/offline_mode.dart';
+import 'offline/sync_state.dart';
 import 'offline/offline_database.dart';
 import 'offline/outbox.dart';
 import 'offline/pending_upload_store.dart';
@@ -248,6 +249,12 @@ Future<void> initializeFastEdgy({
   // below reads the same state.
   if (offline && !hasService<OfflineMode>()) {
     container.registerSingleton<OfflineMode>(OfflineMode());
+  }
+
+  // How much each replicated model holds server-side, in one request: what
+  // lets a sync skip the models nothing has touched.
+  if (offline && !hasService<SyncStateProbe>()) {
+    container.registerSingleton<SyncStateProbe>(SyncStateProbe());
   }
 
   // Offline context registry: apps register resolvers providing the values

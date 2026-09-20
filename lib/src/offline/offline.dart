@@ -29,5 +29,6 @@ export 'replica_search.dart';
 export 'replica_filter_diagnostic.dart';
 export 'replica_store.dart';
 export 'sync_engine.dart';
+export 'sync_state.dart';
 export 'sync_lock.dart';
 export 'temp_id_map.dart';

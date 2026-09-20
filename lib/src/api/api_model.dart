@@ -17,6 +17,7 @@ import 'base_model.dart';
 import 'model_availability.dart';
 import 'pagination_result.dart';
 import 'record_result.dart';
+import '../offline/sync_state.dart';
 import 'sync_image_field.dart';
 
 export 'api_model_engine.dart';
@@ -265,8 +266,8 @@ abstract class ApiModel<T extends BaseModel<T>> {
   }) async =>
       (await _resolveEngine()).importTemplate(query: query, params: params);
 
-  Future<void> sync({ApiParams? params}) async =>
-      (await _resolveEngine()).sync(params: params);
+  Future<void> sync({ApiParams? params, SyncModelState? state}) async =>
+      (await _resolveEngine()).sync(params: params, state: state);
 
   Future<List<T>> cachedList() async => (await _resolveEngine()).cachedList();
 

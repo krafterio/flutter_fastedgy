@@ -30,6 +30,18 @@ class ReplicaMigration {
   bool get needsSync => created || rebuilt;
 }
 
+/// Where a completed sync left off: what the server held then.
+class ReplicaCursor {
+  /// `updated_at` of the freshest record the server held, null when the model
+  /// has no such field or held nothing.
+  final String? updatedAt;
+
+  /// How many records the server held for the scope.
+  final int count;
+
+  const ReplicaCursor({required this.updatedAt, required this.count});
+}
+
 /// Normalized local replica of server models on drift/SQLite: one table per
 /// model, generated at runtime from the [LocalModelSchema] (typed scalar
 /// columns, indexed m2o id columns) — plus a `_raw` column holding the full
@@ -42,6 +54,7 @@ class ReplicaMigration {
 /// (a replica can always be resynced from the server; no migration files).
 class ReplicaStore {
   static const _metaTable = '_replica_models';
+  static const _cursorTable = '_replica_cursors';
 
   final String dbName;
   final OfflineDatabase Function() _databaseOpener;
@@ -81,6 +94,14 @@ class ReplicaStore {
       'model TEXT NOT NULL PRIMARY KEY, '
       'fingerprint TEXT NOT NULL, '
       'search_config TEXT)',
+    );
+    await db.customStatement(
+      'CREATE TABLE IF NOT EXISTS $_cursorTable ('
+      'model TEXT NOT NULL, '
+      'scope TEXT NOT NULL, '
+      'updated_at TEXT, '
+      'count INTEGER NOT NULL, '
+      'PRIMARY KEY (model, scope))',
     );
     final metaColumns = await db
         .customSelect('PRAGMA table_info($_metaTable)')
@@ -333,9 +354,56 @@ class ReplicaStore {
 
   /// Delete every record of [model] under [scope].
   Future<void> clearScope(String model, String scope) {
+    return _database.transaction(() async {
+      await _database.customStatement(
+        'DELETE FROM "${_tableName(model)}" WHERE _workspace = ?',
+        [scope],
+      );
+      await forgetCursor(model, scope);
+    });
+  }
+
+  /// What the last completed sync of [model] under [scope] saw on the server:
+  /// the `updated_at` of the freshest record it pulled, and how many records
+  /// the server held then.
+  ///
+  /// It is the delta cursor, and only a completed sync may move it: the reads
+  /// of a screen write records of their own into the mirror, so the freshest
+  /// `updated_at` held locally says nothing about how far the mirror is
+  /// complete.
+  Future<ReplicaCursor?> cursor(String model, String scope) async {
+    final rows = await _database
+        .customSelect(
+          'SELECT updated_at, count FROM $_cursorTable '
+          'WHERE model = ? AND scope = ?',
+          variables: [Variable<String>(model), Variable<String>(scope)],
+        )
+        .get();
+
+    if (rows.isEmpty) {
+      return null;
+    }
+
+    return ReplicaCursor(
+      updatedAt: rows.single.data['updated_at'] as String?,
+      count: rows.single.read<int>('count'),
+    );
+  }
+
+  /// Record where a completed sync of [model] under [scope] left off.
+  Future<void> setCursor(String model, String scope, ReplicaCursor value) {
     return _database.customStatement(
-      'DELETE FROM "${_tableName(model)}" WHERE _workspace = ?',
-      [scope],
+      'INSERT OR REPLACE INTO $_cursorTable (model, scope, updated_at, count) '
+      'VALUES (?, ?, ?, ?)',
+      [model, scope, value.updatedAt, value.count],
+    );
+  }
+
+  /// Forget where [model] left off under [scope]: the next sync starts over.
+  Future<void> forgetCursor(String model, String scope) {
+    return _database.customStatement(
+      'DELETE FROM $_cursorTable WHERE model = ? AND scope = ?',
+      [model, scope],
     );
   }
 
@@ -466,7 +534,13 @@ class ReplicaStore {
 
   /// Delete every record of [model] (all scopes), keeping the table.
   Future<void> clearModel(String model) {
-    return _database.customStatement('DELETE FROM "${_tableName(model)}"');
+    return _database.transaction(() async {
+      await _database.customStatement('DELETE FROM "${_tableName(model)}"');
+      await _database.customStatement(
+        'DELETE FROM $_cursorTable WHERE model = ?',
+        [model],
+      );
+    });
   }
 
   /// Delete every record of every replicated model (e.g. on logout).
@@ -497,6 +571,7 @@ class ReplicaStore {
         }
       }
       await _database.customStatement('DELETE FROM $_metaTable');
+      await _database.customStatement('DELETE FROM $_cursorTable');
     });
   }
 
