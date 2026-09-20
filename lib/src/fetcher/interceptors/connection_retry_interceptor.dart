@@ -6,6 +6,7 @@
 import 'package:dio/dio.dart';
 
 import '../../logging/logger.dart';
+import '../../sync/sync_status.dart';
 
 /// Retries a request when the underlying HTTP socket was killed by the
 /// OS/proxy while the app was idle (typical scenario: app comes back from
@@ -55,6 +56,13 @@ class ConnectionRetryInterceptor extends Interceptor {
     ErrorInterceptorHandler handler,
   ) async {
     if (!_isRetryable(err)) {
+      return handler.next(err);
+    }
+
+    // A dead socket is worth another go; a server known not to answer is not.
+    // Offline, every request would otherwise pay three attempts and their
+    // backoff before failing, on every screen.
+    if (!SyncStatus.currentlyReachable) {
       return handler.next(err);
     }
 

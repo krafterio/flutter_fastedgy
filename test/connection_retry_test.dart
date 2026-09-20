@@ -58,6 +58,25 @@ void main() {
       expect(adapter.callCount, 3);
     });
 
+    test('does not retry a server already known not to answer', () async {
+      if (!hasService<Bus>()) {
+        container.registerSingleton<Bus>(Bus());
+      }
+
+      final status = SyncStatus(getService<Bus>())..setServerAnswering(false);
+      container.registerSingleton<SyncStatus>(status);
+      addTearDown(() => container.unregister<SyncStatus>());
+
+      final adapter = _ScriptedAdapter(failTimes: 99);
+      final dio = buildDio(adapter);
+
+      await expectLater(dio.get<dynamic>('/x'), throwsA(isA<DioException>()));
+
+      // Offline, three attempts and their backoff per request is what makes
+      // every screen feel frozen.
+      expect(adapter.callCount, 1);
+    });
+
     test('retries idempotent timeouts', () async {
       final adapter = _ScriptedAdapter(
         failTimes: 1,

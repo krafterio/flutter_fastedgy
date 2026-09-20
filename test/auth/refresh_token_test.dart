@@ -239,6 +239,48 @@ void main() {
     });
   });
 
+  group('AuthInterceptor, expired token', () {
+    late _RenewingAuthProvider provider;
+    late Fetcher fetcher;
+
+    setUp(() {
+      initializeContainer();
+
+      if (!hasService<Bus>()) {
+        container.registerSingleton<Bus>(Bus());
+      }
+
+      _seedTokens(
+        _jwtExpiringAt(DateTime.now().subtract(const Duration(minutes: 1))),
+      );
+
+      provider = _RenewingAuthProvider();
+      container.registerSingleton<TokenStorage>(const TokenStorage());
+      container.registerSingleton<AuthProvider<dynamic>>(provider);
+      fetcher = createMockFetcher((request) => const MockResponse.json({'ok': true}));
+    });
+
+    tearDown(container.reset);
+
+    test('refreshes ahead of the request while the server answers', () async {
+      await fetcher.get('/api/protected');
+
+      expect(provider.refreshes, 1);
+    });
+
+    test('leaves it alone when the server is known not to answer', () async {
+      container.registerSingleton<SyncStatus>(
+        SyncStatus(getService<Bus>())..setServerAnswering(false),
+      );
+
+      await fetcher.get('/api/protected');
+
+      // The refresh cannot succeed, and it would be tried ahead of every
+      // request of every screen.
+      expect(provider.refreshes, 0);
+    });
+  });
+
   group('RefreshTokenInterceptor, server unavailable', () {
     late Fetcher fetcher;
 
