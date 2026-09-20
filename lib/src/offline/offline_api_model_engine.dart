@@ -3,6 +3,8 @@
  * MIT License (see LICENSE file).
  */
 
+import 'dart:convert';
+
 import '../api/api_helpers.dart';
 import '../api/api_model.dart';
 import '../api/api_query.dart';
@@ -310,6 +312,13 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
       // Base snapshot of the three-way merge: the record as known before the
       // optimistic local write below.
       final base = (await cachedGet(id))?.toJson();
+
+      // A write that changes nothing is not buffered: the replay would send
+      // it anyway, in one burst with everything else, for a row the server
+      // already holds.
+      if (base != null && _changesNothing(payload.toJson(), base)) {
+        return owner.fromJson(base);
+      }
 
       await _mergeRecord(id, {
         ...payload.toJson(),
@@ -1107,6 +1116,19 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
   String get _replicaScope => hasService<OfflineContextParams>()
       ? getService<OfflineContextParams>().scopeOf(owner.basePath)
       : '';
+
+  /// Whether every value of [payload] is already what the mirror holds. A
+  /// to-one relation is compared by id: the payload names one, the record may
+  /// hold the whole object.
+  bool _changesNothing(
+    Map<String, dynamic> payload,
+    Map<String, dynamic> record,
+  ) => payload.entries.every((entry) {
+    final held = record[entry.key];
+    final current = held is Map && held.containsKey('id') ? held['id'] : held;
+
+    return jsonEncode(entry.value) == jsonEncode(current);
+  });
 
   Set<String> _imagePaths(Iterable<Map<String, dynamic>> records) => {
     for (final record in records)

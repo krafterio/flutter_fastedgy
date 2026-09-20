@@ -586,6 +586,31 @@ void main() {
       expect(cached?.getString('tag'), 'keep');
     });
 
+    test('a buffered write that changes nothing is not enqueued', () async {
+      final outbox = Outbox(store);
+      final bufferedApi = _ItemApi(
+        fetcher: fetcher,
+        localStore: store,
+        outbox: outbox,
+      );
+
+      adapter.routes['GET /items'] = _paginated([
+        {'id': 1, 'name': 'One', 'tag': 'keep'},
+      ]);
+      await bufferedApi.sync();
+
+      adapter.offline = true;
+      await bufferedApi.update(1, _Item({'name': 'One'}));
+
+      // The replay would send it in one burst with everything else, for a row
+      // the server already holds as it is.
+      expect(await outbox.all(), isEmpty);
+
+      await bufferedApi.update(1, _Item({'name': 'Two'}));
+
+      expect(await outbox.all(), hasLength(1));
+    });
+
     test('delete removes the cached record', () async {
       adapter.routes['GET /items/1'] = (options) => {'id': 1, 'name': 'One'};
       await api.get(1);
