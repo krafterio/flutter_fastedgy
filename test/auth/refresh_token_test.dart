@@ -34,6 +34,31 @@ void main() {
 
   group('RefreshTokenLock', () {
     test(
+      'keeps the session when the refresh cannot reach the server',
+      () async {
+        final provider = _FailingAuthProvider(
+          NetworkError(message: 'connection failed'),
+        );
+        final lock = RefreshTokenLock(provider);
+
+        expect(await lock.refreshToken(), isFalse);
+        expect(provider.logouts, 0);
+        expect(lock.lastFailure, isA<NetworkError>());
+      },
+    );
+
+    test('logs out when the refresh is rejected', () async {
+      final provider = _FailingAuthProvider(
+        UnauthorizedError(message: 'invalid refresh token'),
+      );
+      final lock = RefreshTokenLock(provider);
+
+      expect(await lock.refreshToken(), isFalse);
+      expect(provider.logouts, 1);
+      expect(lock.lastFailure, isNull);
+    });
+
+    test(
       'settles a queued request whose token was cancelled while waiting',
       () async {
         final provider = _GatedAuthProvider();
@@ -332,6 +357,20 @@ class _RenewingAuthProvider implements AuthProvider<dynamic> {
 
   @override
   Future<dynamic> getCurrentUser() => throw UnimplementedError();
+}
+
+class _FailingAuthProvider extends _GatedAuthProvider {
+  final Object failure;
+
+  int logouts = 0;
+
+  _FailingAuthProvider(this.failure);
+
+  @override
+  Future<bool> refreshToken() async => throw failure;
+
+  @override
+  Future<void> logout() async => logouts++;
 }
 
 class _GatedAuthProvider implements AuthProvider<dynamic> {
