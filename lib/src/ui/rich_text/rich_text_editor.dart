@@ -48,6 +48,13 @@ import 'rich_text_toolbar_theme.dart';
 /// controller, and a pass to measure it all. To display many at once — every
 /// message of a conversation — use [RichTextViewer], which renders the same
 /// blocks with none of that.
+/// Which key opens a line in a field that sends on Enter.
+enum RichTextNewLine {
+  /// ⌘ on macOS, Ctrl elsewhere.
+  modifier,
+  shift,
+}
+
 class RichTextEditor extends StatefulWidget {
   final EditorState editorState;
   final RichTextFeatures features;
@@ -155,11 +162,11 @@ class RichTextEditor extends StatefulWidget {
   /// a feature carries is what it carries.
   final List<SelectionMenuItem>? menuItems;
 
-  /// What an empty document reads as while nothing is focused. Null leaves it
-  /// blank.
+  /// What an empty document reads as. Null leaves it blank.
   final String? emptyPlaceholder;
 
-  /// What the empty paragraph holding the cursor reads as.
+  /// What an empty paragraph holding the cursor reads as, below the first one.
+  /// Null on a caller that named [emptyPlaceholder] leaves those lines silent.
   final String? hintPlaceholder;
 
   /// Takes a field emptied of its words back to the paragraph it opens on.
@@ -174,13 +181,16 @@ class RichTextEditor extends StatefulWidget {
   final bool resetWhenEmpty;
 
   /// Makes Enter send instead of opening a line — what a composer is written
-  /// with. ⌘/Ctrl+Enter then does what Enter would have done: a new block, a
-  /// new list item, a line inside a code block.
+  /// with. [newLine] then does what Enter would have done: a new block, a new
+  /// list item, a line inside a code block.
   ///
   /// Null leaves Enter to the editor. Either way a feature holding the key
   /// keeps it (see [RichTextFeature.holdsEnter]): Enter still writes the
   /// mention being picked rather than sending the message it is going into.
   final VoidCallback? onSubmit;
+
+  /// Which key opens a line once [onSubmit] has taken Enter.
+  final RichTextNewLine newLine;
 
   const RichTextEditor({
     required this.editorState,
@@ -211,6 +221,7 @@ class RichTextEditor extends StatefulWidget {
     this.hintPlaceholder,
     this.resetWhenEmpty = false,
     this.onSubmit,
+    this.newLine = RichTextNewLine.modifier,
   });
 
   @override
@@ -505,10 +516,19 @@ class RichTextEditorState extends State<RichTextEditor> {
         (blocks.first.delta?.isEmpty ?? true);
   }
 
-  String _paragraphPlaceholder(Node node) =>
-      widget.editorState.selection == null && _isBlankDocument
-      ? widget.emptyPlaceholder ?? ''
-      : widget.hintPlaceholder ?? t('Write, or type “/” to insert a block…');
+  /// What an empty paragraph reads as: the document's own placeholder while it
+  /// is blank, the caret's one below. A caller that sets one and not the other
+  /// gets that one alone — the default hint is for whoever configured neither,
+  /// so a composer naming its empty state stays silent on its next lines.
+  String _paragraphPlaceholder(Node node) {
+    final hint =
+        widget.hintPlaceholder ??
+        (widget.emptyPlaceholder == null
+            ? t('Write, or type “/” to insert a block…')
+            : '');
+
+    return _isBlankDocument ? widget.emptyPlaceholder ?? hint : hint;
+  }
 
   Map<String, BlockComponentBuilder> _buildBlockComponentBuilders() {
     final theme = RichTextTheme.of(context);
@@ -529,7 +549,9 @@ class RichTextEditorState extends State<RichTextEditor> {
 
         return selection == null
             ? _isBlankDocument && widget.emptyPlaceholder != null
-            : selection.isSingle && selection.start.path.equals(node.path);
+            : selection.isSingle &&
+                  selection.start.path.equals(node.path) &&
+                  _paragraphPlaceholder(node).isNotEmpty;
       },
       // The package's page block wraps its blocks in a scroll view of its own,
       // which cannot be laid out where the height is unbounded, and whose
@@ -718,7 +740,8 @@ class RichTextEditorState extends State<RichTextEditor> {
     });
   }
 
-  /// Enter sends, and the modifier opens the line it would have opened.
+  /// Enter sends, and [RichTextEditor.newLine] opens the line it would have
+  /// opened.
   ///
   /// Enter is a *character* shortcut to the package — a mention writes itself
   /// on it, a list item continues on it — while these are key bindings, which
@@ -743,9 +766,15 @@ class RichTextEditorState extends State<RichTextEditor> {
     CommandShortcutEvent(
       key: 'submit new line',
       getDescription: () => t('New line'),
-      command: 'cmd+enter',
-      windowsCommand: 'ctrl+enter',
-      linuxCommand: 'ctrl+enter',
+      command: widget.newLine == RichTextNewLine.shift
+          ? 'shift+enter'
+          : 'cmd+enter',
+      windowsCommand: widget.newLine == RichTextNewLine.shift
+          ? 'shift+enter'
+          : 'ctrl+enter',
+      linuxCommand: widget.newLine == RichTextNewLine.shift
+          ? 'shift+enter'
+          : 'ctrl+enter',
       handler: (editorState) {
         unawaited(_openLine(editorState));
 
@@ -766,6 +795,18 @@ class RichTextEditorState extends State<RichTextEditor> {
         return;
       }
     }
+
+    // The package's own new line stands aside while Shift is held — it leaves
+    // the soft break to the system, which never sees the key here since the
+    // shortcut answered it. A field whose new line IS Shift+Enter opens it.
+    final selection = editorState.selection?.normalized;
+
+    if (selection == null) {
+      return;
+    }
+
+    await editorState.deleteSelection(selection);
+    await editorState.insertNewLine(position: selection.start);
   }
 
   /// Brings the foot of the page — the bottom of [RichTextEditor.footer] — to

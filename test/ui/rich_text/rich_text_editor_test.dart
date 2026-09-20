@@ -290,6 +290,7 @@ void main() {
       WidgetTester tester,
       EditorState state, {
       required VoidCallback onSubmit,
+      RichTextNewLine newLine = RichTextNewLine.modifier,
     }) async {
       await pump(
         tester,
@@ -297,6 +298,7 @@ void main() {
           features: defaultRichTextFeatures,
           editorState: state,
           onSubmit: onSubmit,
+          newLine: newLine,
         ),
       );
       state.selection = Selection.collapsed(
@@ -336,6 +338,27 @@ void main() {
       expect(state.document.root.children, hasLength(2));
     });
 
+    testWidgets('the field asking for it opens its line on Shift', (
+      tester,
+    ) async {
+      final state = stateOf('Bien vu');
+      var sent = 0;
+      await pumpComposer(
+        tester,
+        state,
+        onSubmit: () => sent++,
+        newLine: RichTextNewLine.shift,
+      );
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.pumpAndSettle();
+
+      expect(sent, 0);
+      expect(state.document.root.children, hasLength(2));
+    });
+
     testWidgets('a block that keeps its own line breaks keeps Enter', (
       tester,
     ) async {
@@ -353,6 +376,53 @@ void main() {
       await tester.pump();
 
       expect(sent, 0);
+    });
+  });
+
+  group('a field naming its empty state', () {
+    testWidgets('says it on the first line, and on that one only', (
+      tester,
+    ) async {
+      const placeholder = 'Écris ton message…';
+      final state = EditorState(
+        document: Document.blank()
+          ..insert([0], [paragraphNode(delta: Delta()..insert('Salut'))])
+          ..insert([1], [paragraphNode()]),
+      );
+      addTearDown(state.dispose);
+
+      await pump(
+        tester,
+        RichTextEditor(
+          features: defaultRichTextFeatures,
+          editorState: state,
+          emptyPlaceholder: placeholder,
+        ),
+      );
+
+      state.selection = Selection.collapsed(Position(path: [1]));
+      await tester.pump();
+
+      expect(find.text(placeholder, findRichText: true), findsNothing);
+
+      final blank = EditorState(
+        document: Document.blank(withInitialText: true),
+      );
+      addTearDown(blank.dispose);
+
+      await pump(
+        tester,
+        RichTextEditor(
+          features: defaultRichTextFeatures,
+          editorState: blank,
+          emptyPlaceholder: placeholder,
+        ),
+      );
+
+      blank.selection = Selection.collapsed(Position(path: [0]));
+      await tester.pump();
+
+      expect(find.text(placeholder, findRichText: true), findsOneWidget);
     });
   });
 
