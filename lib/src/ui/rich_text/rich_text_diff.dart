@@ -23,13 +23,18 @@ import 'package:appflowy_editor/appflowy_editor.dart';
 /// when it is still the same kind of block, and only what has no counterpart is
 /// inserted or deleted.
 ///
+/// [overCaret] is for a version that is itself what is being written — a
+/// dictation streaming into the field that holds the caret: it goes over the
+/// block under the caret too, instead of waiting for the caret to move on.
+///
 /// Answers whether anything was applied.
 Future<bool> applyRichTextDiff(
   EditorState editorState,
   Document target, {
   bool isRemote = true,
+  bool overCaret = false,
 }) async {
-  final transaction = richTextDiff(editorState, target);
+  final transaction = richTextDiff(editorState, target, overCaret: overCaret);
 
   if (transaction == null) {
     return false;
@@ -86,9 +91,13 @@ bool _resolves(EditorState editorState, Position position) {
 /// Applied as remote is what the callers want: the content arriving from
 /// elsewhere is nobody's keystroke, so it belongs neither in the undo stack nor
 /// in the transaction stream an autosave listens to.
-Transaction? richTextDiff(EditorState editorState, Document target) {
+Transaction? richTextDiff(
+  EditorState editorState,
+  Document target, {
+  bool overCaret = false,
+}) {
   final root = editorState.document.root;
-  final plan = _Plan(_held(editorState));
+  final plan = _Plan(overCaret ? null : _held(editorState));
 
   _diffChildren(root, root.children, target.root.children, plan);
 

@@ -288,6 +288,26 @@ void main() {
         expect(shapeOf(state), ['Rewritten', 'Typing here', 'Also rewritten']);
       });
 
+      test(
+        'is rewritten all the same by a version said to go over it',
+        () async {
+          final state = stateOf([text('Rappelle-moi')]);
+          state.selection = Selection.collapsed(
+            Position(path: [0], offset: 12),
+          );
+
+          expect(
+            await applyRichTextDiff(
+              state,
+              documentOf([text('Rappelle-moi les courses')]),
+              overCaret: true,
+            ),
+            isTrue,
+          );
+          expect(shapeOf(state), ['Rappelle-moi les courses']);
+        },
+      );
+
       test('is nothing at all when the caret is elsewhere', () async {
         final state = stateOf([text('Intro'), text('Was here')]);
         state.selection = Selection.collapsed(Position(path: [0], offset: 2));
