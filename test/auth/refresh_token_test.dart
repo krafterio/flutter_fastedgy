@@ -165,6 +165,37 @@ void main() {
       expect(await provider.refreshToken(), isTrue);
       expect(calls, 2);
     });
+
+    test(
+      'a refresh asked in the background goes while usage requests are out',
+      () async {
+        final provider = buildProvider();
+        final held = Completer<void>();
+        final screen = createMockFetcher(
+          (request) async {
+            await held.future;
+
+            return const MockResponse.json({});
+          },
+          enableAuth: false,
+          enableTimezone: false,
+          enableRefreshToken: false,
+        );
+
+        gate.complete();
+        final usage = screen.get('/usage');
+        await pumpEventQueue();
+
+        // The usage requests wait on the refresh: waiting on them would hold
+        // every request up for good.
+        final refreshed = Fetcher.background(provider.refreshToken);
+
+        expect(await refreshed.timeout(const Duration(seconds: 1)), isTrue);
+
+        held.complete();
+        await usage;
+      },
+    );
   });
 
   group('RefreshTokenInterceptor', () {
@@ -257,7 +288,9 @@ void main() {
       provider = _RenewingAuthProvider();
       container.registerSingleton<TokenStorage>(const TokenStorage());
       container.registerSingleton<AuthProvider<dynamic>>(provider);
-      fetcher = createMockFetcher((request) => const MockResponse.json({'ok': true}));
+      fetcher = createMockFetcher(
+        (request) => const MockResponse.json({'ok': true}),
+      );
     });
 
     tearDown(container.reset);

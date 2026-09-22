@@ -3,7 +3,8 @@
  * MIT License (see LICENSE file).
  */
 
-import 'dart:async' show StreamSubscription, unawaited;
+import 'dart:async'
+    show Completer, StreamSubscription, Zone, runZoned, unawaited;
 import 'dart:convert' show jsonEncode;
 import 'dart:typed_data' show TypedData;
 
@@ -13,6 +14,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import '../api/api_model_engine.dart' show ResourceChangedEvent;
 import '../bus/bus.dart';
+import '../offline/offline_context_params.dart';
 import '../container/container.dart';
 import '../auth/token_storage.dart';
 import '../realtime/origin.dart';
@@ -45,6 +47,52 @@ class Fetcher {
   /// changes: a read sent before a write may answer what the write replaced,
   /// so the read the change asks for goes out on its own.
   final Map<String, Future<Response>> _pendingGets = {};
+
+  static final _backgroundKey = Object();
+
+  /// Requests in flight outside [background], whichever instance sent them.
+  static int _inUse = 0;
+  static Completer<void>? _idle;
+
+  /// Runs [body] as background work: every request it sends waits until no
+  /// request made outside such a zone is in flight, then goes. A sync or a
+  /// mirror gives way to what the user is doing this way, and never holds it
+  /// up. Every [Fetcher] counts, whichever instance sends.
+  static R background<R>(R Function() body) =>
+      runZoned(body, zoneValues: {_backgroundKey: true});
+
+  /// Runs [body] outside [background] again: what every request waits on, a
+  /// token refresh, must not wait for the others.
+  static R foreground<R>(R Function() body) =>
+      runZoned(body, zoneValues: {_backgroundKey: false});
+
+  static bool get _inBackground => Zone.current[_backgroundKey] == true;
+
+  /// A request of [background] waits for the usage ones to settle; one of
+  /// usage goes at once and counts while in flight.
+  static Future<Response> _gated(Future<Response> Function() send) async {
+    if (_inBackground) {
+      while (_inUse > 0) {
+        await (_idle ??= Completer<void>()).future;
+      }
+
+      return send();
+    }
+
+    _inUse++;
+
+    try {
+      return await send();
+    } finally {
+      _inUse--;
+
+      if (_inUse == 0) {
+        final idle = _idle;
+        _idle = null;
+        idle?.complete();
+      }
+    }
+  }
 
   Fetcher._({Dio? dio, Bus? bus})
     : _dio = dio ?? Dio(),
@@ -283,6 +331,10 @@ class Fetcher {
   /// the same path differ by those alone. Encoded rather than concatenated — a
   /// filter is a JSON string, and a separator appearing inside one would make
   /// two different reads share a key, which serves a holder another's rows.
+  ///
+  /// So do the context of [OfflineContextParams.within], which an interceptor
+  /// may turn into another path, and [background]: a usage read riding one
+  /// that waits would wait with it.
   String _getKey(
     String path,
     Map<String, dynamic>? params,
@@ -297,11 +349,15 @@ class Fetcher {
       ];
     }
 
+    final within = OfflineContextParams.withinValues;
+
     return jsonEncode([
       path,
       pairs(params),
       pairs(headers),
       (responseType ?? ResponseType.json).name,
+      if (within != null) pairs(within),
+      if (_inBackground) 'background',
     ]);
   }
 
@@ -451,8 +507,28 @@ class Fetcher {
     });
   }
 
-  /// Internal request method
   Future<Response> _request(
+    String path, {
+    required String method,
+    dynamic data,
+    Map<String, dynamic>? queryParameters,
+    Map<String, dynamic>? headers,
+    String? id,
+    ResponseType? responseType,
+  }) => _gated(
+    () => _send(
+      path,
+      method: method,
+      data: data,
+      queryParameters: queryParameters,
+      headers: headers,
+      id: id,
+      responseType: responseType,
+    ),
+  );
+
+  /// Internal request method
+  Future<Response> _send(
     String path, {
     required String method,
     dynamic data,
@@ -533,8 +609,28 @@ class Fetcher {
     }
   }
 
-  /// Internal request method with progress tracking
   Future<Response> _requestWithProgress(
+    String path, {
+    required String method,
+    dynamic data,
+    Map<String, dynamic>? queryParameters,
+    Map<String, dynamic>? headers,
+    String? id,
+    void Function(int sent, int total)? onSendProgress,
+  }) => _gated(
+    () => _sendWithProgress(
+      path,
+      method: method,
+      data: data,
+      queryParameters: queryParameters,
+      headers: headers,
+      id: id,
+      onSendProgress: onSendProgress,
+    ),
+  );
+
+  /// Internal request method with progress tracking
+  Future<Response> _sendWithProgress(
     String path, {
     required String method,
     dynamic data,

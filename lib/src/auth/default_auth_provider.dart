@@ -185,11 +185,14 @@ class DefaultAuthProvider<TUser> implements AuthProvider<TUser> {
   /// would be spent by two concurrent `/auth/refresh` calls.
   ///
   /// Subclasses override [performRefreshToken], never this method.
+  ///
+  /// Never sent as [Fetcher.background] work, even when a background request
+  /// asks for it: the requests of usage wait on the refresh, which waiting on
+  /// them would hold up for good.
   @override
   Future<bool> refreshToken() {
-    return _pendingRefresh ??= performRefreshToken().whenComplete(
-      () => _pendingRefresh = null,
-    );
+    return _pendingRefresh ??= Fetcher.foreground(performRefreshToken)
+        .whenComplete(() => _pendingRefresh = null);
   }
 
   /// Actual refresh call, without the single-flight guard.
