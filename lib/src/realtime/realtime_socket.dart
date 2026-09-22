@@ -103,6 +103,7 @@ class RealtimeSocket with WidgetsBindingObserver {
   Duration _delay = _reconnectStart;
   int _generation = 0;
   String? _scope;
+  List<String>? _scopes;
   String? _announced;
   bool _started = false;
   bool _disposed = false;
@@ -119,6 +120,16 @@ class RealtimeSocket with WidgetsBindingObserver {
   bool get isConnected => _connected;
 
   String? get scope => _scope;
+
+  /// Every scope read: those of [watchAll], else the one of [watch].
+  List<String> get scopes => _scopes ?? [?_scope];
+
+  /// What the server was last told this socket reads, compared to what it
+  /// reads now.
+  String? get _watched => _scopes == null ? _scope : jsonEncode(_scopes);
+
+  Map<String, Object?> get _scopeData =>
+      _scopes == null ? {'scope': _scope} : {'scopes': _scopes};
 
   /// The socket address of an API base: the WebSocket scheme, `/ws` appended.
   static Uri urlOf(String apiBaseUrl) {
@@ -153,12 +164,31 @@ class RealtimeSocket with WidgetsBindingObserver {
   /// Reads [scope] from now on, a slug or null. The socket knows nothing of
   /// what a scope is: whoever knows it says so.
   void watch(String? scope) {
-    if (scope == _scope) {
+    if (_scopes == null && scope == _scope) {
       return;
     }
 
     _scope = scope;
+    _scopes = null;
+    _rewatch();
+  }
 
+  /// Reads every one of [scopes] from now on, on this one socket: each event
+  /// says which it comes from ([ResourceChangedEvent.scopeId]). The server
+  /// leaves out a scope the account is not a member of.
+  void watchAll(List<String> scopes) {
+    final next = List<String>.unmodifiable(scopes);
+
+    if (_scopes != null && jsonEncode(next) == jsonEncode(_scopes)) {
+      return;
+    }
+
+    _scope = null;
+    _scopes = next;
+    _rewatch();
+  }
+
+  void _rewatch() {
     if (_connected) {
       _announce();
     } else if (_refused) {
@@ -312,7 +342,7 @@ class RealtimeSocket with WidgetsBindingObserver {
       }
 
       _connection = connection;
-      _announced = _scope;
+      _announced = _watched;
       _frames = connection.messages.listen(
         _receive,
         onError: (Object _) => _lost(connection),
@@ -321,7 +351,7 @@ class RealtimeSocket with WidgetsBindingObserver {
       connection.send(
         jsonEncode({
           'type': 'authenticate',
-          'data': {'token': token, 'scope': _scope},
+          'data': {'token': token, ..._scopeData},
         }),
       );
     } catch (error) {
@@ -387,11 +417,16 @@ class RealtimeSocket with WidgetsBindingObserver {
         ? message['origin'] as String
         : null;
     final truncated = message['truncated'] == true;
+    final scopeId = message['scope_id'] is int
+        ? message['scope_id'] as int
+        : null;
     final dot = type.indexOf('.');
     final action = dot > 0 ? _actions[type.substring(dot + 1)] : null;
 
     if (action == null) {
-      _bus.fire(RealtimeEvent(type, data, truncated: truncated));
+      _bus.fire(
+        RealtimeEvent(type, data, truncated: truncated, scopeId: scopeId),
+      );
 
       return;
     }
@@ -417,6 +452,7 @@ class RealtimeSocket with WidgetsBindingObserver {
         origin: _ownOrigin(origin),
         truncated: truncated,
         announced: true,
+        scopeId: scopeId,
       ),
     );
   }
@@ -426,7 +462,7 @@ class RealtimeSocket with WidgetsBindingObserver {
     _refreshed = false;
     _delay = _reconnectStart;
 
-    if (_scope != _announced) {
+    if (_watched != _announced) {
       _announce();
     } else if (_channels.isNotEmpty) {
       _send('subscribe', {'channels': _channels.keys.toList()});
@@ -444,12 +480,12 @@ class RealtimeSocket with WidgetsBindingObserver {
 
   // The server drops what a socket subscribed to when it moves to another scope.
   void _announce() {
-    if (_scope == _announced) {
+    if (_watched == _announced) {
       return;
     }
 
-    _announced = _scope;
-    _send('watch', {'scope': _scope});
+    _announced = _watched;
+    _send('watch', _scopeData);
 
     if (_channels.isNotEmpty) {
       _send('subscribe', {'channels': _channels.keys.toList()});

@@ -17,9 +17,17 @@ class ResourcesStaleEvent extends Event {
 /// Something the server announced under a name of its own, rather than a write
 /// on a model: `import.finished`.
 class RealtimeEvent extends Event {
-  const RealtimeEvent(this.type, this.data, {this.truncated = false});
+  const RealtimeEvent(
+    this.type,
+    this.data, {
+    this.truncated = false,
+    this.scopeId,
+  });
 
   final String type;
   final Object? data;
   final bool truncated;
+
+  /// The id of the scope it comes from, for a socket reading several.
+  final int? scopeId;
 }

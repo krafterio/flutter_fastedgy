@@ -821,4 +821,72 @@ void main() {
 
     await socket.dispose();
   });
+
+  testSocket('reads several scopes on one socket', (tester) async {
+    final socket = socketOf()..watchAll(['krafter', 'studio-nord']);
+
+    await socket.start();
+    await flush(tester);
+
+    expect(links.single.sent.first, {
+      'type': 'authenticate',
+      'data': {
+        'token': 'a-token',
+        'scopes': ['krafter', 'studio-nord'],
+      },
+    });
+    expect(socket.scopes, ['krafter', 'studio-nord']);
+
+    await socket.dispose();
+  });
+
+  testSocket('tells the server when the scopes it reads change, once', (
+    tester,
+  ) async {
+    final socket = socketOf()..watchAll(['krafter']);
+    final link = await connect(tester, socket);
+
+    socket
+      ..watchAll(['krafter', 'studio-nord'])
+      ..watchAll(['krafter', 'studio-nord'])
+      ..watch('krafter');
+
+    expect(link.framesOf('watch'), [
+      {
+        'type': 'watch',
+        'data': {
+          'scopes': ['krafter', 'studio-nord'],
+        },
+      },
+      {
+        'type': 'watch',
+        'data': {'scope': 'krafter'},
+      },
+    ]);
+
+    await socket.dispose();
+  });
+
+  testSocket('says which scope an announcement comes from', (tester) async {
+    final socket = socketOf()..watchAll(['krafter', 'studio-nord']);
+    final link = await connect(tester, socket);
+
+    link
+      ..receive({
+        'type': 'flow.updated',
+        'data': {'model': 'flow', 'id': 4},
+        'scope_id': 12,
+      })
+      ..receive({
+        'type': 'import.finished',
+        'data': {'rows': 3},
+        'scope_id': 13,
+      });
+    await flush(tester);
+
+    expect(changes().single.scopeId, 12);
+    expect(heard.whereType<RealtimeEvent>().single.scopeId, 13);
+
+    await socket.dispose();
+  });
 }

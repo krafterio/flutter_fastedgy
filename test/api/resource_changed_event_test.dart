@@ -156,4 +156,16 @@ void main() {
     expect(back.origin, 'sibling');
     expect(back.relayed, isTrue);
   });
+
+  test('travels with the scope it comes from', () {
+    const event = ResourceChangedEvent(
+      null,
+      model: 'flow',
+      type: ResourceChangeType.updated,
+      id: 7,
+      scopeId: 12,
+    );
+
+    expect(ResourceChangedEvent.fromJson(event.toJson()).scopeId, 12);
+  });
 }

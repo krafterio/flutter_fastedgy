@@ -53,6 +53,10 @@ class ResourceChangedEvent {
   /// relay from sending it back.
   final bool relayed;
 
+  /// The id of the scope an announcement comes from, for a socket reading
+  /// several ([RealtimeSocket.watchAll]); null for a write of this process.
+  final int? scopeId;
+
   const ResourceChangedEvent(
     this.basePath, {
     this.model,
@@ -64,6 +68,7 @@ class ResourceChangedEvent {
     this.truncated = false,
     this.announced = false,
     this.relayed = false,
+    this.scopeId,
   });
 
   /// Whether this event is about what [api] holds: by model when the event
@@ -133,6 +138,7 @@ class ResourceChangedEvent {
     if (id != null) 'id': id,
     if (fields != null) 'fields': fields!.toList(),
     if (origin != null) 'origin': origin,
+    if (scopeId != null) 'scopeId': scopeId,
   };
 
   factory ResourceChangedEvent.fromJson(
@@ -158,6 +164,7 @@ class ResourceChangedEvent {
       fields: fields is List ? {for (final field in fields) '$field'} : null,
       origin: json['origin'] as String?,
       relayed: relayed,
+      scopeId: json['scopeId'] as int?,
     );
   }
 }
