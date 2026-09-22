@@ -95,6 +95,14 @@ class _StubMetadataProvider implements MetadataProvider {
   void setPrefix(String? newPrefix) {}
 }
 
+/// The household a path carries, which the test moves.
+class _Household implements OfflineContextParamsResolver {
+  String slug = 'acme';
+
+  @override
+  Map<String, Object?> resolve() => {'household': slug};
+}
+
 Future<Map<String, String>> _formFields(FormData data) async {
   return {for (final field in data.fields) field.key: field.value};
 }
@@ -351,6 +359,43 @@ void main() {
       expect(operation.upload!.meta, {
         'record': {'model': 'flow', 'id': -1},
       });
+    });
+
+    test('replays into the household it was captured in', () async {
+      final household = _Household();
+      container.registerSingleton<OfflineContextParams>(
+        OfflineContextParams()..register(household),
+      );
+      addTearDown(container.unregister<OfflineContextParams>);
+
+      final scoped = StorageUploader(
+        fetcher,
+        prefix: '/h/{household}',
+        outbox: outbox,
+        uploads: uploads,
+        sequence: sequence,
+        images: previews,
+      );
+
+      adapter.offline = true;
+      await scoped.uploadAttachmentsFromBytes(
+        {
+          'brief.pdf': Uint8List.fromList([1]),
+        },
+        filenames: {'brief.pdf': 'brief.pdf'},
+      );
+
+      household.slug = 'studio';
+      adapter
+        ..offline = false
+        ..handler = (_) => {
+          'attachments': [
+            {'id': 100, 'name': 'brief', 'extension': 'pdf'},
+          ],
+        };
+      await engine.flush();
+
+      expect(adapter.calls.last, 'POST /h/acme/storage/upload/attachments');
     });
 
     test('replays the buffered upload and heals the record', () async {

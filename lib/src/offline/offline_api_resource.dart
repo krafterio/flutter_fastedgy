@@ -10,6 +10,7 @@ import '../storage/storage_downloader.dart';
 import 'image_mirror.dart';
 import 'local_image_store.dart';
 import 'local_store.dart';
+import 'offline_context_params.dart';
 import 'offline_error.dart';
 import '../api/sync_image_field.dart';
 
@@ -94,6 +95,17 @@ abstract class OfflineApiResource extends ApiResource {
 
   /// Cache namespace of this resource (defaults to [basePath]).
   String get cacheModel => basePath;
+
+  /// Namespace of the cached records: [cacheModel], under the scope of the
+  /// params [basePath] declares, so two workspaces never share a record. A
+  /// path declaring none keeps [cacheModel] alone.
+  String get _cacheNamespace {
+    final scope = hasService<OfflineContextParams>()
+        ? getService<OfflineContextParams>().declaredScopeOf(basePath)
+        : '';
+
+    return scope.isEmpty ? cacheModel : '$cacheModel@$scope';
+  }
 
   /// Image fields of the cached records to mirror into the local image store,
   /// with the renditions to prefetch.
@@ -186,14 +198,16 @@ abstract class OfflineApiResource extends ApiResource {
     }
 
     final mirror = imageMirror;
-    final previous = mirror == null ? null : await store.get(cacheModel, key);
+    final previous = mirror == null
+        ? null
+        : await store.get(_cacheNamespace, key);
     final record = entity.toJson();
 
-    await store.put(cacheModel, key, record);
+    await store.put(_cacheNamespace, key, record);
 
     if (mirror != null) {
       await mirror.refreshNamespace(
-        cacheModel,
+        _cacheNamespace,
         syncImageFields,
         prefetchPaths: mirror.changedPaths(previous, record, syncImageFields),
       );
@@ -205,21 +219,21 @@ abstract class OfflineApiResource extends ApiResource {
     T Function(Map<String, dynamic>) fromJson, {
     Object key = _defaultKey,
   }) async {
-    final record = await localStore?.get(cacheModel, key);
+    final record = await localStore?.get(_cacheNamespace, key);
 
     return record == null ? null : fromJson(record);
   }
 
   /// Remove the cached record under [key].
   Future<void> removeCachedRecord({Object key = _defaultKey}) async {
-    await localStore?.delete(cacheModel, key);
-    await imageMirror?.refreshNamespace(cacheModel, syncImageFields);
+    await localStore?.delete(_cacheNamespace, key);
+    await imageMirror?.refreshNamespace(_cacheNamespace, syncImageFields);
   }
 
   /// Remove all cached records of this resource.
   Future<void> clearCache() async {
-    await localStore?.clear(cacheModel);
-    await imageMirror?.refreshNamespace(cacheModel, syncImageFields);
+    await localStore?.clear(_cacheNamespace);
+    await imageMirror?.refreshNamespace(_cacheNamespace, syncImageFields);
   }
 }
 

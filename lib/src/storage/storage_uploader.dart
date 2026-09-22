@@ -21,6 +21,7 @@ import '../metadata/metadata_provider.dart';
 import '../api/base/attachment_api.dart';
 import '../offline/local_image_store.dart';
 import '../offline/local_sequence.dart';
+import '../offline/offline_context_params.dart';
 import '../offline/offline_mode.dart';
 import '../offline/outbox.dart';
 import '../offline/pending_upload_store.dart';
@@ -85,6 +86,19 @@ class StorageUploader {
   ///
   /// Keys the buffered operation's base path, which is how a consumer (the
   /// pending-operations view) resolves the model back from it.
+  /// The values of the params [basePath] and [prefix] declare now: a buffered
+  /// upload replays under them, into the workspace it was captured in rather
+  /// than the one current when connectivity comes back.
+  Map<String, String> _captured(String basePath) {
+    if (!hasService<OfflineContextParams>()) {
+      return const {};
+    }
+
+    final params = getService<OfflineContextParams>();
+
+    return {...params.contextFor(basePath), ...params.contextFor(prefix ?? '')};
+  }
+
   Future<String> _resourcePath(String model) async {
     final apiName = (await metadatas?.getMetadata(model))?.apiName;
 
@@ -212,6 +226,7 @@ class StorageUploader {
           id: id,
           method: PendingOperation.methodUpload,
           basePath: basePath,
+          context: _captured(basePath),
           recordId: modelId,
           model: model,
           // Not sent; gives a pending-operations view a name to display.
@@ -535,6 +550,7 @@ class StorageUploader {
           id: id,
           method: PendingOperation.methodUpload,
           basePath: attachmentPath,
+          context: _captured(attachmentPath),
           recordId: tempId,
           model: _attachmentModel,
           // Not sent (the multipart is built from `upload`); carried so a

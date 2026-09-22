@@ -95,6 +95,17 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
 
   String get cacheModel => owner.cacheModel;
 
+  /// Namespace of this resource's records in the local store: [cacheModel],
+  /// under the scope of the params its path declares, so two workspaces never
+  /// share a cached row. A path declaring none keeps [cacheModel] alone.
+  String get _cacheNamespace {
+    final scope = hasService<OfflineContextParams>()
+        ? getService<OfflineContextParams>().declaredScopeOf(owner.basePath)
+        : '';
+
+    return scope.isEmpty ? cacheModel : '$cacheModel@$scope';
+  }
+
   LocalSequence? get sequence => !OfflineMode.isEnabled
       ? null
       : _stores?.sequence ??
@@ -502,7 +513,7 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
     final localManifest = ctx != null
         ? await ctx.replica.store.manifest(ctx.model, ctx.scope)
         : {
-            for (final record in await localStore!.getAll(cacheModel))
+            for (final record in await localStore!.getAll(_cacheNamespace))
               '${record['id']}': record['updated_at'] as String?,
           };
     final records = <Map<String, dynamic>>[];
@@ -787,14 +798,14 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
     final store = localStore!;
 
     for (final id in toDelete) {
-      await store.delete(cacheModel, id);
+      await store.delete(_cacheNamespace, id);
     }
 
-    await store.putAll(cacheModel, {
+    await store.putAll(_cacheNamespace, {
       for (final record in records) '${record['id']}': record,
     });
     await _reapplyPending(pendingByRecord);
-    await imageMirror?.refreshNamespace(cacheModel, owner.syncImageFields);
+    await imageMirror?.refreshNamespace(_cacheNamespace, owner.syncImageFields);
   }
 
   /// Refresh the image mirror against the records already held locally, without
@@ -816,7 +827,7 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
       return;
     }
 
-    await mirror.refreshNamespace(cacheModel, owner.syncImageFields);
+    await mirror.refreshNamespace(_cacheNamespace, owner.syncImageFields);
   }
 
   /// Re-apply the optimistic effect of the still-buffered operations on top of
@@ -843,12 +854,12 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
             }
           } else {
             final current = await localStore!.get(
-              cacheModel,
+              _cacheNamespace,
               operation.recordId!,
             );
 
             if (current != null) {
-              await localStore!.put(cacheModel, operation.recordId!, {
+              await localStore!.put(_cacheNamespace, operation.recordId!, {
                 ...current,
                 ...operation.payload!,
               });
@@ -862,7 +873,7 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
               operation.recordId!,
             );
           } else {
-            await localStore!.delete(cacheModel, operation.recordId!);
+            await localStore!.delete(_cacheNamespace, operation.recordId!);
           }
         }
       }
@@ -892,7 +903,7 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
       return <T>[];
     }
 
-    return (await store.getAll(cacheModel)).map(owner.fromJson).toList();
+    return (await store.getAll(_cacheNamespace)).map(owner.fromJson).toList();
   }
 
   @override
@@ -961,7 +972,7 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
       }
     }
 
-    final record = await localStore?.get(cacheModel, id);
+    final record = await localStore?.get(_cacheNamespace, id);
 
     return record == null ? null : owner.fromJson(record);
   }
@@ -980,8 +991,8 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
       return;
     }
 
-    await localStore?.clear(cacheModel);
-    await imageMirror?.refreshNamespace(cacheModel, owner.syncImageFields);
+    await localStore?.clear(_cacheNamespace);
+    await imageMirror?.refreshNamespace(_cacheNamespace, owner.syncImageFields);
   }
 
   @override
@@ -1100,7 +1111,7 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
       } else if (localStore != null) {
         final store = localStore!;
         final existing = {
-          for (final record in await store.getAll(cacheModel))
+          for (final record in await store.getAll(_cacheNamespace))
             '${record['id']}': record,
         };
         final records = {
@@ -1109,7 +1120,7 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
               '${item.id}': {...?existing['${item.id}'], ...item.toJson()},
         };
 
-        await store.putAll(cacheModel, records);
+        await store.putAll(_cacheNamespace, records);
 
         if (mirror != null) {
           for (final entry in records.entries) {
@@ -1123,7 +1134,7 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
           }
 
           await mirror.refreshNamespace(
-            cacheModel,
+            _cacheNamespace,
             owner.syncImageFields,
             prefetchPaths: changed,
           );
@@ -1213,23 +1224,23 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
       return;
     }
 
-    final existing = await store.get(cacheModel, id);
+    final existing = await store.get(_cacheNamespace, id);
     final merged = {...?existing, ...json};
-    await store.put(cacheModel, id, merged);
+    await store.put(_cacheNamespace, id, merged);
 
     if (mirror != null) {
       if (mirror
           .changedPaths(merged, existing ?? const {}, owner.syncImageFields)
           .isEmpty) {
         await mirror.mergeRecord(
-          cacheModel,
+          _cacheNamespace,
           existing,
           merged,
           owner.syncImageFields,
         );
       } else {
         await mirror.refreshNamespace(
-          cacheModel,
+          _cacheNamespace,
           owner.syncImageFields,
           prefetchPaths: mirror.changedPaths(
             existing,
@@ -1253,7 +1264,7 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
       );
     }
 
-    return OutboxCacheContext(kind: 'json', namespace: cacheModel);
+    return OutboxCacheContext(kind: 'json', namespace: _cacheNamespace);
   }
 
   Future<void> _removeLocal(Object id) async {
@@ -1274,8 +1285,8 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
       return;
     }
 
-    await localStore?.delete(cacheModel, id);
-    await imageMirror?.refreshNamespace(cacheModel, owner.syncImageFields);
+    await localStore?.delete(_cacheNamespace, id);
+    await imageMirror?.refreshNamespace(_cacheNamespace, owner.syncImageFields);
   }
 
   Future<_ReplicaContext?> _replicaContext() async {

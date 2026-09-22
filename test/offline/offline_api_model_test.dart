@@ -339,6 +339,37 @@ void main() {
       expect(await outbox.all(), hasLength(1));
     });
 
+    test('the cached records of two workspaces stay apart', () async {
+      final tenant = _TenantResolver()..slug = 'ws-a';
+      if (!hasService<OfflineContextParams>()) {
+        container.registerSingleton<OfflineContextParams>(
+          OfflineContextParams(),
+        );
+      }
+      getService<OfflineContextParams>().register(tenant);
+      addTearDown(() => getService<OfflineContextParams>().unregister(tenant));
+
+      final scoped = _ItemApi(
+        fetcher: fetcher,
+        localStore: store,
+        basePath: '/{workspace}/items',
+      );
+
+      adapter.routes['GET /{workspace}/items'] = _paginated([
+        {'id': 1, 'name': 'Of A'},
+      ]);
+      await scoped.sync();
+
+      // Nothing to purge on a switch: the other workspace simply holds none.
+      expect(
+        await OfflineContextParams.within({
+          'workspace': 'ws-b',
+        }, scoped.cachedList),
+        isEmpty,
+      );
+      expect((await scoped.cachedGet(1))?.name, 'Of A');
+    });
+
     test('applies pending deletes over pulled records', () async {
       await store.put('/items', 3, {
         'id': 3,

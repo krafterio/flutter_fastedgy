@@ -484,6 +484,11 @@ class SyncEngine {
     TempIdMap idMap,
     Map<String, MetadataModel>? metadatas,
   ) async {
+    // Into the workspace the upload was captured in, as a buffered write.
+    final prefix = OfflineContextParams.substituteWith(
+      request.prefix,
+      operation.context,
+    );
     final file = MultipartFile.fromBytes(
       bytes,
       filename: request.fileName,
@@ -513,7 +518,7 @@ class SyncEngine {
       }
 
       final response = await _fetcher.post(
-        '${request.prefix}/storage/upload/attachments',
+        '$prefix/storage/upload/attachments',
         formData,
         headers: {'Content-Type': 'multipart/form-data'},
       );
@@ -537,7 +542,7 @@ class SyncEngine {
     }
 
     final response = await _fetcher.post(
-      '${request.prefix}/storage/upload/$model/$id/${request.field}',
+      '$prefix/storage/upload/$model/$id/${request.field}',
       FormData.fromMap({'file': file}),
       headers: {'Content-Type': 'multipart/form-data'},
     );
