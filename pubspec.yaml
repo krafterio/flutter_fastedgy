@@ -44,6 +44,8 @@ dependencies:
   drift_flutter: ^0.3.1
   sqlite3: ^3.5.0
   connectivity_plus: ^7.3.0
+  # The browser socket of the realtime transport (see realtime_connect_web.dart).
+  web_socket_channel: ^3.0.1
 
 # No published appflowy_editor compiles against Flutter 3.44. Ignored when an
 # application depends on this package, so every root repeats it.

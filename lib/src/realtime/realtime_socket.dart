@@ -5,7 +5,6 @@
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:clock/clock.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -21,6 +20,8 @@ import '../container/container.dart';
 import '../fetcher/http_error.dart';
 import '../logging/logging.dart';
 import 'origin.dart';
+import 'realtime_connect.dart'
+    if (dart.library.js_interop) 'realtime_connect_web.dart';
 import 'realtime_events.dart';
 
 /// `flow` for a list, `flow:42` for one record.
@@ -67,7 +68,7 @@ class RealtimeSocket with WidgetsBindingObserver {
     this.backgroundGrace = const Duration(seconds: 20),
     Bus? bus,
     AuthProvider? auth,
-  }) : _connector = connector ?? _connect,
+  }) : _connector = connector ?? connectRealtime,
        _bus = bus ?? getService<Bus>(),
        _auth = auth ?? getService<AuthProvider>();
 
@@ -666,26 +667,4 @@ class RealtimeSocket with WidgetsBindingObserver {
       Connectivity().onConnectivityChanged.map(
         (results) => results.any((result) => result != ConnectivityResult.none),
       );
-}
-
-Future<RealtimeConnection> _connect(
-  Uri url,
-  Map<String, dynamic> headers,
-) async {
-  final socket = await WebSocket.connect(
-    '$url',
-    headers: headers,
-  ).timeout(const Duration(seconds: 15));
-
-  // A ping rather than a heartbeat frame: it keeps an idle flow warm all the
-  // same, and a socket that died without a close answers no pong.
-  socket.pingInterval = const Duration(seconds: 30);
-
-  return RealtimeConnection(
-    messages: socket,
-    send: socket.add,
-    close: () async {
-      await socket.close(WebSocketStatus.normalClosure);
-    },
-  );
 }
