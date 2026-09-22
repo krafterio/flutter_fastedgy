@@ -34,13 +34,19 @@ class ErrorInterceptor extends Interceptor {
   void onError(DioException err, ErrorInterceptorHandler handler) {
     final status = err.response?.statusCode;
 
-    _report(!isServerUnavailable(err), maintenance: status == 502 || status == 503);
+    _report(
+      !isServerUnavailable(err),
+      maintenance: status == 502 || status == 503,
+    );
     handler.next(err);
   }
 
   void _report(bool answering, {bool maintenance = false}) {
     if (hasService<SyncStatus>()) {
-      getService<SyncStatus>().setServerAnswering(answering, maintenance: maintenance);
+      getService<SyncStatus>().setServerAnswering(
+        answering,
+        maintenance: maintenance,
+      );
     }
   }
 }

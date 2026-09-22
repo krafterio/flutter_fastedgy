@@ -619,6 +619,7 @@ class _AttachmentImage extends StatelessWidget {
         // settles into what its placeholder promised does not jump. Without a
         // size here the loading state asks for an unbounded height, which a
         // column cannot lay out.
+        lazy: false,
         loadingBuilder: (context) => RichTextControls.of(context).placeholder(
           context,
           RichTextPlaceholderSpec(width: width, height: height),

@@ -68,6 +68,10 @@ class CachedApiImage extends StatefulWidget {
   /// Default: true
   final bool autoCalculatePhysicalDimensions;
 
+  /// Waits for the widget to come near the screen before downloading. Outside
+  /// any scrollable, it downloads right away.
+  final bool lazy;
+
   final Widget Function(BuildContext, Object, StackTrace?)? errorBuilder;
   final Widget Function(BuildContext)? loadingBuilder;
   final Widget? placeholder;
@@ -84,6 +88,7 @@ class CachedApiImage extends StatefulWidget {
     this.mode = ImageMode.cover,
     this.format = 'webp',
     this.autoCalculatePhysicalDimensions = true,
+    this.lazy = true,
     this.errorBuilder,
     this.loadingBuilder,
     this.placeholder,
@@ -97,6 +102,8 @@ class CachedApiImage extends StatefulWidget {
   State<CachedApiImage> createState() => _CachedApiImageState();
 }
 
+const _lazyReach = 200.0;
+
 class _CachedApiImageState extends State<CachedApiImage> {
   final _logger = getLogger('CachedApiImage');
 
@@ -106,19 +113,74 @@ class _CachedApiImageState extends State<CachedApiImage> {
   bool _isDisposed = false;
   BoxConstraints? _lastConstraints;
   bool _probedCache = false;
+  final _scrollPositions = <ScrollPosition>[];
+  late bool _awake = !widget.lazy;
 
   @override
   void initState() {
     super.initState();
     // Only load immediately if explicit dimensions are provided
     // Otherwise, wait for LayoutBuilder in build() to provide constraints
-    if (widget.width != null || widget.height != null) {
+    if (_awake && (widget.width != null || widget.height != null)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && !_isDisposed) {
           _loadImage();
         }
       });
     }
+  }
+
+  void _watchVisibility() {
+    context.visitAncestorElements((element) {
+      if (element is StatefulElement && element.state is ScrollableState) {
+        final position = (element.state as ScrollableState).position;
+        _scrollPositions.add(position);
+        position.addListener(_checkVisibility);
+      }
+
+      return true;
+    });
+
+    if (_scrollPositions.isEmpty) {
+      _wake();
+      return;
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkVisibility());
+  }
+
+  void _checkVisibility() {
+    if (_awake || !mounted || _isDisposed) return;
+
+    final box = context.findRenderObject() as RenderBox?;
+
+    if (box == null || !box.attached || !box.hasSize) return;
+
+    final screen = Offset.zero & MediaQuery.sizeOf(context);
+
+    if ((box.localToGlobal(Offset.zero) & box.size).overlaps(
+      screen.inflate(_lazyReach),
+    )) {
+      _wake();
+    }
+  }
+
+  void _unwatchVisibility() {
+    for (final position in _scrollPositions) {
+      position.removeListener(_checkVisibility);
+    }
+
+    _scrollPositions.clear();
+  }
+
+  void _wake() {
+    if (_awake) return;
+
+    _unwatchVisibility();
+
+    setState(() {
+      _awake = true;
+    });
   }
 
   @override
@@ -136,6 +198,10 @@ class _CachedApiImageState extends State<CachedApiImage> {
     //
     // Here rather than in initState: the key is computed from the device pixel
     // ratio, which is an inherited value and not one to read before this.
+    if (!_awake) {
+      _watchVisibility();
+    }
+
     if (_probedCache || (widget.width == null && widget.height == null)) {
       return;
     }
@@ -149,6 +215,7 @@ class _CachedApiImageState extends State<CachedApiImage> {
   @override
   void dispose() {
     _isDisposed = true;
+    _unwatchVisibility();
     super.dispose();
   }
 
@@ -340,14 +407,15 @@ class _CachedApiImageState extends State<CachedApiImage> {
     return LayoutBuilder(
       builder: (context, constraints) {
         // Load image with constraints if not already loaded or if constraints changed
-        if (_imageBytes == null && !_isLoading && _error == null) {
+        if (_awake && _imageBytes == null && !_isLoading && _error == null) {
           _lastConstraints = constraints;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted && !_isDisposed) {
               _loadImage(constraints: constraints);
             }
           });
-        } else if (_lastConstraints != constraints &&
+        } else if (_awake &&
+            _lastConstraints != constraints &&
             widget.width == null &&
             widget.height == null) {
           // Reload if constraints changed significantly and no explicit dimensions
@@ -369,9 +437,8 @@ class _CachedApiImageState extends State<CachedApiImage> {
           }
         }
 
-        if (_isLoading) {
-          return _switched(
-            'loading',
+        if (_isLoading || !_awake) {
+          return _faded(
             widget.loadingBuilder?.call(context) ??
                 (widget.placeholder != null
                     ? SizedBox(
@@ -388,8 +455,7 @@ class _CachedApiImageState extends State<CachedApiImage> {
         }
 
         if (_error != null) {
-          return _switched(
-            'error',
+          return _faded(
             widget.errorBuilder?.call(context, _error!, StackTrace.empty) ??
                 ImagePlaceholders.registered.error(
                   context,
@@ -400,7 +466,7 @@ class _CachedApiImageState extends State<CachedApiImage> {
         }
 
         if (_imageBytes == null) {
-          return _switched('empty', const SizedBox.shrink());
+          return _faded(const SizedBox.shrink());
         }
 
         // Map ImageMode to BoxFit automatically
@@ -421,15 +487,12 @@ class _CachedApiImageState extends State<CachedApiImage> {
           errorBuilder: _onDecodeFailed,
         );
 
-        return _switched('image', image);
+        return _faded(image);
       },
     );
   }
 
-  Widget _switched(String state, Widget child) {
-    return AnimatedSwitcher(
-      duration: widget.fadeInDuration,
-      child: KeyedSubtree(key: ValueKey(state), child: child),
-    );
+  Widget _faded(Widget child) {
+    return AnimatedSwitcher(duration: widget.fadeInDuration, child: child);
   }
 }

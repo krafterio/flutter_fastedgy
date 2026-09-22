@@ -190,6 +190,50 @@ void main() {
       expect(find.text('failed'), findsOneWidget);
     });
 
+    testWidgets('a lazy image downloads once it nears the viewport', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: 5,
+                itemExtent: 900,
+                itemBuilder: (context, index) => CachedApiImage(
+                  path: 'recipes/$index.png',
+                  mode: ImageMode.cover,
+                  format: 'webp',
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      for (var round = 0; round < 30; round++) {
+        await tester.pump(const Duration(milliseconds: 10));
+      }
+
+      expect(adapter.calls, ['GET /storage/download/recipes/0.png']);
+
+      await tester.drag(
+        find.byType(SingleChildScrollView),
+        const Offset(0, -900),
+      );
+
+      for (var round = 0; round < 30; round++) {
+        await tester.pump(const Duration(milliseconds: 10));
+      }
+
+      expect(adapter.calls, [
+        'GET /storage/download/recipes/0.png',
+        'GET /storage/download/recipes/1.png',
+      ]);
+    });
+
     testWidgets('draws the error the app registered', (tester) async {
       container.registerSingleton<ImagePlaceholders>(_AppPlaceholders());
       addTearDown(container.unregister<ImagePlaceholders>);

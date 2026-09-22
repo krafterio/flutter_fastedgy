@@ -81,6 +81,7 @@ class _DocumentCoverState extends State<DocumentCover> {
                   height: DocumentCover.height,
                   mode: ImageMode.cover,
                   format: 'webp',
+                  lazy: false,
                   errorBuilder: (context, error, stackTrace) => ColoredBox(
                     color: RichTextTheme.of(context).subtleSurface,
                   ),
