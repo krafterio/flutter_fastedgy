@@ -3,6 +3,7 @@
  * MIT License (see LICENSE file).
  */
 
+import '../fetcher/http_error.dart';
 import '../logging/logger.dart';
 import '../storage/storage_downloader.dart';
 import 'local_image_store.dart';
@@ -22,6 +23,16 @@ import '../api/sync_image_field.dart';
 class ImageMirror {
   static const _indexNamespace = '_image_paths';
   static const _pathsKey = 'paths';
+  static const _missesRecord = '_misses';
+  static const _missesKey = 'misses';
+
+  /// How many passes a path answering 404 is asked for before being dropped.
+  ///
+  /// One 404 says nothing sure: a file can reach the server moments after the
+  /// record naming it, and the pass that follows catches it up. A path that
+  /// answers 404 three passes running is gone, and asking again costs one
+  /// request per variant, on every pass, for good.
+  static const _missesBeforeGivingUp = 3;
 
   final LocalStore _records;
   final LocalImageStore _images;
@@ -92,6 +103,7 @@ class ImageMirror {
     for (final removed in previous.difference(current)) {
       if (!await _isReferenced(removed)) {
         await _images.removePath(removed);
+        await _forget(removed);
       }
     }
 
@@ -178,6 +190,12 @@ class ImageMirror {
       return;
     }
 
+    final misses = await _misses();
+
+    if ((misses[path] ?? 0) >= _missesBeforeGivingUp) {
+      return;
+    }
+
     for (final variant in variants) {
       if (await _images.hasVariant(path, variant.key)) {
         continue;
@@ -201,11 +219,65 @@ class ImageMirror {
           width: variant.width,
           height: variant.height,
         );
+
+        if (misses.remove(path) != null) {
+          await _writeMisses(misses);
+        }
       } catch (error) {
+        if (error is HttpError && error.statusCode == 404) {
+          // The other variants of a path the server does not have would answer
+          // the same thing.
+          await _missed(path, misses);
+
+          return;
+        }
+
         _logger.warning('Failed to mirror image $path (${variant.key})', error);
       }
     }
   }
+
+  /// One more pass that did not find [path], and the line that says so when
+  /// it is the pass that gives up.
+  Future<void> _missed(String path, Map<String, int> misses) async {
+    final count = (misses[path] ?? 0) + 1;
+
+    misses[path] = count;
+    await _writeMisses(misses);
+
+    if (count >= _missesBeforeGivingUp) {
+      _logger.warning('Image $path is not on the server, asked for no more');
+    }
+  }
+
+  Future<void> _forget(String path) async {
+    final misses = await _misses();
+
+    if (misses.remove(path) != null) {
+      await _writeMisses(misses);
+    }
+  }
+
+  /// How many passes each path has answered 404 for, read from the record
+  /// store so a restart does not start the count over, and so a logout that
+  /// empties the store asks for them anew.
+  Future<Map<String, int>> _misses() async {
+    final record = await _records.get(_indexNamespace, _missesRecord);
+    final misses = record?[_missesKey];
+
+    if (misses is! Map) {
+      return {};
+    }
+
+    return {
+      for (final entry in misses.entries)
+        if (entry.key is String && entry.value is num)
+          entry.key as String: (entry.value as num).toInt(),
+    };
+  }
+
+  Future<void> _writeMisses(Map<String, int> misses) =>
+      _records.put(_indexNamespace, _missesRecord, {_missesKey: misses});
 
   Future<Set<String>> _namespacePaths(String namespace) async {
     final record = await _records.get(_indexNamespace, namespace);

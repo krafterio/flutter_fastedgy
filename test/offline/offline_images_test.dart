@@ -393,6 +393,24 @@ void main() {
       );
     });
 
+    test('stops asking for a picture three passes did not find', () async {
+      adapter.routes['GET /items'] = (options) => _page([
+        {'id': 1, 'name': 'One', 'avatar': 'avatars/gone.png'},
+      ]);
+
+      // No byte route for it: the download answers 404, pass after pass.
+      for (var pass = 0; pass < 5; pass++) {
+        await api.sync();
+      }
+
+      expect(
+        adapter.requests.where(
+          (options) => options.path.endsWith('avatars/gone.png'),
+        ),
+        hasLength(3),
+      );
+    });
+
     test('reading a record again re-indexes nothing else', () async {
       adapter.routes['GET /items'] = (options) => _page([
         {'id': 1, 'name': 'One', 'avatar': 'avatars/a.png'},
