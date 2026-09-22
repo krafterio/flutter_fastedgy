@@ -7,6 +7,8 @@ import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 import 'package:sqlite3/common.dart';
 
+import '../logging/logger.dart';
+
 /// Schema-less drift database driven at runtime.
 ///
 /// The offline layer declares no code-generated tables: DDL is executed at
@@ -28,12 +30,17 @@ class OfflineDatabase extends GeneratedDatabase {
           web: DriftWebOptions(
             sqlite3Wasm: Uri.parse('sqlite3.wasm'),
             driftWorker: Uri.parse('drift_worker.js'),
+            onResult: logOfflineDatabaseStorage,
           ),
         ),
       );
 
-  /// Silence drift's multiple-database warning: tests open several in-memory
-  /// databases of this class (production shares a single one).
+  /// Silence drift's multiple-database warning.
+  ///
+  /// The warning reads the class alone, not the file each instance was opened
+  /// on, and this one is schema-less: the offline layer opens the shared record
+  /// file and, where there is no filesystem to hold the bytes, the image file
+  /// of a [DriftLocalImageStore]. Tests open several in-memory ones as well.
   static void allowMultipleInstances() {
     driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
   }
@@ -43,6 +50,21 @@ class OfflineDatabase extends GeneratedDatabase {
 
   @override
   int get schemaVersion => 1;
+}
+
+/// Reports the storage the web build settled on, in place of the print drift
+/// makes of it on every open.
+///
+/// Which one it is answers whether the local data survives the tab, so it is
+/// worth a line; the features the browser lacks explain the choice and
+/// nothing else, so they only follow it in the same line.
+void logOfflineDatabaseStorage(WasmDatabaseResult result) {
+  final missing = result.missingFeatures.map((feature) => feature.name);
+
+  getLogger('OfflineDatabase').fine(
+    'Web storage: ${result.chosenImplementation.name}'
+    '${missing.isEmpty ? '' : ' (browser lacks ${missing.join(', ')})'}',
+  );
 }
 
 /// Pragmas applied to every native connection to the offline database.

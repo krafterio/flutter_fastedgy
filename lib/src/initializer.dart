@@ -245,6 +245,10 @@ Future<void> initializeFastEdgy({
   OfflineDatabase sharedDb() =>
       offlineDb ??= OfflineDatabase.open(offlineDbName ?? 'data.db');
 
+  // A store that holds its bytes in a file of its own opens a second database,
+  // which drift reads as this class built twice.
+  OfflineDatabase.allowMultipleInstances();
+
   // Live switch of the local layer: registered first so every offline service
   // below reads the same state.
   if (offline && !hasService<OfflineMode>()) {
