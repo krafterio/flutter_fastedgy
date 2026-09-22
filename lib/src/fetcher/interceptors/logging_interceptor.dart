@@ -3,6 +3,8 @@
  * MIT License (see LICENSE file).
  */
 
+import 'dart:convert' show utf8;
+
 import 'package:dio/dio.dart';
 
 import '../../logging/logger.dart';
@@ -56,18 +58,45 @@ class LoggingInterceptor extends Interceptor {
 
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
-    final statusCode = err.response?.statusCode ?? '???';
+    final response = err.response;
+    final statusCode = response?.statusCode ?? '???';
     final method = err.requestOptions.method;
     final uri = err.requestOptions.uri;
 
     _logger.fine('✖ $statusCode $method $uri');
 
-    if (err.response != null && logBody && err.response!.data != null) {
-      _logger.fine('Error body: ${err.response!.data}');
+    if (response == null) {
+      // No status code: the transport itself failed (timeout, offline, abort),
+      // and dio's message is the only thing that says which. A status tells the
+      // story on its own, where that message only restates what a 404 means.
+      _logger.fine('Error: ${err.message}');
+    } else if (logBody) {
+      final body = _readableBody(response.data);
+
+      if (body != null) {
+        _logger.fine('Error body: $body');
+      }
     }
 
-    _logger.fine('Error: ${err.message}');
-
     handler.next(err);
+  }
+
+  /// The error payload as text, or null when there is nothing readable to
+  /// print: a request that asked for bytes (an image, a download) answers its
+  /// error as bytes too, which print as a list of character codes.
+  String? _readableBody(Object? data) {
+    if (data is List<int>) {
+      try {
+        final decoded = utf8.decode(data);
+
+        return decoded.isEmpty ? null : decoded;
+      } on FormatException {
+        return null;
+      }
+    }
+
+    final text = data?.toString();
+
+    return text == null || text.isEmpty ? null : text;
   }
 }

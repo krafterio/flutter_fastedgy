@@ -10,6 +10,7 @@ import 'dart:typed_data' show TypedData;
 
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import '../api/api_model_engine.dart' show ResourceChangedEvent;
@@ -20,6 +21,7 @@ import '../auth/token_storage.dart';
 import '../realtime/origin.dart';
 import '../realtime/realtime_events.dart' show ResourcesStaleEvent;
 import '../auth/auth_provider.dart';
+import 'cors_warning.dart' if (dart.library.js_interop) 'cors_warning_web.dart';
 import 'events.dart';
 import 'http_error.dart';
 import 'interceptor_config.dart';
@@ -157,13 +159,15 @@ class Fetcher {
             baseUrl: baseUrl,
             connectTimeout: const Duration(seconds: 15),
             receiveTimeout: const Duration(seconds: 15),
-            sendTimeout: const Duration(seconds: 15),
+            sendTimeout: kIsWeb ? null : const Duration(seconds: 15),
             headers: {
               'Accept': 'application/json',
               'Content-Type': 'application/json',
             },
           ),
         );
+
+    silenceCorsWarning(dioInstance);
 
     // Build list of interceptors with priorities
     final allInterceptors = <InterceptorConfig>[];
