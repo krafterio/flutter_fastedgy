@@ -98,4 +98,63 @@ void main() {
 
     expect(params.scopeOf('/notes'), '');
   });
+
+  test('within runs a call in another tenant, and only that call', () async {
+    final params = OfflineContextParams()..register(_MockTenant());
+
+    final inside = await OfflineContextParams.within(
+      {'workspace': 'studio'},
+      scope: {'workspace': 9},
+      () async {
+        await Future<void>.delayed(Duration.zero);
+
+        return (
+          context: params.contextFor('/{workspace}'),
+          scope: params.scopeOf('/{workspace}'),
+        );
+      },
+    );
+
+    expect(inside.context, {'workspace': 'studio'});
+    expect(inside.scope, '9');
+    expect(params.contextFor('/{workspace}'), {'workspace': 'acme'});
+    expect(params.scopeOf('/{workspace}'), '7');
+  });
+
+  test('a nested within adds to the outer one', () {
+    final params = OfflineContextParams();
+
+    final context = OfflineContextParams.within(
+      {'workspace': 'studio'},
+      () => OfflineContextParams.within(
+        {'locale': 'en'},
+        () => params.contextFor('/{workspace}/{locale}'),
+      ),
+    );
+
+    expect(context, {'workspace': 'studio', 'locale': 'en'});
+  });
+
+  test('within moves a global scope without scoping any other path', () {
+    final params = OfflineContextParams()
+      ..register(_MockTenant(), global: true);
+    final unscoped = OfflineContextParams();
+
+    expect(
+      OfflineContextParams.within(
+        {'workspace': 'studio'},
+        scope: {'workspace': 9},
+        () => (params.scopeOf('/notes'), unscoped.scopeOf('/notes')),
+      ),
+      ('9', ''),
+    );
+  });
+
+  test('the cache scope of a path is only what its params give', () {
+    final params = OfflineContextParams()
+      ..register(_MockTenant(), global: true);
+
+    expect(params.declaredScopeOf('/notes'), '');
+    expect(params.declaredScopeOf('/{workspace}/notes'), '7');
+  });
 }

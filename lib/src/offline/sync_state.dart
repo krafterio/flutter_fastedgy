@@ -58,9 +58,17 @@ class SyncStateProbe {
 
   final _logger = getLogger('SyncStateProbe');
 
-  Map<String, SyncModelState>? _cached;
-  Set<String>? _covered;
-  DateTime? _cachedAt;
+  /// The last answer of each scope: two workspaces synced one after the other
+  /// never read each other's states.
+  final _answers =
+      <
+        String,
+        ({
+          Map<String, SyncModelState> states,
+          Set<String>? covered,
+          DateTime at,
+        })
+      >{};
 
   SyncStateProbe({
     Fetcher? fetcher,
@@ -84,7 +92,8 @@ class SyncStateProbe {
   /// route, an unreachable one): the caller falls back to the manifest walk
   /// rather than skipping a sync it cannot prove is up to date.
   Future<Map<String, SyncModelState>?> fetch({List<String>? models}) async {
-    final cached = _served(models);
+    final prefix = _prefix;
+    final cached = _served(prefix, models);
 
     if (cached != null) {
       return cached;
@@ -92,21 +101,24 @@ class SyncStateProbe {
 
     try {
       final response = await _fetcher.get(
-        '$_prefix/dataset/sync-state',
+        '$prefix/dataset/sync-state',
         params: {
           if (models != null && models.isNotEmpty) 'models': models.join(','),
         },
       );
       final items = (response.data['items'] as List?) ?? const [];
-
-      _cached = {
+      final states = {
         for (final item in items.whereType<Map<String, dynamic>>())
           '${item['model']}': SyncModelState.fromJson(item),
       };
-      _covered = models?.toSet();
-      _cachedAt = DateTime.now();
 
-      return _cached;
+      _answers[prefix] = (
+        states: states,
+        covered: models?.toSet(),
+        at: DateTime.now(),
+      );
+
+      return states;
     } catch (error) {
       _logger.fine(
         'Sync state unavailable, falling back to the manifest',
@@ -118,29 +130,23 @@ class SyncStateProbe {
   }
 
   /// Forget the last answer: the next ask goes to the server.
-  void invalidate() {
-    _cached = null;
-    _covered = null;
-    _cachedAt = null;
-  }
+  void invalidate() => _answers.clear();
 
-  /// The last answer, when it is still fresh and covered [models].
-  Map<String, SyncModelState>? _served(List<String>? models) {
-    final cached = _cached;
-    final at = _cachedAt;
+  /// The last answer under [prefix], when it is still fresh and covered
+  /// [models].
+  Map<String, SyncModelState>? _served(String prefix, List<String>? models) {
+    final answer = _answers[prefix];
 
-    if (cached == null ||
-        at == null ||
-        DateTime.now().difference(at) > freshness) {
+    if (answer == null || DateTime.now().difference(answer.at) > freshness) {
       return null;
     }
 
-    final covered = _covered;
+    final covered = answer.covered;
 
     if (covered != null && (models == null || !covered.containsAll(models))) {
       return null;
     }
 
-    return cached;
+    return answer.states;
   }
 }

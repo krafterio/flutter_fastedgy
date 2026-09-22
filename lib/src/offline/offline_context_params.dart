@@ -3,6 +3,8 @@
  * MIT License (see LICENSE file).
  */
 
+import 'dart:async' show Zone, runZoned;
+
 /// Provides values for the offline context (`{param}` placeholders of
 /// resource base paths), re-read on every call so they follow live app state
 /// (selected tenant, …).
@@ -29,6 +31,7 @@ abstract interface class OfflineScopeParamsResolver
 /// here, and no param name is hardcoded.
 class OfflineContextParams {
   static final _paramPattern = RegExp(r'\{([A-Za-z0-9_]+)\}');
+  static final _zoneKey = Object();
 
   final List<OfflineContextParamsResolver> _resolvers = [];
   final List<OfflineContextParamsResolver> _globals = [];
@@ -52,9 +55,42 @@ class OfflineContextParams {
   static List<String> paramsOf(String path) =>
       _paramPattern.allMatches(path).map((match) => match.group(1)!).toList();
 
-  /// Merged values, a later registration overriding an earlier one.
+  /// Runs [body] in the context [values] give, over whatever the registered
+  /// resolvers say: every call, sync or buffered write it starts substitutes,
+  /// captures and mirrors under them, while the rest of the app stays where it
+  /// is. [scope] is what they are mirrored under, [values] when none is given,
+  /// as for a resolver without a scope. A nested call adds to the outer one.
+  static R within<R>(
+    Map<String, Object?> values,
+    R Function() body, {
+    Map<String, Object?>? scope,
+  }) {
+    final outer = _within;
+
+    return runZoned(
+      body,
+      zoneValues: {
+        _zoneKey: (
+          values: {...?outer?.values, ...values},
+          scope: {...?outer?.scope, ...(scope ?? values)},
+        ),
+      },
+    );
+  }
+
+  /// What [within] gives the code running now, null outside of it.
+  static Map<String, Object?>? get withinValues => _within?.values;
+
+  static ({Map<String, Object?> values, Map<String, Object?> scope})?
+  get _within =>
+      Zone.current[_zoneKey]
+          as ({Map<String, Object?> values, Map<String, Object?> scope})?;
+
+  /// Merged values, a later registration overriding an earlier one, and
+  /// [within] overriding them all.
   Map<String, Object?> resolve() => {
     for (final resolver in _resolvers) ...resolver.resolve(),
+    ...?_within?.values,
   };
 
   /// Merged scope values: what a resolver declares through
@@ -70,7 +106,7 @@ class OfflineContextParams {
       );
     }
 
-    return values;
+    return {...values, ...?_within?.scope};
   }
 
   /// [path] substituted from an explicit [context] — how a buffered offline
@@ -105,8 +141,15 @@ class OfflineContextParams {
       return _globalScope();
     }
 
-    return _valuesFor(path, resolveScope()).values.join('/');
+    return declaredScopeOf(path);
   }
+
+  /// Scope of what a resource at [path] caches outside the replica: the scope
+  /// values of the params its path declares, joined by `/`, and '' for a path
+  /// that declares none. Unlike [scopeOf], never the global scope, so a cache
+  /// the app keys by path alone keeps its keys.
+  String declaredScopeOf(String path) =>
+      _valuesFor(path, resolveScope()).values.join('/');
 
   String _globalScope() {
     final values = <String, Object?>{};
@@ -117,6 +160,16 @@ class OfflineContextParams {
             ? resolver.resolveScope()
             : resolver.resolve(),
       );
+    }
+
+    // [within] moves what the global resolvers scope, and adds nothing to it:
+    // a path declaring no param is no more scoped inside it than outside.
+    final overrides = _within?.scope ?? const {};
+
+    for (final key in values.keys.toList()) {
+      if (overrides.containsKey(key)) {
+        values[key] = overrides[key];
+      }
     }
 
     return values.values
