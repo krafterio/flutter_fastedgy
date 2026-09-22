@@ -814,6 +814,29 @@ class _ReplicatedItemApi extends ApiModel<_Item> {
   _Item fromJson(Map<String, dynamic> json) => _Item(json);
 }
 
+/// An api that declares no model name, as an app's `TaskApi('/tasks')`: its
+/// metadata name is read from the api name of its path.
+class _PathItemApi extends ApiModel<_Item> {
+  _PathItemApi({
+    required Fetcher fetcher,
+    required Replica replica,
+    required LocalStore localStore,
+  }) : super(
+         '/{workspace}/items',
+         fetcher: fetcher,
+         offlineBindings: OfflineStores(
+           localStore: localStore,
+           replica: replica,
+         ),
+       );
+
+  @override
+  List<String>? get syncFields => const ['id', 'name', 'tag', 'qty'];
+
+  @override
+  _Item fromJson(Map<String, dynamic> json) => _Item(json);
+}
+
 const _itemSchema = LocalSchema({
   'item': LocalModelSchema(
     name: 'item',
@@ -977,6 +1000,45 @@ void replicatedModeTests() {
       expect(result.total, 0);
     },
   );
+
+  test(
+    'a filter the replica cannot evaluate is not served unfiltered',
+    () async {
+      adapter.routes['GET /acme/items'] = _paginated([
+        {'id': 1, 'name': 'One', 'qty': 3},
+        {'id': 2, 'name': 'Two', 'qty': 8},
+      ]);
+      await api.sync();
+
+      adapter.offline = true;
+
+      await expectLater(
+        api.list(query: const ListQuery(filter: ['name', 'search', 'One'])),
+        throwsA(isA<UnsupportedError>()),
+      );
+    },
+  );
+
+  test('a model named by its metadata alone queries the replica', () async {
+    final unnamed = _PathItemApi(
+      fetcher: fetcher(),
+      replica: replica,
+      localStore: store,
+    );
+    adapter.routes['GET /acme/items'] = _paginated([
+      {'id': 1, 'name': 'One', 'qty': 3},
+      {'id': 2, 'name': 'Two', 'qty': 8},
+    ]);
+    await unnamed.sync();
+
+    adapter.offline = true;
+    final result = await unnamed.list(
+      query: const ListQuery(filter: ['qty', '>', 5]),
+    );
+
+    expect(result.items.map((item) => item.name), ['Two']);
+    expect(await replicaStore.getAll('item', 'acme'), hasLength(2));
+  });
 
   test('an unsynced scope rethrows offline errors', () async {
     adapter.routes['GET /acme/items'] = _paginated([

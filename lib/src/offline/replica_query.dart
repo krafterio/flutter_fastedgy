@@ -189,6 +189,7 @@ class ReplicaQueryCompiler {
       args,
       (innerAlias, rest) =>
           _leafPredicate(ctx, innerAlias, rest, path.leaf, rule, args),
+      idOnly: path.leaf.name == 'id',
     );
   }
 
@@ -217,6 +218,7 @@ class ReplicaQueryCompiler {
           ? '1 = 1'
           : '(${_compileCondition(ctx, hops.last.target, innerAlias, subFilter, args)})',
       toEnd: true,
+      idOnly: subFilter == null,
     );
 
     return rule.operator == 'any' ? exists : 'NOT $exists';
@@ -236,10 +238,12 @@ class ReplicaQueryCompiler {
     List<Object?> args,
     String Function(String alias, List<_Hop> rest) inner, {
     bool toEnd = false,
+    bool idOnly = false,
   }) {
     final hop = hops[depth];
     final alias = ctx.nextAlias('e');
     var from = '"${_table(hop.target)}" $alias';
+    var scope = ctx.scopeOf(hop.target.name);
     final String link;
 
     switch (hop.kind) {
@@ -252,6 +256,15 @@ class ReplicaQueryCompiler {
             '$alias."${hop.genericReverse!.referenceIdColumn}" = $parentAlias.id '
             'AND $alias."${hop.genericReverse!.referenceModelColumn}" = ?';
         args.add(hop.sourceModel);
+      // A path ending on the id of a m2m target reads the pivot alone: the
+      // target model need not be mirrored (a task's `users.id` when only
+      // `household_user` is synchronized).
+      case _HopKind.many2many when idOnly && depth == hops.length - 1:
+        from =
+            '(SELECT parent_id, target_id AS id, _workspace '
+            'FROM "${hop.pivotTable}") $alias';
+        link = '$alias.parent_id = $parentAlias.id';
+        scope = ctx.scopeOf(parentModel);
       case _HopKind.many2many:
         final pivot = ctx.nextAlias('p');
         from =
@@ -263,7 +276,7 @@ class ReplicaQueryCompiler {
         args.add(ctx.scopeOf(parentModel));
     }
 
-    args.add(ctx.scopeOf(hop.target.name));
+    args.add(scope);
 
     final rest = hops.sublist(depth + 1);
     final reached = toEnd ? rest.isEmpty : _allMany2one(rest);
@@ -278,6 +291,7 @@ class ReplicaQueryCompiler {
             args,
             inner,
             toEnd: toEnd,
+            idOnly: idOnly,
           );
 
     return 'EXISTS (SELECT 1 FROM $from '

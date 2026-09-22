@@ -85,9 +85,7 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
   Replica? get replica => !OfflineMode.isEnabled
       ? null
       : _stores?.replica ??
-            (owner.modelName != null && hasService<Replica>()
-                ? getService<Replica>()
-                : null);
+            (hasService<Replica>() ? getService<Replica>() : null);
 
   Outbox? get outbox => !OfflineMode.isEnabled
       ? null
@@ -935,6 +933,12 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
         );
       } catch (error) {
         _warnReplicaFailure('cached query', error);
+
+        // The unfiltered mirror is no answer to a filter: a screen would show
+        // every record as if they matched.
+        if (query?.filter != null) {
+          rethrow;
+        }
       }
     }
 
@@ -1296,9 +1300,17 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
     await owner.resolvePath();
 
     final replica = this.replica;
-    final model = owner.modelName;
 
-    if (replica == null || model == null) {
+    if (replica == null) {
+      return null;
+    }
+
+    // The api name of the path is not the metadata name the schema is keyed
+    // by (`/tasks` serves `task`): a model that declared none is resolved
+    // through its metadata.
+    final model = await owner.resolveModelName();
+
+    if (model == null) {
       return null;
     }
 
