@@ -55,6 +55,12 @@ class _ScriptedAdapter implements HttpClientAdapter {
   void close({bool force = false}) {}
 }
 
+class _AppPlaceholders extends ImagePlaceholders {
+  @override
+  Widget error(BuildContext context, {double? width, double? height}) =>
+      const Text('app error', textDirection: TextDirection.ltr);
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -114,6 +120,7 @@ void main() {
     WidgetTester tester, {
     required String path,
     Widget? placeholder,
+    bool withErrorBuilder = true,
   }) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -128,8 +135,10 @@ void main() {
               mode: ImageMode.cover,
               format: 'webp',
               placeholder: placeholder,
-              errorBuilder: (context, error, stackTrace) =>
-                  const Text('failed', textDirection: TextDirection.ltr),
+              errorBuilder: withErrorBuilder
+                  ? (context, error, stackTrace) =>
+                        const Text('failed', textDirection: TextDirection.ltr)
+                  : null,
             ),
           ),
         ),
@@ -179,6 +188,20 @@ void main() {
       await pumpImage(tester, path: 'avatars/missing.png');
 
       expect(find.text('failed'), findsOneWidget);
+    });
+
+    testWidgets('draws the error the app registered', (tester) async {
+      container.registerSingleton<ImagePlaceholders>(_AppPlaceholders());
+      addTearDown(container.unregister<ImagePlaceholders>);
+
+      adapter.offline = true;
+      await pumpImage(
+        tester,
+        path: 'avatars/missing.png',
+        withErrorBuilder: false,
+      );
+
+      expect(find.text('app error'), findsOneWidget);
     });
 
     testWidgets('downloads one rendition across a resize animation', (

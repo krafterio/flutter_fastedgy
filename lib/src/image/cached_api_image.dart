@@ -13,6 +13,7 @@ import '../logging/logger.dart';
 import 'image_cache.dart' as fastedgy_cache;
 import 'storage_image_bytes.dart';
 import 'image_dimensions_helper.dart';
+import 'image_placeholders.dart';
 
 /// Image resize mode for API requests
 enum ImageMode {
@@ -86,7 +87,7 @@ class CachedApiImage extends StatefulWidget {
     this.errorBuilder,
     this.loadingBuilder,
     this.placeholder,
-    this.fadeInDuration = const Duration(milliseconds: 300),
+    this.fadeInDuration = const Duration(milliseconds: 60),
     this.alignment = Alignment.center,
     this.color,
     this.colorBlendMode,
@@ -369,37 +370,37 @@ class _CachedApiImageState extends State<CachedApiImage> {
         }
 
         if (_isLoading) {
-          if (widget.loadingBuilder != null) {
-            return widget.loadingBuilder!(context);
-          }
-          if (widget.placeholder != null) {
-            return SizedBox(
-              width: widget.width,
-              height: widget.height,
-              child: widget.placeholder,
-            );
-          }
-          return SizedBox(
-            width: widget.width,
-            height: widget.height,
-            child: const Center(child: CircularProgressIndicator()),
+          return _switched(
+            'loading',
+            widget.loadingBuilder?.call(context) ??
+                (widget.placeholder != null
+                    ? SizedBox(
+                        width: widget.width,
+                        height: widget.height,
+                        child: widget.placeholder,
+                      )
+                    : ImagePlaceholders.registered.loading(
+                        context,
+                        width: widget.width,
+                        height: widget.height,
+                      )),
           );
         }
 
         if (_error != null) {
-          if (widget.errorBuilder != null) {
-            return widget.errorBuilder!(context, _error!, StackTrace.empty);
-          }
-          return Container(
-            width: widget.width,
-            height: widget.height,
-            color: Colors.grey[300],
-            child: const Icon(Icons.broken_image, color: Colors.grey),
+          return _switched(
+            'error',
+            widget.errorBuilder?.call(context, _error!, StackTrace.empty) ??
+                ImagePlaceholders.registered.error(
+                  context,
+                  width: widget.width,
+                  height: widget.height,
+                ),
           );
         }
 
         if (_imageBytes == null) {
-          return const SizedBox.shrink();
+          return _switched('empty', const SizedBox.shrink());
         }
 
         // Map ImageMode to BoxFit automatically
@@ -420,9 +421,15 @@ class _CachedApiImageState extends State<CachedApiImage> {
           errorBuilder: _onDecodeFailed,
         );
 
-        // Fade-in animation
-        return AnimatedSwitcher(duration: widget.fadeInDuration, child: image);
+        return _switched('image', image);
       },
+    );
+  }
+
+  Widget _switched(String state, Widget child) {
+    return AnimatedSwitcher(
+      duration: widget.fadeInDuration,
+      child: KeyedSubtree(key: ValueKey(state), child: child),
     );
   }
 }
