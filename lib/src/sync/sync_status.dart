@@ -55,6 +55,7 @@ class SyncStatus extends ChangeNotifier {
   bool _online;
   bool _syncing = false;
   bool _serverAnswering = true;
+  bool _maintenance = false;
   int _pending = 0;
   int _conflicts = 0;
 
@@ -69,6 +70,10 @@ class SyncStatus extends ChangeNotifier {
   static bool get currentlyReachable =>
       hasService<SyncStatus>() ? getService<SyncStatus>().reachable : true;
 
+  /// Whether the server is out of reach because it said so (502, 503).
+  static bool get currentlyInMaintenance =>
+      hasService<SyncStatus>() && getService<SyncStatus>().maintenance;
+
   /// Whether the device currently has connectivity.
   ///
   /// Connectivity only: the device can be on a network whose server is down,
@@ -81,6 +86,11 @@ class SyncStatus extends ChangeNotifier {
   /// stopped server, a maintenance window and a dead upstream all leave the
   /// device online.
   bool get serverAnswering => _serverAnswering;
+
+  /// Whether the last unanswered request was refused by a gateway (502, 503):
+  /// a maintenance window rather than a dead network. Always false while the
+  /// server answers.
+  bool get maintenance => !_serverAnswering && _maintenance;
 
   /// Whether the server can be expected to answer: connectivity **and**
   /// evidence from the last request.
@@ -121,9 +131,12 @@ class SyncStatus extends ChangeNotifier {
   /// included — means the server is there, and an unanswered one means it is not.
   ///
   /// Driven by the fetcher for every request, so no caller has to report it.
-  void setServerAnswering(bool value) {
-    if (_serverAnswering != value) {
+  void setServerAnswering(bool value, {bool maintenance = false}) {
+    final flag = !value && maintenance;
+
+    if (_serverAnswering != value || _maintenance != flag) {
       _serverAnswering = value;
+      _maintenance = flag;
       _emit();
     }
   }

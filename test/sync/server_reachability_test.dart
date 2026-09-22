@@ -94,6 +94,7 @@ void main() {
       expect(status.online, isTrue);
       expect(status.serverAnswering, isFalse);
       expect(status.reachable, isFalse);
+      expect(status.maintenance, isFalse);
       expect(SyncStatus.currentlyReachable, isFalse);
     });
 
@@ -116,13 +117,30 @@ void main() {
       expect(status.reachable, isTrue);
     });
 
-    test('a maintenance window counts as unreachable', () async {
+    test('a maintenance window counts as unreachable, and says why', () async {
       adapter.status = 503;
 
       await request();
 
-      // Nothing was processed, so it degrades like a lost connection.
+      // Nothing was processed, so it degrades like a lost connection, but the
+      // UI can tell the user the server is the one away.
       expect(status.reachable, isFalse);
+      expect(status.maintenance, isTrue);
+      expect(SyncStatus.currentlyInMaintenance, isTrue);
+
+      adapter.status = 200;
+      await request();
+
+      expect(status.maintenance, isFalse);
+    });
+
+    test('a timed out gateway is unreachable without being maintenance', () async {
+      adapter.status = 504;
+
+      await request();
+
+      expect(status.reachable, isFalse);
+      expect(status.maintenance, isFalse);
     });
 
     test('nothing to report to is not an error', () async {

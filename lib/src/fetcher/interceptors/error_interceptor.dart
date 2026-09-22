@@ -32,13 +32,15 @@ class ErrorInterceptor extends Interceptor {
 
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
-    _report(!isServerUnavailable(err));
+    final status = err.response?.statusCode;
+
+    _report(!isServerUnavailable(err), maintenance: status == 502 || status == 503);
     handler.next(err);
   }
 
-  void _report(bool answering) {
+  void _report(bool answering, {bool maintenance = false}) {
     if (hasService<SyncStatus>()) {
-      getService<SyncStatus>().setServerAnswering(answering);
+      getService<SyncStatus>().setServerAnswering(answering, maintenance: maintenance);
     }
   }
 }
