@@ -3,6 +3,8 @@
  * MIT License (see LICENSE file).
  */
 
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 
 import '../bus/bus.dart';
@@ -180,20 +182,64 @@ abstract class ApiModel<T extends BaseModel<T>> {
   /// [fields] is what the write asked to change, when it can say: a holder
   /// reading none of them can then leave the event alone instead of re-reading
   /// to find out nothing moved.
+  ///
+  /// What a write of this resource announces is held until that write has
+  /// returned to whoever asked for it: an engine announces from inside the call
+  /// and goes on working after it (the mirror of an offline model is written
+  /// once the server answered), so the holders heard the change while the
+  /// caller was still suspended. A screen deleting the record it shows was then
+  /// closed by [ApiRecord.isDeleted] before its own `pop` ran, and that pop took
+  /// the route below it down with it.
   void notifyChanged([
     ResourceChangeType? type,
     Object? id,
     Set<String>? fields,
-  ]) => getService<Bus>().fire(
-    ResourceChangedEvent(
+  ]) {
+    final event = ResourceChangedEvent(
       resolvedBasePath,
       model: modelName,
       type: type,
       id: id,
       fields: fields,
       origin: originId,
-    ),
-  );
+    );
+
+    if (_writing > 0) {
+      _announced.add(event);
+
+      return;
+    }
+
+    getService<Bus>().fire(event);
+  }
+
+  int _writing = 0;
+  final List<ResourceChangedEvent> _announced = [];
+
+  /// Runs a write, then hands what it announced to the bus.
+  Future<R> _write<R>(Future<R> Function() write) async {
+    _writing++;
+
+    try {
+      return await write();
+    } finally {
+      _writing--;
+
+      if (_writing == 0 && _announced.isNotEmpty) {
+        final events = List<ResourceChangedEvent>.of(_announced);
+        final bus = getService<Bus>();
+        _announced.clear();
+
+        // A timer, not a microtask: the caller resumes on the microtask the
+        // returned future completes with, and every microtask runs first.
+        Timer.run(() {
+          for (final event in events) {
+            bus.fire(event);
+          }
+        });
+      }
+    }
+  }
 
   Future<PaginationResult<T>> list({
     ListQuery? query,
@@ -230,10 +276,12 @@ abstract class ApiModel<T extends BaseModel<T>> {
     DynamicSchema<T> payload, {
     FieldsOptions? options,
     ApiParams? params,
-  }) async => (await _resolveEngine()).create(
-    payload,
-    options: options,
-    params: params,
+  }) => _write(
+    () async => (await _resolveEngine()).create(
+      payload,
+      options: options,
+      params: params,
+    ),
   );
 
   Future<T> update(
@@ -241,15 +289,17 @@ abstract class ApiModel<T extends BaseModel<T>> {
     DynamicSchema<T> payload, {
     FieldsOptions? options,
     ApiParams? params,
-  }) async => (await _resolveEngine()).update(
-    id,
-    payload,
-    options: options,
-    params: params,
+  }) => _write(
+    () async => (await _resolveEngine()).update(
+      id,
+      payload,
+      options: options,
+      params: params,
+    ),
   );
 
-  Future<void> delete(Object id, {ApiParams? params}) async =>
-      (await _resolveEngine()).delete(id, params: params);
+  Future<void> delete(Object id, {ApiParams? params}) =>
+      _write(() async => (await _resolveEngine()).delete(id, params: params));
 
   Future<Response> export({ExportQuery? query, ApiParams? params}) async =>
       (await _resolveEngine()).export(query: query, params: params);
