@@ -494,6 +494,59 @@ void main() {
       },
     );
 
+    test(
+      'keeps the fields of a related record a narrower read does not select',
+      () async {
+        adapter.routes['GET /items'] = (options) => _page([
+          {
+            'id': 1,
+            'owner': {
+              'id': 7,
+              'name': 'Ann',
+              'team': {'id': 3},
+            },
+          },
+        ]);
+        await api.list();
+
+        adapter.routes['GET /items'] = (options) => _page([
+          {
+            'id': 1,
+            'owner': {'id': 7, 'name': 'Anna'},
+          },
+        ]);
+        await api.list();
+
+        final owner = (await api.cachedGet(1))?.toJson()['owner'];
+
+        expect(owner, {
+          'id': 7,
+          'name': 'Anna',
+          'team': {'id': 3},
+        });
+      },
+    );
+
+    test('replaces a related record that changed', () async {
+      adapter.routes['GET /items'] = (options) => _page([
+        {
+          'id': 1,
+          'owner': {'id': 7, 'name': 'Ann'},
+        },
+      ]);
+      await api.list();
+
+      adapter.routes['GET /items'] = (options) => _page([
+        {
+          'id': 1,
+          'owner': {'id': 8},
+        },
+      ]);
+      await api.list();
+
+      expect((await api.cachedGet(1))?.toJson()['owner'], {'id': 8});
+    });
+
     test('evaluates the query locally when offline', () async {
       adapter.routes['GET /items'] = _paginated([
         {'id': 1, 'name': 'Bravo'},
@@ -931,6 +984,38 @@ void replicatedModeTests() {
     expect(result.items, hasLength(1));
     expect(result.items.single.name, 'One');
   });
+
+  test(
+    'keeps the fields of a related record a narrower read does not select',
+    () async {
+      adapter.routes['GET /acme/items'] = (options) => _page([
+        {
+          'id': 1,
+          'name': 'One',
+          'owner': {
+            'id': 7,
+            'team': {'id': 3},
+          },
+        },
+      ]);
+      await api.list();
+
+      adapter.routes['GET /acme/items'] = (options) => _page([
+        {
+          'id': 1,
+          'name': 'One',
+          'owner': {'id': 7, 'name': 'Ann'},
+        },
+      ]);
+      await api.list();
+
+      expect((await api.cachedGet(1))?.toJson()['owner'], {
+        'id': 7,
+        'name': 'Ann',
+        'team': {'id': 3},
+      });
+    },
+  );
 
   test('sync mirrors the collection into the scoped replica table', () async {
     adapter.routes['GET /acme/items'] = _paginated([

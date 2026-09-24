@@ -1088,7 +1088,7 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
               ctx.scope,
               item.id!,
             );
-            final record = {...?existing, ...item.toJson()};
+            final record = _mergeFetched(existing, item.toJson());
             merged.add(record);
 
             if (mirror != null) {
@@ -1121,7 +1121,10 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
         final records = {
           for (final item in result.items)
             if (item.id != null)
-              '${item.id}': {...?existing['${item.id}'], ...item.toJson()},
+              '${item.id}': _mergeFetched(
+                existing['${item.id}'],
+                item.toJson(),
+              ),
         };
 
         await store.putAll(_cacheNamespace, records);
@@ -1184,7 +1187,7 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
           ctx.scope,
           id,
         );
-        final merged = {...?existing, ...json};
+        final merged = _mergeFetched(existing, json);
 
         await ctx.replica.ensure(ctx.model.name);
         await ctx.replica.store.upsertAll(ctx.model, ctx.scope, [merged]);
@@ -1229,7 +1232,7 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
     }
 
     final existing = await store.get(_cacheNamespace, id);
-    final merged = {...?existing, ...json};
+    final merged = _mergeFetched(existing, json);
     await store.put(_cacheNamespace, id, merged);
 
     if (mirror != null) {
@@ -1492,6 +1495,26 @@ class OfflineStores implements OfflineBindings {
     this.sequence,
   });
 }
+
+/// [fetched] over [cached]: a fresh value wins, a field the fetch did not
+/// select is kept, down into a related record that is still the same one (a
+/// narrow X-Fields read must not erase what a wider read brought).
+Map<String, dynamic> _mergeFetched(
+  Map<String, dynamic>? cached,
+  Map<String, dynamic> fetched,
+) => {
+  ...?cached,
+  for (final MapEntry(:key, :value) in fetched.entries)
+    key: switch ((cached?[key], value)) {
+      (final Map held, final Map fresh)
+          when held['id'] != null && held['id'] == fresh['id'] =>
+        _mergeFetched(
+          held.cast<String, dynamic>(),
+          fresh.cast<String, dynamic>(),
+        ),
+      _ => value,
+    },
+};
 
 /// Yields the offline engine; registered by `initializeFastEdgy(offline: true)`.
 class OfflineApiModelEngineProvider implements ApiModelEngineProvider {
