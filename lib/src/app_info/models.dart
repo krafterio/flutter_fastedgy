@@ -5,7 +5,7 @@
 
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -62,6 +62,9 @@ class AppInfo {
     if (Platform.isAndroid) {
       return (await deviceInfo.androidInfo).version.release;
     }
+    if (Platform.isWindows) {
+      return windowsVersion(await deviceInfo.windowsInfo);
+    }
     final match = RegExp(r'Version (\S+)')
         .firstMatch(Platform.operatingSystemVersion);
     return match?.group(1) ?? Platform.operatingSystemVersion.split(' ').first;
@@ -70,3 +73,12 @@ class AppInfo {
   /// Combined version in the form `"1.2.3+45"`.
   String get fullVersion => '$version+$buildNumber';
 }
+
+/// The Windows version in the form `10.0.26200`.
+///
+/// `Platform.operatingSystemVersion` reads `"Windows 11 Home" 10.0 (Build 26200)`
+/// there, which the pattern kept for macOS does not parse: the User-Agent would
+/// carry `"Windows` as the version.
+@visibleForTesting
+String windowsVersion(WindowsDeviceInfo info) =>
+    '${info.majorVersion}.${info.minorVersion}.${info.buildNumber}';
