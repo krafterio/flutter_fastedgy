@@ -5,6 +5,9 @@
 
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb, visibleForTesting;
+import 'package:path_provider/path_provider.dart';
 import 'package:sqlite3/common.dart';
 
 import '../logging/logger.dart';
@@ -26,7 +29,10 @@ class OfflineDatabase extends GeneratedDatabase {
     : super(
         driftDatabase(
           name: name,
-          native: const DriftNativeOptions(setup: applyOfflineDatabasePragmas),
+          native: DriftNativeOptions(
+            setup: applyOfflineDatabasePragmas,
+            databaseDirectory: offlineDatabaseDirectory(),
+          ),
           web: DriftWebOptions(
             sqlite3Wasm: Uri.parse('sqlite3.wasm'),
             driftWorker: Uri.parse('drift_worker.js'),
@@ -51,6 +57,18 @@ class OfflineDatabase extends GeneratedDatabase {
   @override
   int get schemaVersion => 1;
 }
+
+/// The folder of the native database file, or null to keep drift's default,
+/// the app documents directory.
+///
+/// On Windows that default is the user's own Documents folder: the file would
+/// sit there in plain sight, shared by every build of the app. The app support
+/// directory is per build (`%APPDATA%\<company>\<product>`).
+@visibleForTesting
+Future<Object> Function()? offlineDatabaseDirectory() =>
+    !kIsWeb && defaultTargetPlatform == TargetPlatform.windows
+    ? getApplicationSupportDirectory
+    : null;
 
 /// Reports the storage the web build settled on, in place of the print drift
 /// makes of it on every open.
