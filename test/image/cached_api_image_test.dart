@@ -234,6 +234,84 @@ void main() {
       ]);
     });
 
+    testWidgets('a lazy image downloads as the drawer holding it slides in', (
+      tester,
+    ) async {
+      final scaffold = GlobalKey<ScaffoldState>();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            key: scaffold,
+            drawer: Drawer(
+              width: 320,
+              child: SizedBox(
+                height: 88,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 18),
+                  itemCount: 4,
+                  separatorBuilder: (context, index) =>
+                      const SizedBox(width: 4),
+                  itemBuilder: (context, index) => SizedBox(
+                    width: 60,
+                    child: CachedApiImage(
+                      path: 'avatars/$index.png',
+                      width: 56,
+                      height: 56,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            body: const SizedBox.expand(),
+          ),
+        ),
+      );
+
+      scaffold.currentState!.openDrawer();
+
+      for (var round = 0; round < 60; round++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+
+      expect(adapter.calls, contains('GET /storage/download/avatars/0.png'));
+    });
+
+    testWidgets('a lazy image far from the screen shows the bytes in memory', (
+      tester,
+    ) async {
+      Widget page(double offset) => MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: Column(
+              children: [
+                SizedBox(height: offset),
+                const CachedApiImage(
+                  path: 'avatars/a.png',
+                  width: 56,
+                  height: 56,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpWidget(page(0));
+
+      for (var round = 0; round < 30; round++) {
+        await tester.pump(const Duration(milliseconds: 10));
+      }
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpWidget(page(3000));
+      await tester.pump();
+
+      expect(adapter.calls, ['GET /storage/download/avatars/a.png']);
+      expect(find.byType(Image), findsOneWidget);
+    });
+
     testWidgets('draws the error the app registered', (tester) async {
       container.registerSingleton<ImagePlaceholders>(_AppPlaceholders());
       addTearDown(container.unregister<ImagePlaceholders>);

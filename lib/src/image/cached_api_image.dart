@@ -68,8 +68,9 @@ class CachedApiImage extends StatefulWidget {
   /// Default: true
   final bool autoCalculatePhysicalDimensions;
 
-  /// Waits for the widget to come near the screen before downloading. Outside
-  /// any scrollable, it downloads right away.
+  /// Waits for the widget to come near the visible part of every scrollable
+  /// around it before downloading. Outside any scrollable, it downloads right
+  /// away.
   final bool lazy;
 
   final Widget Function(BuildContext, Object, StackTrace?)? errorBuilder;
@@ -113,7 +114,7 @@ class _CachedApiImageState extends State<CachedApiImage> {
   bool _isDisposed = false;
   BoxConstraints? _lastConstraints;
   bool _probedCache = false;
-  final _scrollPositions = <ScrollPosition>[];
+  final _scrollables = <(ScrollableState, ScrollPosition)>[];
   late bool _awake = !widget.lazy;
 
   @override
@@ -133,15 +134,15 @@ class _CachedApiImageState extends State<CachedApiImage> {
   void _watchVisibility() {
     context.visitAncestorElements((element) {
       if (element is StatefulElement && element.state is ScrollableState) {
-        final position = (element.state as ScrollableState).position;
-        _scrollPositions.add(position);
-        position.addListener(_checkVisibility);
+        final scrollable = element.state as ScrollableState;
+        _scrollables.add((scrollable, scrollable.position));
+        scrollable.position.addListener(_checkVisibility);
       }
 
       return true;
     });
 
-    if (_scrollPositions.isEmpty) {
+    if (_scrollables.isEmpty) {
       _wake();
       return;
     }
@@ -156,21 +157,28 @@ class _CachedApiImageState extends State<CachedApiImage> {
 
     if (box == null || !box.attached || !box.hasSize) return;
 
-    final screen = Offset.zero & MediaQuery.sizeOf(context);
+    for (final (scrollable, _) in _scrollables) {
+      final viewport = scrollable.context.findRenderObject() as RenderBox?;
 
-    if ((box.localToGlobal(Offset.zero) & box.size).overlaps(
-      screen.inflate(_lazyReach),
-    )) {
-      _wake();
+      if (viewport == null || !viewport.attached || !viewport.hasSize) return;
+
+      final rect =
+          box.localToGlobal(Offset.zero, ancestor: viewport) & box.size;
+
+      if (!rect.overlaps((Offset.zero & viewport.size).inflate(_lazyReach))) {
+        return;
+      }
     }
+
+    _wake();
   }
 
   void _unwatchVisibility() {
-    for (final position in _scrollPositions) {
+    for (final (_, position) in _scrollables) {
       position.removeListener(_checkVisibility);
     }
 
-    _scrollPositions.clear();
+    _scrollables.clear();
   }
 
   void _wake() {
@@ -198,18 +206,20 @@ class _CachedApiImageState extends State<CachedApiImage> {
     //
     // Here rather than in initState: the key is computed from the device pixel
     // ratio, which is an inherited value and not one to read before this.
-    if (!_awake) {
+    if (!_probedCache && (widget.width != null || widget.height != null)) {
+      _probedCache = true;
+      _imageBytes = getService<fastedgy_cache.ImageCache>().getCachedImage(
+        _getCacheKey(),
+      );
+    }
+
+    if (_awake) return;
+
+    if (_imageBytes != null) {
+      _awake = true;
+    } else {
       _watchVisibility();
     }
-
-    if (_probedCache || (widget.width == null && widget.height == null)) {
-      return;
-    }
-
-    _probedCache = true;
-    _imageBytes = getService<fastedgy_cache.ImageCache>().getCachedImage(
-      _getCacheKey(),
-    );
   }
 
   @override
