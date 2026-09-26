@@ -73,6 +73,7 @@ abstract class ApiModel<T extends BaseModel<T>> {
     }
 
     final meta = await metadata();
+    _metadataName ??= meta?.name;
 
     if (meta == null) {
       return ApiModelEngine<T>(this);
@@ -105,7 +106,8 @@ abstract class ApiModel<T extends BaseModel<T>> {
 
   /// The name the server announces this model's writes under: [modelName], else
   /// the metadata name of the model served on [basePath], once
-  /// [resolveModelName] has read it.
+  /// [resolveModelName] or a first request has read it. A write needs it to
+  /// announce the echo of its request, which the socket then drops.
   String? get eventModelName => modelName ?? _metadataName;
 
   /// [modelName], else the metadata name of the model served on [basePath].
