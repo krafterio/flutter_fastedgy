@@ -3,12 +3,15 @@
  * MIT License (see LICENSE file).
  */
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:cupertino_ui/cupertino_ui.dart'
     show GlobalCupertinoLocalizations;
 import 'package:easy_localization/easy_localization.dart';
 import 'package:easy_logger/easy_logger.dart';
+import 'package:flutter/foundation.dart'
+    show SynchronousFuture, ValueListenable, ValueNotifier;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter/widgets.dart';
 import 'package:logging/logging.dart';
@@ -69,7 +72,33 @@ extension FastEdgyLocalizations on BuildContext {
     ...localizationDelegates,
     GlobalMaterialLocalizations.delegate,
     GlobalCupertinoLocalizations.delegate,
+    const _ActiveLocaleDelegate(),
   ];
+}
+
+ValueListenable<Locale?> get activeLocale => _ActiveLocaleDelegate.locale;
+
+class _ActiveLocale {
+  const _ActiveLocale();
+}
+
+class _ActiveLocaleDelegate extends LocalizationsDelegate<_ActiveLocale> {
+  const _ActiveLocaleDelegate();
+
+  static final locale = ValueNotifier<Locale?>(null);
+
+  @override
+  bool isSupported(Locale locale) => true;
+
+  @override
+  Future<_ActiveLocale> load(Locale locale) {
+    _ActiveLocaleDelegate.locale.value = locale;
+
+    return SynchronousFuture(const _ActiveLocale());
+  }
+
+  @override
+  bool shouldReload(_ActiveLocaleDelegate old) => false;
 }
 
 /// Initialize EasyLocalization
@@ -127,21 +156,100 @@ Widget useI18n({
   required List<Locale> supportedLocales,
   required Widget child,
   Locale? fallbackLocale,
+  Locale? sourceLocale,
   String translationsPath = 'assets/translations',
   bool useOnlyLangCode = true,
   bool useFallbackTranslations = true,
   bool saveLocale = true,
 }) {
+  _sourceLocale = sourceLocale;
+  final fallback = fallbackLocale ?? supportedLocales.first;
+
   return EasyLocalization(
     supportedLocales: supportedLocales,
     path: translationsPath,
     assetLoader: FastEdgyAssetLoader(useOnlyLangCode: useOnlyLangCode),
-    fallbackLocale: fallbackLocale ?? supportedLocales.first,
+    startLocale: _deviceLocaleIn(supportedLocales, fallback),
+    fallbackLocale: fallback,
     useOnlyLangCode: useOnlyLangCode,
     useFallbackTranslations: useFallbackTranslations,
     saveLocale: saveLocale,
-    child: child,
+    child: _DeviceLocaleFollower(child: child),
   );
+}
+
+ValueListenable<Locale?> get chosenLocale => _chosenLocale;
+
+final _chosenLocale = ValueNotifier<Locale?>(null);
+
+Future<void> chooseLocale(BuildContext context, Locale locale) async {
+  _chosenLocale.value = locale;
+  await EasyLocalization.of(context)!.setLocale(locale);
+}
+
+Future<void> followDeviceLocale(BuildContext context) async {
+  _chosenLocale.value = null;
+  final localization = EasyLocalization.of(context)!;
+  final supported = localization.supportedLocales;
+
+  await localization.setLocale(
+    _deviceLocaleIn(supported, localization.fallbackLocale ?? supported.first),
+  );
+  await localization.deleteSaveLocale();
+}
+
+Locale _deviceLocaleIn(List<Locale> supported, Locale fallback) {
+  final device = WidgetsBinding.instance.platformDispatcher.locale;
+
+  return supported.firstWhere(
+    (locale) => locale.languageCode == device.languageCode,
+    orElse: () => fallback,
+  );
+}
+
+class _DeviceLocaleFollower extends StatefulWidget {
+  const _DeviceLocaleFollower({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_DeviceLocaleFollower> createState() => _DeviceLocaleFollowerState();
+}
+
+class _DeviceLocaleFollowerState extends State<_DeviceLocaleFollower>
+    with WidgetsBindingObserver {
+  var _started = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_started) {
+      _started = true;
+      _chosenLocale.value = context.savedLocale;
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeLocales(List<Locale>? locales) {
+    if (_chosenLocale.value == null) {
+      unawaited(followDeviceLocale(context));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 /// Translate a string key
@@ -152,7 +260,28 @@ Widget useI18n({
 /// final textWithParams = t('welcome', {'name': 'John'});
 /// ```
 String t(String key, [Map<String, String>? namedArgs]) {
+  if (_isSourceText(key)) {
+    return namedArgs == null
+        ? key
+        : namedArgs.entries.fold(
+            key,
+            (text, arg) => text.replaceAll('{${arg.key}}', arg.value),
+          );
+  }
+
   return key.tr(namedArgs: namedArgs);
+}
+
+Locale? _sourceLocale;
+
+bool _isSourceText(String key) {
+  final source = _sourceLocale;
+  final active = activeLocale.value;
+
+  return source != null &&
+      active != null &&
+      active.languageCode == source.languageCode &&
+      !trExists(key);
 }
 
 /// Translate a string key with plural support

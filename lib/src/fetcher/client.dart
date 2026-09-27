@@ -118,6 +118,7 @@ class Fetcher {
   /// - Origin: 54
   /// - Auth: 50
   /// - Timezone: 45
+  /// - Locale: 44
   /// - RefreshToken: 40
   /// - ConnectionRetry: 35
   /// - Logging: 30
@@ -139,6 +140,7 @@ class Fetcher {
     UserAgentInterceptor? userAgentInterceptor,
     bool enableAuth = true,
     bool enableTimezone = true,
+    bool enableLocale = true,
     bool enableRefreshToken = true,
     bool enableConnectionRetry = true,
     bool enableLogging = true,
@@ -210,6 +212,10 @@ class Fetcher {
           priority: 45,
         ),
       );
+    }
+
+    if (enableLocale) {
+      allInterceptors.add(InterceptorConfig(LocaleInterceptor(), priority: 44));
     }
 
     if (enableRefreshToken &&

@@ -10,4 +10,5 @@ export 'connection_retry_interceptor.dart';
 export 'logging_interceptor.dart';
 export 'error_interceptor.dart';
 export 'timezone_interceptor.dart';
+export 'locale_interceptor.dart';
 export 'user_agent_interceptor.dart';
