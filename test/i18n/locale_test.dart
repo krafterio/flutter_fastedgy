@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_fastedgy/flutter_fastedgy.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void _serve(Map<String, Map<String, String>> bundle) {
@@ -122,6 +123,19 @@ void main() {
       },
     );
 
+    testWidgets(
+      'a plural with no forms in the source language shows its key with the number',
+      (tester) async {
+        await _pumpApp(
+          tester,
+          locale: 'fr',
+          text: () => plural('{} membres', 4),
+        );
+
+        expect(find.text('4 membres'), findsOneWidget);
+      },
+    );
+
     testWidgets('a key translated in the source language is translated', (
       tester,
     ) async {
@@ -151,6 +165,33 @@ void main() {
 
       expect(find.text('Hello Léa'), findsOneWidget);
     });
+  });
+
+  group('translatable string', () {
+    testWidgets(
+      'declared once, renders in the language displayed at each read',
+      (tester) async {
+        final label = ts('Bonjour {name}', {'name': 'Léa'});
+        await _pumpApp(
+          tester,
+          locale: 'fr',
+          bundle: {
+            'assets/translations/en.json': {'Bonjour {name}': 'Hello {name}'},
+          },
+        );
+        expect(label.render(), 'Bonjour Léa');
+
+        await tester.runAsync(
+          () => chooseLocale(
+            tester.element(find.byType(WidgetsApp)),
+            const Locale('en'),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect('$label', 'Hello Léa');
+      },
+    );
   });
 
   group('device locale', () {
@@ -248,6 +289,45 @@ void main() {
       expect(activeLocale.value, const Locale('en'));
       expect(chosenLocale.value, isNull);
     });
+  });
+
+  group('intl default locale', () {
+    void speak(WidgetTester tester, Locale device) {
+      tester.platformDispatcher.localeTestValue = device;
+      tester.platformDispatcher.localesTestValue = [device];
+      addTearDown(tester.platformDispatcher.clearLocaleTestValue);
+      addTearDown(tester.platformDispatcher.clearLocalesTestValue);
+    }
+
+    testWidgets(
+      'formats in the language displayed, with the region of the device',
+      (tester) async {
+        speak(tester, const Locale('fr', 'GB'));
+
+        await _pumpApp(tester, locale: 'en');
+
+        expect(Intl.defaultLocale, 'en_GB');
+        expect(
+          DateFormat.MMMMd().format(DateTime(2026, 9, 27)),
+          '27 September',
+        );
+      },
+    );
+
+    testWidgets(
+      'formats in the language alone when the region does not fit it',
+      (tester) async {
+        speak(tester, const Locale('en', 'ZZ'));
+
+        await _pumpApp(tester, locale: 'fr');
+
+        expect(Intl.defaultLocale, 'fr');
+        expect(
+          DateFormat.MMMMd().format(DateTime(2026, 9, 27)),
+          '27 septembre',
+        );
+      },
+    );
   });
 
   group('LocaleInterceptor', () {

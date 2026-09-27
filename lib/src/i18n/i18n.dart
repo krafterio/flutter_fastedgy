@@ -92,6 +92,13 @@ class _ActiveLocaleDelegate extends LocalizationsDelegate<_ActiveLocale> {
 
   @override
   Future<_ActiveLocale> load(Locale locale) {
+    final region =
+        WidgetsBinding.instance.platformDispatcher.locale.countryCode;
+    final regional = region == null ? null : '${locale.languageCode}_$region';
+
+    Intl.defaultLocale = regional != null && DateFormat.localeExists(regional)
+        ? regional
+        : locale.languageCode;
     _ActiveLocaleDelegate.locale.value = locale;
 
     return SynchronousFuture(const _ActiveLocale());
@@ -260,28 +267,45 @@ class _DeviceLocaleFollowerState extends State<_DeviceLocaleFollower>
 /// final textWithParams = t('welcome', {'name': 'John'});
 /// ```
 String t(String key, [Map<String, String>? namedArgs]) {
-  if (_isSourceText(key)) {
-    return namedArgs == null
-        ? key
-        : namedArgs.entries.fold(
-            key,
-            (text, arg) => text.replaceAll('{${arg.key}}', arg.value),
-          );
+  if (_speaksSource() && !trExists(key)) {
+    return _withArguments(key, namedArgs);
   }
 
   return key.tr(namedArgs: namedArgs);
 }
 
+String _withArguments(String text, Map<String, String>? namedArgs) =>
+    namedArgs == null
+    ? text
+    : namedArgs.entries.fold(
+        text,
+        (text, arg) => text.replaceAll('{${arg.key}}', arg.value),
+      );
+
+class TranslatableString {
+  final String message;
+  final Map<String, String>? namedArgs;
+
+  const TranslatableString(this.message, [this.namedArgs]);
+
+  String render() => t(message, namedArgs);
+
+  @override
+  String toString() => render();
+}
+
+TranslatableString ts(String message, [Map<String, String>? namedArgs]) =>
+    TranslatableString(message, namedArgs);
+
 Locale? _sourceLocale;
 
-bool _isSourceText(String key) {
+bool _speaksSource() {
   final source = _sourceLocale;
   final active = activeLocale.value;
 
   return source != null &&
       active != null &&
-      active.languageCode == source.languageCode &&
-      !trExists(key);
+      active.languageCode == source.languageCode;
 }
 
 /// Translate a string key with plural support
@@ -292,6 +316,11 @@ bool _isSourceText(String key) {
 /// final textWithParams = plural('item_with_name', 5, {'name': 'John'});
 /// ```
 String plural(String key, num value, [Map<String, String>? namedArgs]) {
+  if (activeLocale.value == null ||
+      (_speaksSource() && !trExists('$key.other'))) {
+    return _withArguments(key.replaceAll('{}', '$value'), namedArgs);
+  }
+
   return key.plural(value, namedArgs: namedArgs);
 }
 
