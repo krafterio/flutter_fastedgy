@@ -126,10 +126,9 @@ void main() {
 
     final context = OfflineContextParams.within(
       {'workspace': 'studio'},
-      () => OfflineContextParams.within(
-        {'locale': 'en'},
-        () => params.contextFor('/{workspace}/{locale}'),
-      ),
+      () => OfflineContextParams.within({
+        'locale': 'en',
+      }, () => params.contextFor('/{workspace}/{locale}')),
     );
 
     expect(context, {'workspace': 'studio', 'locale': 'en'});

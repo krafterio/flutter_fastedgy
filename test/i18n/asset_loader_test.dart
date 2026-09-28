@@ -9,8 +9,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_fastedgy/flutter_fastedgy.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// Answers the two asset paths the loader asks for and nothing else, so a
-/// missing file is exercised as well as a present one.
+/// Answers the asset paths the loader asks for, and an asset manifest listing
+/// them, and nothing else, so a missing file is exercised as well as a present
+/// one.
 void _serve(Map<String, Map<String, String>> bundle) {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -21,6 +22,13 @@ void _serve(Map<String, Map<String, String>> bundle) {
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .setMockMessageHandler('flutter/assets', (message) async {
         final key = utf8.decode(message!.buffer.asUint8List());
+
+        if (key == 'AssetManifest.bin') {
+          return const StandardMessageCodec().encodeMessage({
+            for (final asset in bundle.keys) asset: <Object?>[],
+          });
+        }
+
         final payload = bundle[key];
 
         if (payload == null) {
@@ -41,54 +49,27 @@ void main() {
           .setMockMessageHandler('flutter/assets', null);
     });
 
-    test('an application reads the framework strings it never wrote', () async {
-      _serve({
-        _framework: {'Copy': 'Copier', 'Send': 'Envoyer'},
-        _application: {'Flows': 'Flux'},
-      });
+    test(
+      'hands the application its own words, never the framework ones',
+      () async {
+        _serve({
+          _framework: {'Copy': 'Copier', 'Send': 'Envoyer'},
+          _application: {'Flows': 'Flux'},
+        });
 
-      final loaded = await const FastEdgyAssetLoader().load(
-        'assets/translations',
-        const Locale('fr'),
-      );
+        final loaded = await const FastEdgyAssetLoader().load(
+          'assets/translations',
+          const Locale('fr'),
+        );
 
-      expect(loaded, {'Copy': 'Copier', 'Send': 'Envoyer', 'Flows': 'Flux'});
-    });
+        expect(loaded, {'Flows': 'Flux'});
+      },
+    );
 
-    test('the application wins where both name a key', () async {
-      _serve({
-        _framework: {'Copy': 'Copier', 'Send': 'Envoyer'},
-        _application: {'Copy': 'Dupliquer'},
-      });
-
-      final loaded = await const FastEdgyAssetLoader().load(
-        'assets/translations',
-        const Locale('fr'),
-      );
-
-      expect(loaded!['Copy'], 'Dupliquer');
-      expect(
-        loaded['Send'],
-        'Envoyer',
-        reason: 'overriding one string is not copying the rest',
-      );
-    });
-
-    test('a locale only one side ships still loads', () async {
+    test('a locale the application does not ship is null', () async {
       _serve({
         _framework: {'Copy': 'Copier'},
       });
-
-      final loaded = await const FastEdgyAssetLoader().load(
-        'assets/translations',
-        const Locale('fr'),
-      );
-
-      expect(loaded, {'Copy': 'Copier'});
-    });
-
-    test('a locale neither side ships is null, not an empty map', () async {
-      _serve({});
 
       final loaded = await const FastEdgyAssetLoader().load(
         'assets/translations',

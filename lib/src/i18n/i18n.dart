@@ -12,24 +12,28 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:easy_logger/easy_logger.dart';
 import 'package:flutter/foundation.dart'
     show SynchronousFuture, ValueListenable, ValueNotifier;
-import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter/services.dart' show AssetManifest, rootBundle;
 import 'package:flutter/widgets.dart';
 import 'package:logging/logging.dart';
 import 'package:material_ui/material_ui.dart' show GlobalMaterialLocalizations;
 
-/// Loads this package's own translations under the application's.
+/// Loads the application's translations, and the packages' apart.
 ///
-/// The widgets the package ships speak — a copy button, a placeholder, the
-/// labels of the editor's "/" menu — and an application that never wrote those
-/// keys would otherwise read English. Its own file always wins, so overriding
-/// one string means writing it, not copying the rest.
+/// The widgets a package ships speak (a copy button, a placeholder, the labels
+/// of the editor's "/" menu) with keys written in its own source language,
+/// while the application may write its keys in another one: each side keeps
+/// its catalogs, and [t] tells which one a key belongs to. Every catalog a
+/// package ships under `assets/translations` is read, found in the asset
+/// manifest, so its keys are known whatever the language displayed, its
+/// source language included, which needs no file.
 class FastEdgyAssetLoader extends AssetLoader {
   final bool useOnlyLangCode;
 
   const FastEdgyAssetLoader({this.useOnlyLangCode = true});
 
-  static const String _packagePath =
-      'packages/flutter_fastedgy/assets/translations';
+  static final _packageCatalog = RegExp(
+    r'^packages/([^/]+)/assets/translations/([^/]+)\.json$',
+  );
 
   @override
   Future<Map<String, dynamic>?> load(String path, Locale locale) async {
@@ -37,14 +41,34 @@ class FastEdgyAssetLoader extends AssetLoader {
         ? locale.languageCode
         : [locale.languageCode, ?locale.countryCode].join('_');
 
-    final framework = await _read('$_packagePath/$name.json');
-    final application = await _read('$path/$name.json');
+    await (_packagesLoading ??= _loadPackages());
 
-    if (framework == null && application == null) {
-      return null;
+    final words = await _read('$path/$name.json');
+    _appWords[locale.languageCode] = words ?? const {};
+
+    return words;
+  }
+
+  Future<void> _loadPackages() async {
+    final List<String> assets;
+
+    try {
+      assets = (await AssetManifest.loadFromAssetBundle(rootBundle))
+          .listAssets();
+    } catch (_) {
+      return;
     }
 
-    return {...?framework, ...?application};
+    await Future.wait([
+      for (final asset in assets)
+        if (_packageCatalog.firstMatch(asset) case final match?)
+          _read(asset).then(
+            (words) => _packageWords.putIfAbsent(
+              match.group(1)!,
+              () => {},
+            )[match.group(2)!] = words ?? const {},
+          ),
+    ]);
   }
 
   /// Null where the file is not there, which is the normal case for a locale
@@ -122,6 +146,19 @@ Future<void> initializeI18n() async {
 ///
 /// This must be used in runApp() after calling initializeFastEdgy().
 ///
+/// The options are the ones every FastEdgy client shares:
+/// - `availableLocales`: the languages the app offers.
+/// - `locale`: the language the app gives, the account's for instance. Without
+///   it, the language chosen on the device, then the device's own, then
+///   `fallbackLocale`.
+/// - `fallbackLocale`: the language of whoever speaks none of the others, and
+///   where a missing translation is looked up next.
+/// - `sourceLocale`: the language the application writes its keys in,
+///   `fallbackLocale` when not given. It goes from its own translations
+///   straight to the key.
+/// - `packageSourceLocales`: the language a package writes its keys in, by
+///   package name, for a package not written in English.
+///
 /// IMPORTANT: You MUST also configure your App (MaterialApp, CupertinoApp, etc) with:
 /// ```dart
 /// // In your App widget build method:
@@ -141,7 +178,7 @@ Future<void> initializeI18n() async {
 ///
 ///   runApp(
 ///     useI18n(
-///       supportedLocales: [Locale('en'), Locale('fr')],
+///       availableLocales: [Locale('en'), Locale('fr')],
 ///       child: MyApp(),
 ///     ),
 ///   );
@@ -160,28 +197,36 @@ Future<void> initializeI18n() async {
 /// }
 /// ```
 Widget useI18n({
-  required List<Locale> supportedLocales,
+  required List<Locale> availableLocales,
   required Widget child,
+  Locale? locale,
   Locale? fallbackLocale,
   Locale? sourceLocale,
+  Map<String, Locale> packageSourceLocales = const {},
   String translationsPath = 'assets/translations',
   bool useOnlyLangCode = true,
   bool useFallbackTranslations = true,
   bool saveLocale = true,
 }) {
-  _sourceLocale = sourceLocale;
-  final fallback = fallbackLocale ?? supportedLocales.first;
+  final fallback = fallbackLocale ?? availableLocales.first;
+  final given = locale == null ? null : _availableIn(availableLocales, locale);
+  _sourceLocale = sourceLocale ?? fallback;
+  _fallbackLanguage = fallback.languageCode;
+  _packageSourceLocales = packageSourceLocales;
+  _appWords.clear();
+  _packageWords.clear();
+  _packagesLoading = null;
 
   return EasyLocalization(
-    supportedLocales: supportedLocales,
+    supportedLocales: availableLocales,
     path: translationsPath,
     assetLoader: FastEdgyAssetLoader(useOnlyLangCode: useOnlyLangCode),
-    startLocale: _deviceLocaleIn(supportedLocales, fallback),
+    startLocale: given ?? _deviceLocaleIn(availableLocales, fallback),
     fallbackLocale: fallback,
     useOnlyLangCode: useOnlyLangCode,
     useFallbackTranslations: useFallbackTranslations,
     saveLocale: saveLocale,
-    child: _DeviceLocaleFollower(child: child),
+    child: _DeviceLocaleFollower(locale: given, child: child),
   );
 }
 
@@ -197,26 +242,35 @@ Future<void> chooseLocale(BuildContext context, Locale locale) async {
 Future<void> followDeviceLocale(BuildContext context) async {
   _chosenLocale.value = null;
   final localization = EasyLocalization.of(context)!;
-  final supported = localization.supportedLocales;
+  final available = localization.supportedLocales;
 
   await localization.setLocale(
-    _deviceLocaleIn(supported, localization.fallbackLocale ?? supported.first),
+    _deviceLocaleIn(available, localization.fallbackLocale ?? available.first),
   );
   await localization.deleteSaveLocale();
 }
 
-Locale _deviceLocaleIn(List<Locale> supported, Locale fallback) {
-  final device = WidgetsBinding.instance.platformDispatcher.locale;
+Locale _deviceLocaleIn(List<Locale> available, Locale fallback) =>
+    _availableIn(
+      available,
+      WidgetsBinding.instance.platformDispatcher.locale,
+    ) ??
+    fallback;
 
-  return supported.firstWhere(
-    (locale) => locale.languageCode == device.languageCode,
-    orElse: () => fallback,
-  );
+Locale? _availableIn(List<Locale> available, Locale locale) {
+  for (final candidate in available) {
+    if (candidate.languageCode == locale.languageCode) {
+      return candidate;
+    }
+  }
+
+  return null;
 }
 
 class _DeviceLocaleFollower extends StatefulWidget {
-  const _DeviceLocaleFollower({required this.child});
+  const _DeviceLocaleFollower({required this.locale, required this.child});
 
+  final Locale? locale;
   final Widget child;
 
   @override
@@ -238,7 +292,12 @@ class _DeviceLocaleFollowerState extends State<_DeviceLocaleFollower>
     super.didChangeDependencies();
     if (!_started) {
       _started = true;
-      _chosenLocale.value = context.savedLocale;
+      final given = widget.locale;
+      _chosenLocale.value = given ?? context.savedLocale;
+
+      if (given != null && context.locale != given) {
+        unawaited(chooseLocale(context, given));
+      }
     }
   }
 
@@ -267,6 +326,12 @@ class _DeviceLocaleFollowerState extends State<_DeviceLocaleFollower>
 /// final textWithParams = t('welcome', {'name': 'John'});
 /// ```
 String t(String key, [Map<String, String>? namedArgs]) {
+  final package = _packageKnowing(key);
+
+  if (package != null) {
+    return _withArguments(_packageWord(package, key) ?? key, namedArgs);
+  }
+
   if (_speaksSource() && !trExists(key)) {
     return _withArguments(key, namedArgs);
   }
@@ -299,6 +364,62 @@ TranslatableString ts(String message, [Map<String, String>? namedArgs]) =>
 
 Locale? _sourceLocale;
 
+Future<void>? _packagesLoading;
+
+const _packageSourceLanguage = 'en';
+
+String? _fallbackLanguage;
+
+Map<String, Locale> _packageSourceLocales = const {};
+
+final _appWords = <String, Map<String, dynamic>>{};
+
+/// The catalogs of each package, by package name, then by language.
+final _packageWords = <String, Map<String, Map<String, dynamic>>>{};
+
+/// The package a key belongs to: the first package knowing it, unless the
+/// application knows it too, and has the last word.
+String? _packageKnowing(String key) {
+  if (_appWords.values.any((words) => words.containsKey(key))) {
+    return null;
+  }
+
+  for (final MapEntry(key: package, value: catalogs) in _packageWords.entries) {
+    if (catalogs.values.any((words) => words.containsKey(key))) {
+      return package;
+    }
+  }
+
+  return null;
+}
+
+/// A package word in the displayed language, then in `fallbackLocale`. A
+/// package writes its keys in English unless the application says otherwise,
+/// and in that language they are the text already.
+String? _packageWord(String package, String key) {
+  final active = activeLocale.value?.languageCode;
+  final source =
+      _packageSourceLocales[package]?.languageCode ?? _packageSourceLanguage;
+
+  if (active == null || active == source) {
+    return null;
+  }
+
+  final catalogs = _packageWords[package] ?? const {};
+  final word = catalogs[active]?[key];
+
+  if (word is String) {
+    return word;
+  }
+
+  EasyLocalization.logger.warning('Localization key [$key] not found');
+  final fallback = _fallbackLanguage == source
+      ? null
+      : catalogs[_fallbackLanguage]?[key];
+
+  return fallback is String ? fallback : null;
+}
+
 bool _speaksSource() {
   final source = _sourceLocale;
   final active = activeLocale.value;
@@ -322,21 +443,6 @@ String plural(String key, num value, [Map<String, String>? namedArgs]) {
   }
 
   return key.plural(value, namedArgs: namedArgs);
-}
-
-/// Get current locale
-Locale currentLocale(BuildContext context) {
-  return context.locale;
-}
-
-/// Set current locale
-Future<void> setLocale(BuildContext context, Locale locale) async {
-  await context.setLocale(locale);
-}
-
-/// Get supported locales
-List<Locale> supportedLocales(BuildContext context) {
-  return context.supportedLocales;
 }
 
 /// Map logging Level to EasyLogger levels

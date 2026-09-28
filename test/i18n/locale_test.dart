@@ -17,7 +17,15 @@ void _serve(Map<String, Map<String, String>> bundle) {
 
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .setMockMessageHandler('flutter/assets', (message) async {
-        final payload = bundle[utf8.decode(message!.buffer.asUint8List())];
+        final key = utf8.decode(message!.buffer.asUint8List());
+
+        if (key == 'AssetManifest.bin') {
+          return const StandardMessageCodec().encodeMessage({
+            for (final asset in bundle.keys) asset: <Object?>[],
+          });
+        }
+
+        final payload = bundle[key];
 
         return payload == null
             ? null
@@ -28,6 +36,9 @@ void _serve(Map<String, Map<String, String>> bundle) {
 Future<void> _pumpApp(
   WidgetTester tester, {
   required String? locale,
+  Locale? appLocale,
+  Locale? sourceLocale = const Locale('fr'),
+  Map<String, Locale> packageSourceLocales = const {},
   Map<String, Map<String, String>> bundle = const {},
   String Function() text = _empty,
 }) async {
@@ -38,9 +49,11 @@ Future<void> _pumpApp(
     await initializeI18n();
     await tester.pumpWidget(
       useI18n(
-        supportedLocales: const [Locale('fr'), Locale('en')],
+        availableLocales: const [Locale('fr'), Locale('en')],
+        locale: appLocale,
         fallbackLocale: const Locale('en'),
-        sourceLocale: const Locale('fr'),
+        sourceLocale: sourceLocale,
+        packageSourceLocales: packageSourceLocales,
         child: Builder(
           builder: (context) => WidgetsApp(
             color: const Color(0xFF000000),
@@ -136,6 +149,20 @@ void main() {
       },
     );
 
+    testWidgets(
+      'the keys are in the fallback language when no source language is given',
+      (tester) async {
+        await _pumpApp(
+          tester,
+          locale: 'en',
+          sourceLocale: null,
+          text: () => plural('{} members', 4),
+        );
+
+        expect(find.text('4 members'), findsOneWidget);
+      },
+    );
+
     testWidgets('a key translated in the source language is translated', (
       tester,
     ) async {
@@ -143,14 +170,12 @@ void main() {
         tester,
         locale: 'fr',
         bundle: {
-          'packages/flutter_fastedgy/assets/translations/fr.json': {
-            'Copy': 'Copier',
-          },
+          'assets/translations/fr.json': {'Bonjour': 'Salut'},
         },
-        text: () => t('Copy'),
+        text: () => t('Bonjour'),
       );
 
-      expect(find.text('Copier'), findsOneWidget);
+      expect(find.text('Salut'), findsOneWidget);
     });
 
     testWidgets('another language reads its own translation', (tester) async {
@@ -164,6 +189,115 @@ void main() {
       );
 
       expect(find.text('Hello Léa'), findsOneWidget);
+    });
+
+    testWidgets('a key of the application never takes a word of the package', (
+      tester,
+    ) async {
+      await _pumpApp(
+        tester,
+        locale: 'fr',
+        bundle: {
+          'packages/flutter_fastedgy/assets/translations/fr.json': {
+            'Location': 'Emplacement',
+          },
+          'assets/translations/en.json': {'Location': 'Rental'},
+        },
+        text: () => t('Location'),
+      );
+
+      expect(find.text('Location'), findsOneWidget);
+    });
+  });
+
+  group('words of the package', () {
+    const package = 'packages/flutter_fastedgy/assets/translations/fr.json';
+
+    testWidgets('come from every package the asset manifest lists', (
+      tester,
+    ) async {
+      await _pumpApp(
+        tester,
+        locale: 'fr',
+        bundle: {
+          'packages/other_package/assets/translations/fr.json': {
+            'Share': 'Partager',
+          },
+        },
+        text: () => t('Share'),
+      );
+
+      expect(find.text('Partager'), findsOneWidget);
+    });
+
+    testWidgets('follow the source language the application gives a package', (
+      tester,
+    ) async {
+      await _pumpApp(
+        tester,
+        locale: 'en',
+        packageSourceLocales: const {'other_package': Locale('de')},
+        bundle: {
+          'packages/other_package/assets/translations/en.json': {
+            'Teilen': 'Share',
+          },
+        },
+        text: () => t('Teilen'),
+      );
+
+      expect(find.text('Share'), findsOneWidget);
+    });
+
+    testWidgets('speak the displayed language from the package catalog', (
+      tester,
+    ) async {
+      await _pumpApp(
+        tester,
+        locale: 'fr',
+        bundle: {
+          package: {'Copy {name}': 'Copier {name}'},
+        },
+        text: () => t('Copy {name}', {'name': 'le lien'}),
+      );
+
+      expect(find.text('Copier le lien'), findsOneWidget);
+    });
+
+    testWidgets('are their English key in English, with no English catalog', (
+      tester,
+    ) async {
+      await _pumpApp(
+        tester,
+        locale: 'en',
+        bundle: {
+          package: {'Copy': 'Copier'},
+        },
+        text: () => t('Copy'),
+      );
+
+      expect(find.text('Copy'), findsOneWidget);
+    });
+
+    testWidgets('show their English where the package has no translation', (
+      tester,
+    ) async {
+      await _pumpApp(tester, locale: 'fr', text: () => t('Paste'));
+
+      expect(find.text('Paste'), findsOneWidget);
+    });
+
+    testWidgets('take the wording the application gives them', (tester) async {
+      await _pumpApp(
+        tester,
+        locale: 'fr',
+        bundle: {
+          package: {'Copy': 'Copier'},
+          'assets/translations/fr.json': {'Copy': 'Dupliquer'},
+        },
+        text: () => t('Copy'),
+      );
+
+      expect(find.text('Dupliquer'), findsOneWidget);
     });
   });
 
@@ -276,6 +410,40 @@ void main() {
         expect(chosenLocale.value, const Locale('en'));
       },
     );
+
+    testWidgets('starts in the language the app gives, over the device', (
+      tester,
+    ) async {
+      speak(tester, const Locale('fr', 'FR'));
+
+      await _pumpApp(tester, locale: null, appLocale: const Locale('en'));
+
+      expect(activeLocale.value, const Locale('en'));
+      expect(chosenLocale.value, const Locale('en'));
+    });
+
+    testWidgets(
+      'the language the app gives wins over the one chosen on the device',
+      (tester) async {
+        speak(tester, const Locale('fr', 'FR'));
+        await _pumpApp(tester, locale: 'fr', appLocale: const Locale('en'));
+
+        await settle(tester);
+
+        expect(activeLocale.value, const Locale('en'));
+      },
+    );
+
+    testWidgets('ignores a language the app gives but does not offer', (
+      tester,
+    ) async {
+      speak(tester, const Locale('fr', 'FR'));
+
+      await _pumpApp(tester, locale: null, appLocale: const Locale('it'));
+
+      expect(activeLocale.value, const Locale('fr'));
+      expect(chosenLocale.value, isNull);
+    });
 
     testWidgets('followDeviceLocale drops the language chosen in the app', (
       tester,

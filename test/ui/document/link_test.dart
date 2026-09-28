@@ -68,9 +68,6 @@ void main() {
     final fr = jsonDecode(
       File('assets/translations/fr.json').readAsStringSync(),
     ) as Map<String, dynamic>;
-    final en = jsonDecode(
-      File('assets/translations/en.json').readAsStringSync(),
-    ) as Map<String, dynamic>;
 
     const keys = [
       'Link',
@@ -87,7 +84,6 @@ void main() {
 
     for (final key in keys) {
       expect(fr, contains(key));
-      expect(en, contains(key));
     }
   });
 }

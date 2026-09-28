@@ -134,14 +134,17 @@ void main() {
       expect(status.maintenance, isFalse);
     });
 
-    test('a timed out gateway is unreachable without being maintenance', () async {
-      adapter.status = 504;
+    test(
+      'a timed out gateway is unreachable without being maintenance',
+      () async {
+        adapter.status = 504;
 
-      await request();
+        await request();
 
-      expect(status.reachable, isFalse);
-      expect(status.maintenance, isFalse);
-    });
+        expect(status.reachable, isFalse);
+        expect(status.maintenance, isFalse);
+      },
+    );
 
     test('nothing to report to is not an error', () async {
       container.unregister<SyncStatus>();

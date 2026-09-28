@@ -38,8 +38,9 @@ void main() {
     final outline = outlineOf(codec.decode(markdown));
 
     File('${into.path}/$name.md').writeAsStringSync(markdown);
-    File('${into.path}/$name.outline.json')
-        .writeAsStringSync('${const JsonEncoder.withIndent('    ').convert(outline)}\n');
+    File('${into.path}/$name.outline.json').writeAsStringSync(
+      '${const JsonEncoder.withIndent('    ').convert(outline)}\n',
+    );
   }
 
   /// A fixture the encoder produced: canonical, and held to all three assertions.
@@ -54,7 +55,8 @@ void main() {
 
   /// A fixture written by hand: only ever read, never expected to come back as
   /// it went. Content stored by an older editor lives here.
-  void fromMarkdown(String name, String markdown) => write(lenient, name, markdown);
+  void fromMarkdown(String name, String markdown) =>
+      write(lenient, name, markdown);
 
   /// A fixture whose source is written by hand, held to the same three
   /// assertions as one the encoder produced. What a table is made of is far
@@ -84,7 +86,10 @@ void main() {
         todoListNode(checked: true, delta: Delta()..insert('fait')),
         quoteNode(delta: Delta()..insert('une citation')),
         dividerNode(),
-        codeBlockNode(delta: Delta()..insert('const a = 1;'), language: 'javascript'),
+        codeBlockNode(
+          delta: Delta()..insert('const a = 1;'),
+          language: 'javascript',
+        ),
         codeBlockNode(delta: Delta()..insert('sans langue'), language: null),
       ]),
     );
@@ -106,7 +111,10 @@ void main() {
             ..insert(' ')
             ..insert('code', attributes: {'code': true})
             ..insert(' ')
-            ..insert('un lien', attributes: {AppFlowyRichTextKeys.href: 'https://melimelo.app'}),
+            ..insert(
+              'un lien',
+              attributes: {AppFlowyRichTextKeys.href: 'https://melimelo.app'},
+            ),
         ),
       ]),
     );
@@ -129,7 +137,10 @@ void main() {
         paragraphNode(
           delta: Delta()
             ..insert('voir ')
-            ..insert('https://melimelo.app', attributes: {AppFlowyRichTextKeys.href: 'https://melimelo.app'}),
+            ..insert(
+              'https://melimelo.app',
+              attributes: {AppFlowyRichTextKeys.href: 'https://melimelo.app'},
+            ),
         ),
       ]),
     );
@@ -176,7 +187,10 @@ void main() {
     fromDocument(
       'code_blank_line',
       documentOf([
-        codeBlockNode(delta: Delta()..insert('const a = 1;\n\nconst b = 2;'), language: 'javascript'),
+        codeBlockNode(
+          delta: Delta()..insert('const a = 1;\n\nconst b = 2;'),
+          language: 'javascript',
+        ),
         paragraphNode(delta: Delta()..insert('après')),
       ]),
     );
@@ -195,9 +209,18 @@ void main() {
       ]),
     );
 
-    fromCanonicalMarkdown('mention_note', 'voir [Courses de la semaine](/notes/12) ce soir');
-    fromCanonicalMarkdown('mention_member', 'avec [François](/household/members/7)');
-    fromCanonicalMarkdown('mention_email_label', 'avec [jean\\@melimelo.app](/household/members/9)');
+    fromCanonicalMarkdown(
+      'mention_note',
+      'voir [Courses de la semaine](/notes/12) ce soir',
+    );
+    fromCanonicalMarkdown(
+      'mention_member',
+      'avec [François](/household/members/7)',
+    );
+    fromCanonicalMarkdown(
+      'mention_email_label',
+      'avec [jean\\@melimelo.app](/household/members/9)',
+    );
     fromCanonicalMarkdown(
       'mention_in_cell',
       '|qui|quand|\n|-|-|\n|[François](/household/members/7)|demain|',
@@ -206,27 +229,41 @@ void main() {
     fromCanonicalMarkdown('table_plain', '|a|b|\n|-|-|\n|c|d|');
     fromCanonicalMarkdown('table_empty_cell', '|a||\n|-|-|\n||d|');
     fromCanonicalMarkdown('table_cell_pipe', '|a\\|b|c|\n|-|-|\n|d|e|');
-    fromCanonicalMarkdown('table_cell_break', '|ligne 1<br>ligne 2|b|\n|-|-|\n|c|d|');
-    fromCanonicalMarkdown('table_widths', '|a|b|\n|-|-|\n|c|d|\n<!-- cols:180,240 -->');
+    fromCanonicalMarkdown(
+      'table_cell_break',
+      '|ligne 1<br>ligne 2|b|\n|-|-|\n|c|d|',
+    );
+    fromCanonicalMarkdown(
+      'table_widths',
+      '|a|b|\n|-|-|\n|c|d|\n<!-- cols:180,240 -->',
+    );
 
     // Found on real notes, and none of them was in the corpus: an item with
     // nothing in it, a line cut inside a block, and a bare URL whose letters
     // were spelt one way or the other.
     fromCanonicalMarkdown('list_empty_items', '*\n\n*\n\n* Tapis');
     fromCanonicalMarkdown('line_breaks', 'un\ndeux\ntrois');
-    fromCanonicalMarkdown('link_bare_encoded', 'https://a.fr/jeans-%C3%A9cussons');
+    fromCanonicalMarkdown(
+      'link_bare_encoded',
+      'https://a.fr/jeans-%C3%A9cussons',
+    );
     fromCanonicalMarkdown('link_bare_letters', 'https://a.fr/décoration');
 
     // A fence holding a fence: read back as far as the format can, and not
     // expected to come back as it went. The inner ``` closes the block for any
     // reader, this one included, and what follows lands beside it.
-    fromMarkdown('code_fence_inside', '```markdown\n```\nune fence dans la fence\n```\n```\n\naprès');
+    fromMarkdown(
+      'code_fence_inside',
+      '```markdown\n```\nune fence dans la fence\n```\n```\n\naprès',
+    );
 
     fromMarkdown('nesting_tabs', 'a\n\n\tb\n\n\t\tc\n\nd');
     fromMarkdown('plus_underline', '++venu de Fleather++ et C++ and C++');
     fromMarkdown('compact_list', '* a\n* b\n* c');
 
-    final written = directory.listSync().whereType<File>().length + lenient.listSync().whereType<File>().length;
+    final written =
+        directory.listSync().whereType<File>().length +
+        lenient.listSync().whereType<File>().length;
 
     expect(written, greaterThan(0));
     // ignore: avoid_print

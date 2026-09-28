@@ -27,10 +27,13 @@ void main() {
           .toList()
         ..sort();
 
-  ({String markdown, Object? outline}) read(Directory directory, String name) => (
-    markdown: File('${directory.path}/$name.md').readAsStringSync(),
-    outline: jsonDecode(File('${directory.path}/$name.outline.json').readAsStringSync()),
-  );
+  ({String markdown, Object? outline}) read(Directory directory, String name) =>
+      (
+        markdown: File('${directory.path}/$name.md').readAsStringSync(),
+        outline: jsonDecode(
+          File('${directory.path}/$name.outline.json').readAsStringSync(),
+        ),
+      );
 
   final canonical = Directory(corpusDirectory);
   final lenient = Directory('$corpusDirectory/lenient');
@@ -40,11 +43,17 @@ void main() {
       final fixture = read(canonical, name);
 
       test('$name: reading gives the expected document', () {
-        expect(outlineOf(corpusCodec.decode(fixture.markdown)), fixture.outline);
+        expect(
+          outlineOf(corpusCodec.decode(fixture.markdown)),
+          fixture.outline,
+        );
       });
 
       test('$name: writing gives the source back', () {
-        expect(corpusCodec.encode(corpusCodec.decode(fixture.markdown)), fixture.markdown);
+        expect(
+          corpusCodec.encode(corpusCodec.decode(fixture.markdown)),
+          fixture.markdown,
+        );
       });
 
       test('$name: a second round moves nothing', () {
@@ -60,7 +69,10 @@ void main() {
       final fixture = read(lenient, name);
 
       test('$name: reading gives the expected document', () {
-        expect(outlineOf(corpusCodec.decode(fixture.markdown)), fixture.outline);
+        expect(
+          outlineOf(corpusCodec.decode(fixture.markdown)),
+          fixture.outline,
+        );
       });
 
       test('$name: what is rewritten from it is stable', () {

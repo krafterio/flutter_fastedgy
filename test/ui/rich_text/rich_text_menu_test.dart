@@ -23,7 +23,6 @@ void main() {
 
   test('every block the package offers is named from our catalog', () {
     final fr = catalog('fr');
-    final en = catalog('en');
 
     for (final item in standardSelectionMenuItems) {
       // What the item is called here is the key it is translated under: a label
@@ -36,20 +35,14 @@ void main() {
         contains(label),
         reason: '"$label" is missing from the French catalog',
       );
-      expect(
-        en,
-        contains(label),
-        reason: '"$label" is missing from the English catalog',
-      );
     }
   });
 
-  test('the code block entry says it is a block, in both catalogs', () {
+  test('the code block entry says it is a block, in the catalog', () {
     // Named 'Code' upstream, which reads as the mark a word carries rather than
     // as the block the entry makes.
     expect(codeBlockMenuItem().name, 'Code block');
     expect(catalog('fr'), contains('Code block'));
-    expect(catalog('en'), contains('Code block'));
   });
 
   test('the menu carries the package blocks and what the features add', () {
