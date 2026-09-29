@@ -25,6 +25,21 @@ import '../http_error.dart';
 /// to maintain clean error propagation.
 class ErrorInterceptor extends Interceptor {
   @override
+  void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
+    if (hasService<SyncStatus>() && !getService<SyncStatus>().online) {
+      return handler.reject(
+        DioException.connectionError(
+          requestOptions: options,
+          reason: 'The device has no connectivity.',
+        ),
+        true,
+      );
+    }
+
+    handler.next(options);
+  }
+
+  @override
   void onResponse(Response response, ResponseInterceptorHandler handler) {
     _report(true);
     handler.next(response);

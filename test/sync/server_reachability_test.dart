@@ -14,6 +14,7 @@ import 'package:flutter_fastedgy/flutter_fastedgy.dart';
 class _ScriptedAdapter implements HttpClientAdapter {
   bool unreachable = false;
   int status = 200;
+  int calls = 0;
 
   @override
   Future<ResponseBody> fetch(
@@ -21,6 +22,8 @@ class _ScriptedAdapter implements HttpClientAdapter {
     Stream<Uint8List>? requestStream,
     Future<void>? cancelFuture,
   ) async {
+    calls++;
+
     if (unreachable) {
       throw DioException(
         requestOptions: options,
@@ -143,6 +146,24 @@ void main() {
 
         expect(status.reachable, isFalse);
         expect(status.maintenance, isFalse);
+      },
+    );
+
+    test(
+      'a device without connectivity fails a request without sending it',
+      () async {
+        status.setOnline(false);
+
+        await expectLater(
+          fetcher.get('/anything'),
+          throwsA(isA<NetworkError>()),
+        );
+        expect(adapter.calls, 0);
+
+        status.setOnline(true);
+        await fetcher.get('/anything');
+
+        expect(adapter.calls, 1);
       },
     );
 
