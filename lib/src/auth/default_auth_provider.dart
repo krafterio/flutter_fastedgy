@@ -102,6 +102,10 @@ class DefaultAuthProvider<TUser> implements AuthProvider<TUser> {
     }
   }
 
+  /// Creates the account, and opens its session only when the server answers
+  /// with tokens. The registration route of FastEdgy answers with a message
+  /// alone: the account exists, no session is open ([AuthResult.accessToken]
+  /// is null), and a [login] opens one.
   @override
   Future<AuthResult<TUser>> register(Map<String, dynamic> userData) async {
     try {
@@ -113,9 +117,14 @@ class DefaultAuthProvider<TUser> implements AuthProvider<TUser> {
       final accessToken = data['access_token'] as String?;
       final refreshToken = data['refresh_token'] as String?;
 
-      if (accessToken != null) {
-        await _tokenStorage.saveAccessToken(accessToken);
+      if (accessToken == null) {
+        _logger.finer('Registration successful, no session opened');
+
+        return AuthResult.success();
       }
+
+      await _tokenStorage.saveAccessToken(accessToken);
+
       if (refreshToken != null) {
         await _tokenStorage.saveRefreshToken(refreshToken);
       }
