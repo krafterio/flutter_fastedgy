@@ -9,7 +9,7 @@ The package to facilitate integration between a FastEdgy server and a Flutter ap
 
 ```bash
 mkdir -p deps
-git submodule add -b main https://github.com/krafterio/flutter-fastedgy.git deps/flutter_fastedgy
+git submodule add -b main https://github.com/krafterio/flutter_fastedgy.git deps/flutter_fastedgy
 ```
 
 ### Step 2: Add the dependency to your pubspec.yaml
@@ -93,5 +93,5 @@ FastEdgy was originally created by [Krafter][2].
 
 [1]: LICENSE
 [2]: https://krafter.io
-[3]: https://github.com/krafterio/flutter-fastedgy/issues
-[4]: https://github.com/krafterio/flutter-fastedgy/pulls
+[3]: https://github.com/krafterio/flutter_fastedgy/issues
+[4]: https://github.com/krafterio/flutter_fastedgy/pulls
