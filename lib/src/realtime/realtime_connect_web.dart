@@ -3,6 +3,8 @@
  * MIT License (see LICENSE file).
  */
 
+import 'dart:async';
+
 import 'package:web_socket_channel/status.dart' as ws_status;
 import 'package:web_socket_channel/web_socket_channel.dart';
 
@@ -23,7 +25,9 @@ Future<RealtimeConnection> connectRealtime(
   try {
     await channel.ready.timeout(const Duration(seconds: 15));
   } catch (_) {
-    await channel.sink.close();
+    // Not awaited: a channel that never opened has no reader behind its sink,
+    // and its close would wait forever, holding the socket's next attempts.
+    unawaited(channel.sink.close());
     rethrow;
   }
 
