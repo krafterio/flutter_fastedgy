@@ -117,6 +117,13 @@ class RealtimeSocket with WidgetsBindingObserver {
   bool _backgrounded = false;
   bool _owesStale = false;
 
+  /// The scopes the last authentication named: those a refusal is about.
+  List<String> _offered = const [];
+
+  /// The next authentication names no scope: the last one was refused for
+  /// those it named.
+  bool _unscoped = false;
+
   /// Whether the server accepted this socket, and it is still open.
   bool get isConnected => _connected;
 
@@ -164,6 +171,11 @@ class RealtimeSocket with WidgetsBindingObserver {
 
   /// Reads [scope] from now on, a slug or null. The socket knows nothing of
   /// what a scope is: whoever knows it says so.
+  ///
+  /// A scope the server refuses to open the socket on is dropped: the socket
+  /// opens again on none, not on the scope a server may give to null, until
+  /// the next [watch] or [watchAll], and its handshake fires a
+  /// [ResourcesStaleEvent] for the application to read its scopes again.
   void watch(String? scope) {
     if (_scopes == null && scope == _scope) {
       return;
@@ -176,7 +188,9 @@ class RealtimeSocket with WidgetsBindingObserver {
 
   /// Reads every one of [scopes] from now on, on this one socket: each event
   /// says which it comes from ([ResourceChangedEvent.scopeId]). The server
-  /// leaves out a scope the account is not a member of.
+  /// leaves out a scope the account is not a member of, and refuses the socket
+  /// when it is a member of none of them: they are then dropped, as [watch]
+  /// says.
   void watchAll(List<String> scopes) {
     final next = List<String>.unmodifiable(scopes);
 
@@ -193,7 +207,7 @@ class RealtimeSocket with WidgetsBindingObserver {
     if (_connected) {
       _announce();
     } else if (_refused) {
-      // A scope the account is not a member of is refused too.
+      // A server that does not say why it refused may have refused the scope.
       _refused = false;
       _wanted = true;
       _refreshed = false;
@@ -342,8 +356,16 @@ class RealtimeSocket with WidgetsBindingObserver {
         return;
       }
 
+      // After a refused scope, in on none, an empty list rather than a null a
+      // server may read as a default scope: those to read follow through a
+      // `watch`, where the server leaves out what it does not let in rather
+      // than refusing the socket.
+      final scoped = !_unscoped;
+
+      _unscoped = false;
       _connection = connection;
-      _announced = _watched;
+      _announced = scoped ? _watched : jsonEncode(const <String>[]);
+      _offered = scoped ? scopes : const [];
       _frames = connection.messages.listen(
         _receive,
         onError: (Object _) => _lost(connection),
@@ -352,7 +374,10 @@ class RealtimeSocket with WidgetsBindingObserver {
       connection.send(
         jsonEncode({
           'type': 'authenticate',
-          'data': {'token': token, ..._scopeData},
+          'data': {
+            'token': token,
+            ...(scoped ? _scopeData : const {'scopes': <String>[]}),
+          },
         }),
       );
     } catch (error) {
@@ -404,7 +429,7 @@ class RealtimeSocket with WidgetsBindingObserver {
     }
 
     if (type == 'auth_error') {
-      unawaited(_refusal());
+      unawaited(_refusal(message['data']));
 
       return;
     }
@@ -493,10 +518,36 @@ class RealtimeSocket with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _refusal() async {
+  Future<void> _refusal(Object? data) async {
+    final refused = _offered;
+
     await _close();
 
     if (!_wanted) {
+      return;
+    }
+
+    // The account is no longer a member of the scopes named, one deleted or
+    // renamed while the socket was closed for one: it stops reading them and
+    // opens again, and the handshake, even a first one, has the application
+    // read its scopes again.
+    if (refused.isNotEmpty &&
+        data is Map &&
+        data['message'] == 'Scope not found') {
+      final all = _scopes;
+
+      if (all != null) {
+        _scopes = List.unmodifiable(all.where((one) => !refused.contains(one)));
+      } else if (refused.contains(_scope)) {
+        // None, not null: a server may read null as a default scope of its own.
+        _scope = null;
+        _scopes = const [];
+      }
+
+      _unscoped = true;
+      _owesStale = true;
+      unawaited(_open());
+
       return;
     }
 

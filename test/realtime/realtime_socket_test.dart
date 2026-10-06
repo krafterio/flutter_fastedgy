@@ -640,6 +640,215 @@ void main() {
   );
 
   testSocket(
+    'opens again on no scope when the one it read is gone, and reads the next one named',
+    (tester) async {
+      final socket = socketOf()..watch('krafter');
+      final first = await connect(tester, socket);
+
+      first.drop();
+      await reopen(tester, const Duration(seconds: 1));
+      links.last.receive({
+        'type': 'auth_error',
+        'data': {'message': 'Scope not found'},
+      });
+      await flush(tester);
+
+      expect(links, hasLength(3));
+      expect(links.last.sent.single, {
+        'type': 'authenticate',
+        'data': {'token': 'a-token', 'scopes': <String>[]},
+      });
+      expect(socket.scope, isNull);
+
+      links.last.receive({'type': 'auth_success', 'data': {}});
+      await flush(tester);
+
+      expect(stales(), 1);
+
+      socket.watch('studio-nord');
+
+      expect(links.last.framesOf('watch'), [
+        {
+          'type': 'watch',
+          'data': {'scope': 'studio-nord'},
+        },
+      ]);
+
+      await socket.dispose();
+    },
+  );
+
+  testSocket(
+    'opens again on the scopes left when those it named are refused, and fires a stale event even on a first connection',
+    (tester) async {
+      final socket = socketOf()..watchAll(['gone']);
+
+      await socket.start();
+      await flush(tester);
+      socket.watchAll(['gone', 'krafter']);
+      links.single.receive({
+        'type': 'auth_error',
+        'data': {'message': 'Scope not found'},
+      });
+      await flush(tester);
+      links.last.receive({'type': 'auth_success', 'data': {}});
+      await flush(tester);
+
+      expect(links, hasLength(2));
+      expect(socket.scopes, ['krafter']);
+      expect(links.last.framesOf('watch'), [
+        {
+          'type': 'watch',
+          'data': {
+            'scopes': ['krafter'],
+          },
+        },
+      ]);
+      expect(stales(), 1);
+
+      await socket.dispose();
+    },
+  );
+
+  testSocket(
+    'leaves out of the next authentication a refused scope named again during the reopening',
+    (tester) async {
+      late final RealtimeSocket socket;
+
+      socket = socketOf(
+        connector: (url, headers) async {
+          final link = _Link(url, headers);
+
+          links.add(link);
+
+          if (links.length == 2) {
+            socket.watch('gone');
+          }
+
+          return link.connection;
+        },
+      )..watch('gone');
+      await socket.start();
+      await flush(tester);
+      links.single.receive({
+        'type': 'auth_error',
+        'data': {'message': 'Scope not found'},
+      });
+      await flush(tester);
+      links.last.receive({'type': 'auth_success', 'data': {}});
+      await flush(tester);
+
+      // Named at authentication, it would be refused again, without end: the
+      // server leaves it out of a `watch` instead.
+      expect(links, hasLength(2));
+      expect(links.last.sent.first['data'], {
+        'token': 'a-token',
+        'scopes': <String>[],
+      });
+      expect(links.last.framesOf('watch'), [
+        {
+          'type': 'watch',
+          'data': {'scope': 'gone'},
+        },
+      ]);
+
+      await socket.dispose();
+    },
+  );
+
+  testSocket('keeps the scope named while the refused authentication was out', (
+    tester,
+  ) async {
+    final socket = socketOf()..watch('gone');
+
+    await socket.start();
+    await flush(tester);
+    socket.watch('krafter');
+    links.single.receive({
+      'type': 'auth_error',
+      'data': {'message': 'Scope not found'},
+    });
+    await flush(tester);
+    links.last.receive({'type': 'auth_success', 'data': {}});
+    await flush(tester);
+
+    expect(socket.scope, 'krafter');
+    expect(links.last.framesOf('watch'), [
+      {
+        'type': 'watch',
+        'data': {'scope': 'krafter'},
+      },
+    ]);
+
+    await socket.dispose();
+  });
+
+  testSocket('stops when every authentication is refused for its scope', (
+    tester,
+  ) async {
+    final socket = socketOf()..watch('gone');
+
+    await socket.start();
+    await flush(tester);
+
+    var answered = 0;
+
+    while (answered < 10 && links.length > answered) {
+      links[answered].receive({
+        'type': 'auth_error',
+        'data': {'message': 'Scope not found'},
+      });
+      answered++;
+      await flush(tester);
+    }
+
+    expect(links, hasLength(3));
+
+    await socket.dispose();
+  });
+
+  testSocket(
+    'reads no scope after a refused one, not the default a server gives to null, until one is named',
+    (tester) async {
+      final socket = socketOf()..watch('gone');
+
+      await socket.start();
+      await flush(tester);
+      links.single.receive({
+        'type': 'auth_error',
+        'data': {'message': 'Scope not found'},
+      });
+      await flush(tester);
+      links.last.receive({'type': 'auth_success', 'data': {}});
+      await flush(tester);
+
+      expect(links.last.framesOf('watch'), isEmpty);
+
+      links.last.drop();
+      await reopen(tester, const Duration(seconds: 1));
+
+      expect(links, hasLength(3));
+      expect(links.last.sent.first['data'], {
+        'token': 'a-token',
+        'scopes': <String>[],
+      });
+
+      links.last.receive({'type': 'auth_success', 'data': {}});
+      await flush(tester);
+      socket.watch(null);
+
+      expect(links.last.framesOf('watch'), [
+        {
+          'type': 'watch',
+          'data': {'scope': null},
+        },
+      ]);
+
+      await socket.dispose();
+    },
+  );
+
+  testSocket(
     'closes on sign-out, keeps its channels, and reads again after the next sign-in',
     (tester) async {
       final socket = socketOf();

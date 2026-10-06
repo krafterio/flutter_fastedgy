@@ -7,9 +7,9 @@ import '../bus/events.dart';
 
 /// What is held may have moved without anyone saying so: read it again.
 ///
-/// Fired by the realtime socket on a handshake that follows an earlier one, and
-/// by an application whose screens outlive a change of what they show, a
-/// scope switch for one.
+/// Fired by the realtime socket on a handshake that follows an earlier one or a
+/// refusal of the scopes it named, and by an application whose screens outlive
+/// a change of what they show, a scope switch for one.
 class ResourcesStaleEvent extends Event {
   const ResourcesStaleEvent();
 }
