@@ -12,6 +12,7 @@ import 'package:flutter_fastedgy/testing.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_secure_storage/test/test_flutter_secure_storage_platform.dart';
 import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 String _jwtExpiringAt(DateTime when) {
   final payload = base64Url
@@ -164,6 +165,49 @@ void main() {
       expect(await provider.refreshToken(), isTrue);
       expect(await provider.refreshToken(), isTrue);
       expect(calls, 2);
+    });
+
+    test('keeps the refresh token the server hands back, for the session to outlive the first', () async {
+      final provider = buildProvider();
+
+      gate.complete();
+      expect(await provider.refreshToken(), isTrue);
+      expect(await provider.getRefreshToken(), 'refresh-2');
+    });
+
+    test(
+      'stays signed out when the sign-out lands while the refresh is out',
+      () async {
+        SharedPreferences.setMockInitialValues({});
+        final provider = buildProvider();
+
+        final refreshing = provider.refreshToken();
+        await pumpEventQueue();
+        await provider.logout();
+        gate.complete();
+
+        expect(await refreshing, isTrue);
+        expect(await provider.getAccessToken(), isNull);
+        expect(await provider.getRefreshToken(), isNull);
+        expect(await const TokenStorage().isAuthenticated(), isFalse);
+      },
+    );
+
+    test('keeps the account signed in while the refresh of the previous one was out', () async {
+      SharedPreferences.setMockInitialValues({});
+      final provider = buildProvider();
+      const storage = TokenStorage();
+
+      final refreshing = provider.refreshToken();
+      await pumpEventQueue();
+      await provider.logout();
+      await storage.saveAccessToken('access-B');
+      await storage.saveRefreshToken('refresh-B');
+      gate.complete();
+
+      expect(await refreshing, isTrue);
+      expect(await provider.getAccessToken(), 'access-B');
+      expect(await provider.getRefreshToken(), 'refresh-B');
     });
 
     test(

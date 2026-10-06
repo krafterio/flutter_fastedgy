@@ -196,6 +196,11 @@ class DefaultAuthProvider<TUser> implements AuthProvider<TUser> {
   }
 
   /// Actual refresh call, without the single-flight guard.
+  ///
+  /// Keeps both tokens the server answers with, unless the session changed
+  /// while the call was out (a sign-out, another sign-in): that answer is
+  /// dropped, and true returned for `RefreshTokenLock` not to sign out the
+  /// session that replaced it. An override keeps both rules.
   Future<bool> performRefreshToken() async {
     final refreshToken = await _tokenStorage.getRefreshToken();
     if (refreshToken == null) {
@@ -209,11 +214,24 @@ class DefaultAuthProvider<TUser> implements AuthProvider<TUser> {
       'refresh_token': refreshToken,
     });
 
+    if (await _tokenStorage.getRefreshToken() != refreshToken) {
+      _logger.finer('Session changed during the refresh, its answer dropped');
+      return true;
+    }
+
     final data = response.data as Map<String, dynamic>;
     final newAccessToken = data['access_token'] as String?;
+    final newRefreshToken = data['refresh_token'] as String?;
 
     if (newAccessToken != null) {
       await _tokenStorage.saveAccessToken(newAccessToken);
+
+      // The server hands a new refresh token with each refresh: kept, it carries
+      // an active session past the lifetime of the first one.
+      if (newRefreshToken != null) {
+        await _tokenStorage.saveRefreshToken(newRefreshToken);
+      }
+
       _logger.finer('Token refreshed successfully');
       return true;
     }
