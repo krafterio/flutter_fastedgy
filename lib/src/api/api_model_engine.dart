@@ -368,6 +368,7 @@ class ApiModelEngine<T extends BaseModel<T>> {
   Future<Response> import(
     List<int> file,
     String fileName, {
+    String? delimiter,
     ApiParams? params,
   }) async {
     if (owner.disabledActions.contains(ApiAction.import)) {
@@ -376,6 +377,7 @@ class ApiModelEngine<T extends BaseModel<T>> {
 
     final formData = FormData.fromMap({
       'file': MultipartFile.fromBytes(file, filename: fileName),
+      'delimiter': ?delimiter,
     });
 
     final paramsMap = params?.toMap() ?? {};

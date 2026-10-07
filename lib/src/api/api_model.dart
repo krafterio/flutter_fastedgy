@@ -309,8 +309,14 @@ abstract class ApiModel<T extends BaseModel<T>> {
   Future<Response> import(
     List<int> file,
     String fileName, {
+    String? delimiter,
     ApiParams? params,
-  }) async => (await _resolveEngine()).import(file, fileName, params: params);
+  }) async => (await _resolveEngine()).import(
+    file,
+    fileName,
+    delimiter: delimiter,
+    params: params,
+  );
 
   Future<Response> importTemplate({
     ImportTemplateQuery? query,
