@@ -20,7 +20,8 @@ import 'models.dart';
 /// final ua = getService<UserAgent>().value;
 /// ```
 ///
-/// Format: `AppName/1.0.0+1 (ios 18.3; appstore)`.
+/// Format: `AppName/1.0.0+1 (ios 18.3; appstore)`, a debug build carrying the
+/// dev pre-release of [AppInfo.version]: `AppName/1.0.0-dev+1`.
 class UserAgent {
   /// The built User-Agent string.
   final String value;

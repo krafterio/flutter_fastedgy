@@ -5,7 +5,8 @@
 
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
+import 'package:flutter/foundation.dart'
+    show kDebugMode, kIsWeb, visibleForTesting;
 
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -44,7 +45,7 @@ class AppInfo {
     return AppInfo(
       appName: info.appName,
       packageName: info.packageName,
-      version: info.version,
+      version: devVersion(info.version),
       buildNumber: info.buildNumber,
       installerStore: info.installerStore,
       osVersion: await _osVersion(),
@@ -73,6 +74,16 @@ class AppInfo {
   /// Combined version in the form `"1.2.3+45"`.
   String get fullVersion => '$version+$buildNumber';
 }
+
+const _devSuffix = '-dev';
+
+/// The version of the build: a debug build marks it as a semver pre-release,
+/// `1.0.0-dev`, the release in development after `1.0.0`. An Android debug
+/// build already has it from Gradle and is not marked twice.
+@visibleForTesting
+String devVersion(String version) => kDebugMode && !version.endsWith(_devSuffix)
+    ? '$version$_devSuffix'
+    : version;
 
 /// The Windows version in the form `10.0.26200`.
 ///
