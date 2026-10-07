@@ -9,6 +9,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
+import 'list_filter.dart';
+import 'list_sort.dart';
+
 /// Persists a list screen's state (filter, search, page, scroll, …) in the
 /// router query params and restores it on (re)entry — the URL is the store, so
 /// it survives navigation, browser back/forward, refresh and deep links without
@@ -21,9 +24,23 @@ import 'package:go_router/go_router.dart';
 /// never for the screen's own [writeUrl], and never for unrelated dependency
 /// changes (keyboard, theme…).
 mixin ListUrlState<W extends StatefulWidget> on State<W> {
+  static const String sortKey = 'order_by';
+
+  static const String filterKey = 'filter';
+
   Timer? _urlDebounce;
   Map<String, String>? _lastParams;
   bool _urlInitDone = false;
+
+  ListSort sortFrom(
+    Map<String, String> params, {
+    bool Function(String field)? allow,
+  }) => ListSort.decode(params[sortKey], allow: allow);
+
+  ListFilter filterFrom(
+    Map<String, String> params, {
+    bool Function(String field)? allow,
+  }) => ListFilter.decode(params[filterKey], allow: allow);
 
   /// Current router query parameters for this screen.
   Map<String, String> get urlParams =>

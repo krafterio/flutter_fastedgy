@@ -157,8 +157,11 @@ class ApiHelpers {
   /// - Pagination: page/size → limit/offset, or direct limit/offset
   /// - Ordering: orderBy → order_by
   /// - Format: format (for exports)
+  /// - Extra params, which never override the ones above
   static Map<String, dynamic> buildQueryParams(Map<String, dynamic> query) {
-    final result = <String, dynamic>{};
+    final result = <String, dynamic>{
+      ...?query['params'] as Map<String, dynamic>?,
+    };
 
     // Pagination: page + size → limit + offset
     if (query['page'] != null && query['size'] != null) {

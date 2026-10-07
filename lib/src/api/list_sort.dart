@@ -110,17 +110,14 @@ class ListSort {
   /// which is how the server is told to apply its own `default_order_by`.
   List<String> toOrderBy() => [for (final key in keys) key.orderBy];
 
-  /// Compact form for a URL (`status,-name`): a descending level is prefixed
-  /// with `-`. Half the length of the server grammar, needs no escaping, and
-  /// reads at a glance in a shared link.
-  String encode() =>
-      [for (final key in keys) key.ascending ? key.field : '-${key.field}']
-          .join(',');
+  /// The `order_by` of a URL, in the server grammar the web writes too.
+  String encode() => toOrderBy().join(',');
 
   /// Reads back what [encode] wrote. Tolerant by contract — a URL is user
-  /// input: it never throws, skips blanks, keeps the first mention of a
-  /// repeated field, and drops any field [allow] refuses (an ordering on a
-  /// column this list does not have would make the server answer 400).
+  /// input: it never throws, skips blanks and any level that is not
+  /// `field:asc` or `field:desc`, keeps the first mention of a repeated field,
+  /// and drops any field [allow] refuses (an ordering on a column this list
+  /// does not have would make the server answer 400).
   static ListSort decode(String? raw, {bool Function(String field)? allow}) {
     if (raw == null || raw.trim().isEmpty) {
       return empty;
@@ -131,20 +128,23 @@ class ListSort {
 
     for (final part in raw.split(',')) {
       final token = part.trim();
+      final separator = token.lastIndexOf(':');
 
-      if (token.isEmpty) {
+      if (separator <= 0) {
         continue;
       }
 
-      final ascending = !token.startsWith('-');
-      final field = (ascending ? token : token.substring(1)).trim();
+      final field = token.substring(0, separator).trim();
+      final direction = token.substring(separator + 1).trim().toLowerCase();
 
-      if (field.isEmpty || (allow != null && !allow(field))) {
+      if (field.isEmpty ||
+          (direction != 'asc' && direction != 'desc') ||
+          (allow != null && !allow(field))) {
         continue;
       }
 
       if (seen.add(field)) {
-        keys.add(SortKey(field, ascending: ascending));
+        keys.add(SortKey(field, ascending: direction == 'asc'));
       }
     }
 

@@ -286,6 +286,39 @@ void main() {
     });
   });
 
+  group('params', () {
+    test('go with every read of the collection, next pages included', () async {
+      seed(2, serverTotal: 4);
+      final collection = collectionOf(limit: 2);
+
+      await collection.load(
+        query: const ListQuery(params: {'balance': 'true', 'limit': '99'}),
+      );
+      await collection.loadMore();
+      await collection.refine(filter: ['name', '=', 'Row 1']);
+
+      expect(requests.length, 3);
+      for (final request in requests) {
+        expect(request.queryParameters['balance'], 'true');
+        expect('${request.queryParameters['limit']}', '2');
+      }
+    });
+
+    test('change on a refine, and go once cleared', () async {
+      seed(2);
+      final collection = collectionOf();
+
+      await collection.load(
+        query: const ListQuery(params: {'balance': '2026-10-01'}),
+      );
+      await collection.refine(params: {'balance': '2026-10-07'});
+      await collection.refine(params: null);
+
+      expect(requests[1].queryParameters['balance'], '2026-10-07');
+      expect(requests[2].queryParameters.containsKey('balance'), isFalse);
+    });
+  });
+
   group('page restore', () {
     test('a deep page costs one request over the whole range', () async {
       seed(60, serverTotal: 200);

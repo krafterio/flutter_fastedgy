@@ -26,6 +26,9 @@ class ListQuery {
   /// Order by expression (string or list of strings)
   final dynamic orderBy;
 
+  /// Extra query parameters of the route (a view transformer option)
+  final Map<String, String>? params;
+
   const ListQuery({
     this.page,
     this.size,
@@ -34,6 +37,7 @@ class ListQuery {
     this.fields,
     this.filter,
     this.orderBy,
+    this.params,
   });
 
   Map<String, dynamic> toMap() {
@@ -45,6 +49,7 @@ class ListQuery {
     if (fields != null) map['fields'] = fields;
     if (filter != null) map['filter'] = filter;
     if (orderBy != null) map['orderBy'] = orderBy;
+    if (params != null) map['params'] = params;
     return map;
   }
 }

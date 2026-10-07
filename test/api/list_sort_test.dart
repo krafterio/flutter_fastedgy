@@ -111,14 +111,21 @@ void main() {
   });
 
   group('encode / decode', () {
-    test('round trips, dotted paths included', () {
-      final sort = ListSort.empty
-          .cycle('status.name')
-          .cycle('due_date', additive: true)
-          .cycle('due_date', additive: true);
+    test(
+      'writes the server grammar and round trips, dotted paths included',
+      () {
+        final sort = ListSort.empty
+            .cycle('status.name')
+            .cycle('due_date', additive: true)
+            .cycle('due_date', additive: true);
 
-      expect(sort.encode(), 'status.name,-due_date');
-      expect(ListSort.decode(sort.encode()), sort);
+        expect(sort.encode(), 'status.name:asc,due_date:desc');
+        expect(ListSort.decode(sort.encode()), sort);
+      },
+    );
+
+    test('writes nothing when nothing is sorted', () {
+      expect(ListSort.empty.encode(), '');
     });
 
     test('reads an empty or absent value as no ordering', () {
@@ -130,23 +137,26 @@ void main() {
 
     test('drops what allow refuses instead of failing', () {
       final sort = ListSort.decode(
-        'name,-secret,id',
+        'name:asc,secret:desc,id:desc',
         allow: (field) => field != 'secret',
       );
 
       expect(sort.keys.map((key) => key.field), ['name', 'id']);
     });
 
-    test('survives a malformed value', () {
-      expect(ListSort.decode('-').isEmpty, isTrue);
-      expect(ListSort.decode(' name , , -id ').keys.map((k) => k.field), [
-        'name',
-        'id',
-      ]);
+    test('skips a level without a direction it knows', () {
+      final sort = ListSort.decode(
+        ' name : DESC , , -id, id, :asc, time:up, amount:asc ',
+      );
+
+      expect(
+        sort,
+        const ListSort([SortKey('name', ascending: false), SortKey('amount')]),
+      );
     });
 
     test('keeps the first mention of a repeated field', () {
-      final sort = ListSort.decode('name,-name');
+      final sort = ListSort.decode('name:asc,name:desc');
 
       expect(sort.keys.length, 1);
       expect(sort.keyFor('name')!.ascending, isTrue);

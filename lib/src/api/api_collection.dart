@@ -161,6 +161,7 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
   dynamic get fields => _query?.fields ?? _configFields;
   dynamic get orderBy => _query?.orderBy ?? _configOrderBy;
   dynamic get filter => _query?.filter;
+  Map<String, String>? get params => _query?.params;
 
   T? byId(Object? id) {
     for (final e in _items) {
@@ -247,6 +248,7 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
     Object? orderBy = _unset,
     Object? fields = _unset,
     Object? limit = _unset,
+    Object? params = _unset,
     ListSort? sort,
     int? page,
   }) {
@@ -264,6 +266,7 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
       orderBy: orderBy,
       fields: fields,
       limit: limit,
+      params: params,
       page: page,
     );
   }
@@ -287,12 +290,16 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
     Object? orderBy = _unset,
     Object? fields = _unset,
     Object? limit = _unset,
+    Object? params = _unset,
     int? page,
   }) {
     _query = ListQuery(
       fields: identical(fields, _unset) ? _query?.fields : fields,
       orderBy: identical(orderBy, _unset) ? _query?.orderBy : orderBy,
       filter: identical(filter, _unset) ? _query?.filter : filter,
+      params: identical(params, _unset)
+          ? _query?.params
+          : params as Map<String, String>?,
     );
 
     if (!identical(limit, _unset)) {
@@ -406,6 +413,7 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
           fields: fields,
           orderBy: orderBy,
           filter: filter,
+          params: params,
           limit: pageSize != null ? pageSize * _page : null,
           offset: 0,
         ),
@@ -530,6 +538,7 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
     fields: fields,
     orderBy: orderBy,
     filter: filter,
+    params: params,
     limit: _limit,
     offset: _limit != null ? (page - 1) * _limit! : null,
   );
@@ -538,6 +547,7 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
     fields: fields,
     orderBy: orderBy,
     filter: filter,
+    params: params,
     limit: pageSize * page,
     offset: 0,
   );
