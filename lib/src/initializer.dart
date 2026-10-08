@@ -3,6 +3,9 @@
  * MIT License (see LICENSE file).
  */
 
+import 'dart:async';
+
+import 'package:flutter/widgets.dart' show AppLifecycleListener;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:logging/logging.dart';
 
@@ -44,6 +47,7 @@ import 'offline/sync_lock.dart';
 import 'offline/replica.dart';
 import 'offline/replica_store.dart';
 import 'offline/sync_engine.dart';
+import 'sync/connectivity_watch.dart';
 import 'sync/sync_status.dart';
 import 'storage/storage_downloader.dart';
 import 'storage/storage_uploader.dart';
@@ -338,8 +342,8 @@ Future<void> initializeFastEdgy({
   // Outbox + SyncEngine (opt-in): offline writes are buffered in the local
   // store and replayed in order when connectivity comes back.
   if (offline && hasService<LocalStore>() && !hasService<Outbox>()) {
-    final initialOnline = (await Connectivity().checkConnectivity()).any(
-      (result) => result != ConnectivityResult.none,
+    final initialOnline = _hasConnectivity(
+      await Connectivity().checkConnectivity(),
     );
     final status = SyncStatus(getService<Bus>(), online: initialOnline);
     container.registerSingleton<SyncStatus>(status);
@@ -376,8 +380,11 @@ Future<void> initializeFastEdgy({
       images: hasService<LocalImageStore>()
           ? getService<LocalImageStore>()
           : null,
-      online: Connectivity().onConnectivityChanged.map(
-        (results) => results.any((result) => result != ConnectivityResult.none),
+      online: watchConnectivity(
+        changes: Connectivity().onConnectivityChanged.map(_hasConnectivity),
+        resumes: _appResumes(),
+        check: () async =>
+            _hasConnectivity(await Connectivity().checkConnectivity()),
       ),
     );
     container.registerSingleton<SyncEngine>(engine);
@@ -430,4 +437,13 @@ Future<void> initializeFastEdgy({
 
     await getService<RealtimeSocket>().start();
   }
+}
+
+bool _hasConnectivity(List<ConnectivityResult> results) =>
+    results.any((result) => result != ConnectivityResult.none);
+
+Stream<void> _appResumes() {
+  final resumes = StreamController<void>.broadcast();
+  AppLifecycleListener(onResume: () => resumes.add(null));
+  return resumes.stream;
 }

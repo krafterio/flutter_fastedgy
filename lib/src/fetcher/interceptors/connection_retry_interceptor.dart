@@ -13,10 +13,12 @@ import '../../sync/sync_status.dart';
 /// background, cached Keep-Alive sockets are dead, the first requests on
 /// them fail before the server receives them).
 ///
-/// Retries [DioExceptionType.connectionError] for any method, and the
-/// timeout types only for idempotent methods (GET/HEAD/OPTIONS) — a timeout
+/// Retries [DioExceptionType.connectionError] for any method, and the send and
+/// receive timeouts only for idempotent methods (GET/HEAD/OPTIONS) — a timeout
 /// may have already reached the server, so retrying a mutation could
-/// double-execute it.
+/// double-execute it. A connection timeout is never retried: it is a new socket
+/// that could not be opened, not a stale one, and retrying it only multiplies
+/// the wait before the device is known to be offline.
 ///
 /// Bounded to [_maxRetries] attempts per request via a counter on
 /// [RequestOptions.extra]. A budget (rather than a one-shot boolean) keeps
@@ -39,7 +41,6 @@ class ConnectionRetryInterceptor extends Interceptor {
     switch (err.type) {
       case DioExceptionType.connectionError:
         return true;
-      case DioExceptionType.connectionTimeout:
       case DioExceptionType.sendTimeout:
       case DioExceptionType.receiveTimeout:
         return _idempotentMethods.contains(

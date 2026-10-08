@@ -90,6 +90,29 @@ void main() {
       expect(adapter.callCount, 2);
     });
 
+    test(
+      'does not retry a connection timeout, the device is offline',
+      () async {
+        final adapter = _ScriptedAdapter(
+          failTimes: 99,
+          failType: DioExceptionType.connectionTimeout,
+        );
+        final dio = buildDio(adapter);
+
+        await expectLater(
+          dio.get<dynamic>('/x'),
+          throwsA(
+            isA<DioException>().having(
+              (e) => e.type,
+              'type',
+              DioExceptionType.connectionTimeout,
+            ),
+          ),
+        );
+        expect(adapter.callCount, 1);
+      },
+    );
+
     test('does not retry timeouts on non-idempotent methods', () async {
       final adapter = _ScriptedAdapter(
         failTimes: 1,
