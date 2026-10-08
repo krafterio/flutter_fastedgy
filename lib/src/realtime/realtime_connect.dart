@@ -3,6 +3,7 @@
  * MIT License (see LICENSE file).
  */
 
+import 'dart:async';
 import 'dart:io';
 
 import 'realtime_socket.dart' show RealtimeConnection;
@@ -29,4 +30,26 @@ Future<RealtimeConnection> connectRealtime(
       await socket.close(WebSocketStatus.normalClosure);
     },
   );
+}
+
+({bool maintenance})? realtimeUnanswered(Object error) {
+  if (error is SocketException ||
+      error is TimeoutException ||
+      error is HttpException) {
+    return (maintenance: false);
+  }
+
+  if (error is WebSocketException) {
+    final status = error.httpStatusCode;
+
+    if (status == 502 || status == 503) {
+      return (maintenance: true);
+    }
+
+    if (status == 504) {
+      return (maintenance: false);
+    }
+  }
+
+  return null;
 }

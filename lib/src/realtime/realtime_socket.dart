@@ -19,6 +19,7 @@ import '../bus/bus.dart';
 import '../container/container.dart';
 import '../fetcher/http_error.dart';
 import '../logging/logging.dart';
+import '../sync/sync_status.dart';
 import 'origin.dart';
 import 'realtime_connect.dart'
     if (dart.library.js_interop) 'realtime_connect_web.dart';
@@ -384,6 +385,12 @@ class RealtimeSocket with WidgetsBindingObserver {
       _log.fine('Realtime socket could not open', error);
 
       if (generation == _generation) {
+        final unanswered = realtimeUnanswered(error);
+
+        if (unanswered != null) {
+          _reportServer(false, maintenance: unanswered.maintenance);
+        }
+
         _scheduleRetry();
       } else {
         superseded = true;
@@ -484,6 +491,7 @@ class RealtimeSocket with WidgetsBindingObserver {
   }
 
   void _handshake() {
+    _reportServer(true);
     _connected = true;
     _refreshed = false;
     _delay = _reconnectStart;
@@ -574,6 +582,15 @@ class RealtimeSocket with WidgetsBindingObserver {
     if (_wanted) {
       _wanted = false;
       _refused = true;
+    }
+  }
+
+  void _reportServer(bool answering, {bool maintenance = false}) {
+    if (hasService<SyncStatus>()) {
+      getService<SyncStatus>().setServerAnswering(
+        answering,
+        maintenance: maintenance,
+      );
     }
   }
 

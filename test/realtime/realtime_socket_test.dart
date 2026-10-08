@@ -5,6 +5,7 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:clock/clock.dart';
 import 'package:flutter/widgets.dart';
@@ -1097,5 +1098,105 @@ void main() {
     expect(heard.whereType<RealtimeEvent>().single.scopeId, 13);
 
     await socket.dispose();
+  });
+
+  group('server reachability', () {
+    late SyncStatus status;
+
+    setUp(() {
+      status = SyncStatus(bus);
+      container.registerSingleton<SyncStatus>(status);
+    });
+
+    tearDown(() => container.unregister<SyncStatus>());
+
+    RealtimeSocket refusedWith(Object error) =>
+        socketOf(connector: (url, headers) async => throw error);
+
+    testSocket(
+      'a server that does not answer the socket is known unreachable',
+      (tester) async {
+        final socket = refusedWith(const SocketException('Connection refused'));
+
+        await socket.start();
+        await flush(tester);
+
+        expect(status.serverAnswering, isFalse);
+        expect(status.maintenance, isFalse);
+
+        await socket.dispose();
+      },
+    );
+
+    testSocket('a gateway refusing the socket reads as a maintenance', (
+      tester,
+    ) async {
+      final socket = refusedWith(const WebSocketException('not upgraded', 503));
+
+      await socket.start();
+      await flush(tester);
+
+      expect(status.serverAnswering, isFalse);
+      expect(status.maintenance, isTrue);
+
+      await socket.dispose();
+    });
+
+    testSocket('a socket refused by the server itself leaves it answering', (
+      tester,
+    ) async {
+      final socket = refusedWith(const WebSocketException('not upgraded', 403));
+
+      await socket.start();
+      await flush(tester);
+
+      expect(status.serverAnswering, isTrue);
+
+      await socket.dispose();
+    });
+
+    testSocket(
+      'a server stopping is known as soon as the socket fails to come back',
+      (tester) async {
+        var refuse = false;
+        final socket = socketOf(
+          connector: (url, headers) async {
+            if (refuse) {
+              throw const SocketException('Connection refused');
+            }
+
+            final link = _Link(url, headers);
+
+            links.add(link);
+
+            return link.connection;
+          },
+        );
+        final link = await connect(tester, socket);
+
+        expect(status.serverAnswering, isTrue);
+
+        refuse = true;
+        link.drop();
+        await reopen(tester, const Duration(seconds: 1));
+
+        expect(status.serverAnswering, isFalse);
+
+        await socket.dispose();
+      },
+    );
+
+    testSocket('the socket coming back says the server is there again', (
+      tester,
+    ) async {
+      status.setServerAnswering(false);
+      final socket = socketOf();
+
+      await connect(tester, socket);
+
+      expect(status.serverAnswering, isTrue);
+
+      await socket.dispose();
+    });
   });
 }

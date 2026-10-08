@@ -39,3 +39,6 @@ Future<RealtimeConnection> connectRealtime(
     },
   );
 }
+
+({bool maintenance})? realtimeUnanswered(Object error) =>
+    error is TimeoutException ? (maintenance: false) : null;
