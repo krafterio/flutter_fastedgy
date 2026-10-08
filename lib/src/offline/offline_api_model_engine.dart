@@ -3,6 +3,7 @@
  * MIT License (see LICENSE file).
  */
 
+import 'dart:async';
 import 'dart:convert';
 
 import '../api/api_helpers.dart';
@@ -14,6 +15,7 @@ import '../api/record_result.dart';
 import '../container/container.dart';
 import '../logging/logger.dart';
 import '../storage/storage_downloader.dart';
+import '../sync/sync_status.dart';
 import 'image_mirror.dart';
 import 'local_image_store.dart';
 import 'offline_context_params.dart';
@@ -187,6 +189,16 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
     ListQuery? query,
     ApiParams? params,
   }) async {
+    if (_serverOutOfReach) {
+      final fallback = await _offlineListFallback(query);
+
+      if (fallback != null) {
+        _probe(_listRemote(query: query, params: params));
+
+        return fallback;
+      }
+    }
+
     try {
       return await _listRemote(query: query, params: params);
     } catch (error) {
@@ -212,6 +224,16 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
     FieldsOptions? options,
     ApiParams? params,
   }) async {
+    if (_serverOutOfReach) {
+      final cached = await cachedGet(id);
+
+      if (cached != null) {
+        _probe(_getRemote(id, options: options, params: params));
+
+        return RecordResult(cached, fromCache: true);
+      }
+    }
+
     try {
       return RecordResult(
         await _getRemote(id, options: options, params: params),
@@ -1042,6 +1064,13 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
 
   bool _canFallback(Object error) =>
       (localStore != null || replica != null) && isServerUnavailable(error);
+
+  bool get _serverOutOfReach =>
+      (localStore != null || replica != null) && !SyncStatus.currentlyReachable;
+
+  void _probe(Future<Object?> remote) {
+    unawaited(remote.then<void>((_) {}, onError: (Object _) {}));
+  }
 
   Future<PaginationResult<T>?> _offlineListFallback(ListQuery? query) async {
     final ctx = await _replicaContext();

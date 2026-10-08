@@ -3,6 +3,7 @@
  * MIT License (see LICENSE file).
  */
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -74,6 +75,7 @@ class _ItemApi extends ApiModel<_Item> {
 
 class _ScriptedAdapter implements HttpClientAdapter {
   bool offline = false;
+  Completer<void>? hold;
   final Map<String, Map<String, dynamic> Function(RequestOptions options)>
   routes = {};
   int callCount = 0;
@@ -85,6 +87,8 @@ class _ScriptedAdapter implements HttpClientAdapter {
     Future<void>? cancelFuture,
   ) async {
     callCount++;
+
+    await hold?.future;
 
     if (offline) {
       throw DioException(
@@ -640,6 +644,60 @@ void main() {
       adapter.offline = true;
 
       await expectLater(api.get(1), throwsA(isA<NetworkError>()));
+    });
+  });
+
+  group('a server known out of reach', () {
+    setUp(() {
+      container.registerSingleton<SyncStatus>(
+        SyncStatus(getService<Bus>())..setServerAnswering(false),
+      );
+    });
+
+    tearDown(() => container.unregister<SyncStatus>());
+
+    test(
+      'a list serves the mirror at once and asks the server behind it',
+      () async {
+        adapter.routes['GET /items'] = _paginated([
+          {'id': 1, 'name': 'One'},
+          {'id': 2, 'name': 'Two'},
+        ]);
+        await api.sync();
+        final calls = adapter.callCount;
+        final hold = adapter.hold = Completer<void>();
+        addTearDown(hold.complete);
+
+        final result = await api.list();
+
+        expect(result.items.map((item) => item.name), ['One', 'Two']);
+        await pumpEventQueue();
+        expect(adapter.callCount, calls + 1);
+      },
+    );
+
+    test(
+      'a record serves the mirror at once and asks the server behind it',
+      () async {
+        adapter.routes['GET /items/1'] = (options) => {'id': 1, 'name': 'One'};
+        await api.get(1);
+        final calls = adapter.callCount;
+        final hold = adapter.hold = Completer<void>();
+        addTearDown(hold.complete);
+
+        final result = await api.getResult(1);
+
+        expect(result.value.name, 'One');
+        expect(result.fromCache, isTrue);
+        await pumpEventQueue();
+        expect(adapter.callCount, calls + 1);
+      },
+    );
+
+    test('with nothing mirrored, a list still waits for the server', () async {
+      adapter.offline = true;
+
+      await expectLater(api.list(), throwsA(isA<NetworkError>()));
     });
   });
 
