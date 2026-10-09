@@ -1,0 +1,560 @@
+{
+    "description": "How a client of FastEdgy chooses its workspace, follows it and changes it: the same file in vue-fastedgy and flutter_fastedgy, each running every case against its own store. A request is 'METHOD /path', without the API base nor the query string; an answer is a status and a body, a list of answers being served in turn, the last one again. A route no answer names is a 404. 'requests' lists what a step sent, in any order, 'order' the pairs that must follow each other; 'events' are 'stale' (every screen reads again) and 'lost:<name>' (the current workspace left the list). 'sent' is a request as the server saw it, 'failed' a call that ended in an error, refused before it left or answered with one; 'default' is the slug the list marks as the default.",
+    "server": {
+        "GET /me": {
+            "status": 200,
+            "body": {
+                "id": 1,
+                "name": "Ada"
+            }
+        },
+        "GET /alpha/dataset/metadatas": {
+            "status": 200,
+            "body": {}
+        },
+        "GET /beta/dataset/metadatas": {
+            "status": 200,
+            "body": {}
+        },
+        "GET /gamma/dataset/metadatas": {
+            "status": 200,
+            "body": {}
+        },
+        "GET /alpha-2/dataset/metadatas": {
+            "status": 200,
+            "body": {}
+        }
+    },
+    "workspaces": {
+        "alpha": {
+            "id": 1,
+            "slug": "alpha",
+            "name": "Alpha",
+            "is_default": false
+        },
+        "alpha_default": {
+            "id": 1,
+            "slug": "alpha",
+            "name": "Alpha",
+            "is_default": true
+        },
+        "alpha_renamed": {
+            "id": 1,
+            "slug": "alpha-2",
+            "name": "Alpha",
+            "is_default": false
+        },
+        "beta": {
+            "id": 2,
+            "slug": "beta",
+            "name": "Beta",
+            "is_default": false
+        },
+        "beta_default": {
+            "id": 2,
+            "slug": "beta",
+            "name": "Beta",
+            "is_default": true
+        },
+        "gamma": {
+            "id": 3,
+            "slug": "gamma",
+            "name": "Gamma",
+            "is_default": false
+        }
+    },
+    "cases": [
+        {
+            "name": "a slug in the URL is taken as it is, after the account",
+            "list": ["alpha", "beta_default"],
+            "steps": [
+                {
+                    "open": "alpha",
+                    "expect": {
+                        "decision": "stay",
+                        "slug": "alpha",
+                        "requests": ["GET /me", "GET /workspaces", "GET /alpha/dataset/metadatas"],
+                        "order": [
+                            ["GET /me", "GET /workspaces"],
+                            ["GET /me", "GET /alpha/dataset/metadatas"]
+                        ],
+                        "device": "alpha"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "without a slug, the last workspace of the device",
+            "device": "beta",
+            "list": ["alpha_default", "beta"],
+            "steps": [
+                {
+                    "open": null,
+                    "expect": {
+                        "decision": {
+                            "redirect": "beta"
+                        },
+                        "slug": "beta",
+                        "requests": ["GET /me", "GET /workspaces", "GET /beta/dataset/metadatas"],
+                        "order": [["GET /me", "GET /workspaces"]],
+                        "device": "beta"
+                    }
+                },
+                {
+                    "open": "beta",
+                    "expect": {
+                        "decision": "stay",
+                        "slug": "beta",
+                        "requests": []
+                    }
+                }
+            ]
+        },
+        {
+            "name": "without a slug and the memory of the device off, the default workspace",
+            "options": {
+                "rememberLast": false
+            },
+            "device": "beta",
+            "list": ["alpha_default", "beta"],
+            "steps": [
+                {
+                    "open": null,
+                    "expect": {
+                        "decision": {
+                            "redirect": "alpha"
+                        },
+                        "slug": "alpha",
+                        "requests": ["GET /me", "GET /workspaces", "GET /alpha/dataset/metadatas"],
+                        "device": "beta"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "without a slug nor a memory, the default workspace",
+            "list": ["alpha", "beta_default"],
+            "steps": [
+                {
+                    "open": null,
+                    "expect": {
+                        "decision": {
+                            "redirect": "beta"
+                        },
+                        "slug": "beta",
+                        "device": "beta"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "without a slug, a memory nor a default, the first workspace",
+            "list": ["alpha", "beta"],
+            "steps": [
+                {
+                    "open": null,
+                    "expect": {
+                        "decision": {
+                            "redirect": "alpha"
+                        },
+                        "slug": "alpha",
+                        "device": "alpha"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "a remembered workspace the account no longer has gives way to the default",
+            "device": "gamma",
+            "list": ["alpha", "beta_default"],
+            "steps": [
+                {
+                    "open": null,
+                    "expect": {
+                        "decision": {
+                            "redirect": "beta"
+                        },
+                        "slug": "beta",
+                        "device": "beta"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "an account without a workspace is led to the empty route",
+            "list": [],
+            "steps": [
+                {
+                    "open": null,
+                    "expect": {
+                        "decision": "empty",
+                        "slug": null,
+                        "requests": ["GET /me", "GET /workspaces"],
+                        "device": null
+                    }
+                }
+            ]
+        },
+        {
+            "name": "a slug the server refuses is forgotten, and the choice opens another one",
+            "list": ["alpha", "beta_default"],
+            "server": {
+                "GET /gamma/dataset/metadatas": {
+                    "status": 404,
+                    "body": {
+                        "detail": "Aucun workspace trouvé"
+                    }
+                }
+            },
+            "steps": [
+                {
+                    "open": "gamma",
+                    "expect": {
+                        "decision": "stay",
+                        "slug": "beta",
+                        "requests": [
+                            "GET /me",
+                            "GET /workspaces",
+                            "GET /gamma/dataset/metadatas",
+                            "GET /beta/dataset/metadatas"
+                        ],
+                        "device": "beta"
+                    }
+                },
+                {
+                    "open": "gamma",
+                    "expect": {
+                        "decision": {
+                            "redirect": "beta"
+                        },
+                        "slug": "beta",
+                        "requests": [],
+                        "device": "beta"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "the list does not decide whether a slug can be opened, the server does",
+            "list": ["alpha"],
+            "steps": [
+                {
+                    "open": "gamma",
+                    "expect": {
+                        "decision": "stay",
+                        "slug": "gamma",
+                        "requests": ["GET /me", "GET /workspaces", "GET /gamma/dataset/metadatas"],
+                        "device": "gamma"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "switching makes every screen read again, and reads the metadata of a workspace once",
+            "list": ["alpha", "beta"],
+            "steps": [
+                {
+                    "open": "alpha",
+                    "expect": {
+                        "slug": "alpha",
+                        "events": []
+                    }
+                },
+                {
+                    "select": "beta",
+                    "expect": {
+                        "slug": "beta",
+                        "requests": ["GET /beta/dataset/metadatas"],
+                        "events": ["stale"],
+                        "device": "beta"
+                    }
+                },
+                {
+                    "select": "alpha",
+                    "expect": {
+                        "slug": "alpha",
+                        "requests": [],
+                        "events": ["stale"],
+                        "device": "alpha"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "the choice of a workspace never writes the default of the server",
+            "list": ["alpha_default", "beta"],
+            "steps": [
+                {
+                    "open": "alpha",
+                    "expect": {
+                        "slug": "alpha",
+                        "default": "alpha"
+                    }
+                },
+                {
+                    "select": "beta",
+                    "expect": {
+                        "slug": "beta",
+                        "requests": ["GET /beta/dataset/metadatas"],
+                        "default": "alpha"
+                    }
+                },
+                {
+                    "makeDefault": "beta",
+                    "server": {
+                        "PUT /workspaces/beta/default": {
+                            "status": 204,
+                            "body": null
+                        }
+                    },
+                    "expect": {
+                        "requests": ["PUT /workspaces/beta/default"],
+                        "default": "beta",
+                        "events": []
+                    }
+                }
+            ]
+        },
+        {
+            "name": "a sign-out forgets everything, and the next account opens its own",
+            "list": ["alpha", "beta"],
+            "steps": [
+                {
+                    "open": "alpha",
+                    "expect": {
+                        "slug": "alpha"
+                    }
+                },
+                {
+                    "logout": true,
+                    "expect": {
+                        "slug": null,
+                        "requests": []
+                    }
+                },
+                {
+                    "list": ["gamma"],
+                    "open": null,
+                    "expect": {
+                        "decision": {
+                            "redirect": "gamma"
+                        },
+                        "slug": "gamma",
+                        "requests": ["GET /me", "GET /workspaces", "GET /gamma/dataset/metadatas"],
+                        "device": "gamma"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "a request under the slug answering 404 reads the list again",
+            "list": ["alpha", "beta"],
+            "steps": [
+                {
+                    "open": "alpha",
+                    "expect": {
+                        "slug": "alpha"
+                    }
+                },
+                {
+                    "request": "GET /{workspace}/notes/12",
+                    "expect": {
+                        "sent": "GET /alpha/notes/12",
+                        "failed": true,
+                        "slug": "alpha",
+                        "requests": ["GET /alpha/notes/12", "GET /workspaces"]
+                    }
+                }
+            ]
+        },
+        {
+            "name": "a current workspace gone from the list is announced, and the choice opens another one",
+            "list": ["alpha", "beta_default"],
+            "steps": [
+                {
+                    "open": "alpha",
+                    "expect": {
+                        "slug": "alpha"
+                    }
+                },
+                {
+                    "list": ["beta_default"],
+                    "change": "workspace_user",
+                    "expect": {
+                        "slug": "beta",
+                        "requests": ["GET /workspaces", "GET /beta/dataset/metadatas"],
+                        "events": ["lost:Alpha", "stale"]
+                    }
+                },
+                {
+                    "open": "alpha",
+                    "expect": {
+                        "decision": {
+                            "redirect": "beta"
+                        },
+                        "slug": "beta",
+                        "requests": [],
+                        "events": []
+                    }
+                }
+            ]
+        },
+        {
+            "name": "leaving the current workspace announces nothing, and the choice follows",
+            "list": ["alpha", "beta_default"],
+            "steps": [
+                {
+                    "open": "alpha",
+                    "expect": {
+                        "slug": "alpha"
+                    }
+                },
+                {
+                    "leave": "DELETE /alpha/membership",
+                    "server": {
+                        "DELETE /alpha/membership": {
+                            "status": 204,
+                            "body": null
+                        }
+                    },
+                    "expect": {
+                        "slug": "beta",
+                        "requests": ["DELETE /alpha/membership", "GET /beta/dataset/metadatas"],
+                        "events": ["stale"],
+                        "device": "beta"
+                    }
+                },
+                {
+                    "open": "alpha",
+                    "expect": {
+                        "decision": {
+                            "redirect": "beta"
+                        },
+                        "slug": "beta",
+                        "requests": []
+                    }
+                }
+            ]
+        },
+        {
+            "name": "a renamed workspace leads its old slug to the new one",
+            "list": ["alpha"],
+            "steps": [
+                {
+                    "open": "alpha",
+                    "expect": {
+                        "slug": "alpha"
+                    }
+                },
+                {
+                    "list": ["alpha_renamed"],
+                    "change": "workspace",
+                    "expect": {
+                        "slug": "alpha-2",
+                        "requests": ["GET /workspaces", "GET /alpha-2/dataset/metadatas"],
+                        "events": [],
+                        "device": "alpha-2"
+                    }
+                },
+                {
+                    "open": "alpha",
+                    "expect": {
+                        "decision": {
+                            "redirect": "alpha-2"
+                        },
+                        "slug": "alpha-2",
+                        "requests": []
+                    }
+                }
+            ]
+        },
+        {
+            "name": "a request before the choice waits for it",
+            "list": ["alpha", "beta_default"],
+            "server": {
+                "GET /beta/notes": {
+                    "status": 200,
+                    "body": {
+                        "items": [],
+                        "total": 0
+                    }
+                }
+            },
+            "steps": [
+                {
+                    "request": "GET /{workspace}/notes",
+                    "expect": {
+                        "sent": "GET /beta/notes",
+                        "slug": "beta",
+                        "requests": ["GET /me", "GET /workspaces", "GET /beta/dataset/metadatas", "GET /beta/notes"],
+                        "order": [["GET /workspaces", "GET /beta/notes"]]
+                    }
+                }
+            ]
+        },
+        {
+            "name": "without any workspace, a request is refused when the application names no stand-in",
+            "options": {
+                "workspaceless": null
+            },
+            "list": [],
+            "steps": [
+                {
+                    "request": "GET /{workspace}/notes",
+                    "expect": {
+                        "failed": true,
+                        "slug": null,
+                        "requests": ["GET /me", "GET /workspaces"]
+                    }
+                }
+            ]
+        },
+        {
+            "name": "without any workspace, a request goes under the stand-in the application names",
+            "options": {
+                "workspaceless": "global"
+            },
+            "list": [],
+            "server": {
+                "GET /global/notes": {
+                    "status": 200,
+                    "body": {
+                        "items": [],
+                        "total": 0
+                    }
+                }
+            },
+            "steps": [
+                {
+                    "request": "GET /{workspace}/notes",
+                    "expect": {
+                        "sent": "GET /global/notes",
+                        "slug": null,
+                        "requests": ["GET /me", "GET /workspaces", "GET /global/notes"]
+                    }
+                }
+            ]
+        },
+        {
+            "name": "a list that cannot be read fails the choice",
+            "server": {
+                "GET /workspaces": {
+                    "status": 500,
+                    "body": {
+                        "detail": "Internal Server Error"
+                    }
+                }
+            },
+            "steps": [
+                {
+                    "open": null,
+                    "expect": {
+                        "decision": "failed",
+                        "slug": null,
+                        "requests": ["GET /me", "GET /workspaces"]
+                    }
+                }
+            ]
+        }
+    ]
+}

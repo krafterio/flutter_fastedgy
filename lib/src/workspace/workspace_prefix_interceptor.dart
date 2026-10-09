@@ -11,18 +11,16 @@ import '../container/container.dart';
 import '../logging/logger.dart';
 import 'workspace_provider.dart';
 
-/// Puts the current workspace's slug in place of `/{workspace}` in each
-/// request path, as vue-fastedgy's fetcher does with `workspace: true`, and
-/// reads the workspaces again when a tenant request says they changed
-/// ([WorkspaceProvider.isWorkspaceError]).
-///
-/// A path that keeps the placeholder is never sent: it would reach a route
-/// that does not exist and come back as a 404, hiding the real fault, a read
-/// of the tenant before a workspace is chosen.
+/// The workspaces augmenting the [Fetcher], which knows nothing of them: a
+/// request under `/{workspace}` waits for the choice of the current workspace
+/// ([WorkspaceProvider.ensureCurrent]) and goes under its slug; without one,
+/// under [WorkspaceProvider.workspaceless], or it is refused when that is
+/// `null`. A request under the current workspace answering 404 has the list
+/// read again ([WorkspaceProvider.isWorkspaceError]): the workspace may be
+/// gone. The same as vue-fastedgy's `useWorkspaces`.
 ///
 /// The provider is the one registered as [WorkspaceProvider], looked up on
-/// each request: it is registered after the fetcher it serves. An application
-/// subclassing it registers its instance under both types.
+/// each request: it is registered after the fetcher it serves.
 class WorkspacePrefixInterceptor extends Interceptor {
   static const _placeholder = '/{workspace}';
 
@@ -42,25 +40,40 @@ class WorkspacePrefixInterceptor extends Interceptor {
       return;
     }
 
-    final slug = _workspaces?.currentSlug;
+    unawaited(_route(options, handler));
+  }
 
-    if (slug == null || slug.isEmpty) {
+  Future<void> _route(
+    RequestOptions options,
+    RequestInterceptorHandler handler,
+  ) async {
+    final workspaces = _workspaces;
+    final slug = await workspaces?.ensureCurrent();
+    final target = slug ?? workspaces?.workspaceless;
+
+    // A path that keeps the placeholder would reach a route that does not
+    // exist, and its 404 would hide the real fault: no workspace to read.
+    if (target == null || target.isEmpty) {
       _log.warning(
-        'Dropped a tenant-scoped request made before a workspace was selected: ${options.path}',
+        'Dropped a request with no workspace to go under: ${options.path}',
       );
       handler.reject(
         DioException(
           requestOptions: options,
           type: DioExceptionType.cancel,
-          error: 'No workspace selected for ${options.path}',
+          error: 'No workspace to send ${options.path} under',
         ),
       );
 
       return;
     }
 
-    options.path = options.path.replaceAll(_placeholder, '/$slug');
-    options.extra[_tenantKey] = slug;
+    options.path = options.path.replaceAll(_placeholder, '/$target');
+
+    if (slug != null) {
+      options.extra[_tenantKey] = slug;
+    }
+
     handler.next(options);
   }
 

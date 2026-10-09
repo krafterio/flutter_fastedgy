@@ -11,9 +11,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../api/api_model_engine.dart';
 import '../api/base_model.dart';
 import '../auth/auth_events.dart';
+import '../auth/user_provider.dart';
 import '../bus/bus.dart';
 import '../bus/events.dart';
 import '../container/container.dart';
+import '../fetcher/client.dart';
+import '../fetcher/http_error.dart';
 import '../logging/logger.dart';
 import '../metadata/metadata_provider.dart';
 import '../offline/offline_context_params.dart';
@@ -21,7 +24,8 @@ import '../realtime/realtime_events.dart';
 import '../realtime/realtime_socket.dart';
 
 /// The current workspace vanished from a list read again (the account was
-/// removed from it, it was deleted): another one replaced it, or none did.
+/// removed from it, it was deleted). The one the account leaves itself is not
+/// announced.
 class WorkspaceLostEvent extends Event {
   const WorkspaceLostEvent(this.workspace);
 
@@ -30,27 +34,67 @@ class WorkspaceLostEvent extends Event {
   String get name => workspace.getString('name') ?? '';
 }
 
+/// Another workspace became the current one: every holder reads again, as for
+/// any [ResourcesStaleEvent]; the provider itself has nothing to read again.
+class WorkspaceSwitchedEvent extends ResourcesStaleEvent {
+  const WorkspaceSwitchedEvent();
+}
+
+/// What the URL should say, given the slug it carries
+/// ([WorkspaceProvider.resolve]).
+sealed class WorkspaceDecision {
+  const WorkspaceDecision();
+}
+
+/// The URL is right.
+final class WorkspaceStay extends WorkspaceDecision {
+  const WorkspaceStay();
+}
+
+/// The URL should carry [slug].
+final class WorkspaceRedirect extends WorkspaceDecision {
+  const WorkspaceRedirect(this.slug);
+
+  final String slug;
+}
+
+/// The account has no workspace.
+final class WorkspaceEmpty extends WorkspaceDecision {
+  const WorkspaceEmpty();
+}
+
+/// The list of the account cannot be read.
+final class WorkspaceFailed extends WorkspaceDecision {
+  const WorkspaceFailed();
+}
+
 /// The account's workspaces and the current one, the tenant `/{workspace}`
-/// stands for: in a request path ([WorkspacePrefixInterceptor]), in the
-/// metadata prefix and in the offline context, which is why it registers
-/// itself in [OfflineContextParams]. The counterpart of vue-fastedgy's
-/// `useWorkspaceStore` with `createFetcher({ workspace: true })`.
+/// stands for: chosen, followed and changed the way vue-fastedgy's
+/// `useWorkspaceStore` does, case for case (the corpus `workspaces.json` both
+/// packages run).
 ///
-/// Opt-in: an application serving one workspace at a time registers one, most
-/// often a subclass reading what its workspaces carry besides
+/// The choice, always after the account (`/me`, the registered [UserProvider]
+/// or [account]): the slug of the URL as it is; without one, or once the
+/// server refused it, the last workspace opened on this device
+/// ([rememberLast]), then the account's default, then the first of the list.
+/// The server decides whether a slug can be opened: the read of its metadatas
+/// answering 404 refuses it, and the choice opens another one.
+///
+/// The workspaces augment the rest, which knows nothing of them: the provider
+/// fills the `workspace` context param ([OfflineContextParams], the metadata
+/// prefix included), and [WorkspacePrefixInterceptor] fills the requests.
+/// Opt-in: an application serving one workspace at a time registers one under
+/// this type, most often a subclass reading what its workspaces carry besides
 /// ([loadRelated]).
-///
-/// The workspaces are the account's: given an [account] read, the list is
-/// read once it answered (`/me` first). The schema is the current
-/// workspace's: its metadata are read once one is chosen.
-///
-/// The current one is tracked by its id: a slug renamed meanwhile is found
-/// again in the list read again, and [renamedSlug] leads the old one to the
-/// new. One that vanishes from such a list fires [WorkspaceLostEvent], except
-/// the one the account [leave]s itself.
-class WorkspaceProvider<T extends BaseModel<T>> extends ChangeNotifier
-    implements OfflineContextParamsResolver {
-  WorkspaceProvider(this._loader, {this._account}) {
+class WorkspaceProvider<T extends BaseModel<T>> extends ChangeNotifier {
+  WorkspaceProvider(
+    this._model, {
+    this._account,
+    this._list,
+    this.rememberLast = true,
+    this.workspaceless,
+    this.fields = 'id,name,slug',
+  }) {
     final bus = getService<Bus>();
     bus.on<AuthLogoutEvent>().listen((_) => reset());
     bus.on<ResourceChangedEvent>().listen((event) {
@@ -58,18 +102,23 @@ class WorkspaceProvider<T extends BaseModel<T>> extends ChangeNotifier
         onResourceChanged(event);
       }
     });
-    bus.on<ResourcesStaleEvent>().listen((_) {
-      if (_loaded) {
-        unawaited(refresh());
-      }
-    });
+    // A socket coming back missed what changed meanwhile; this provider's own
+    // switch has nothing new to tell it.
+    bus
+        .on<ResourcesStaleEvent>()
+        .where((event) => event is! WorkspaceSwitchedEvent)
+        .listen((_) {
+          if (_loaded) {
+            unawaited(refresh());
+          }
+        });
 
     // The framework registers the context only for an offline app, the
     // metadata prefix resolves through it all the same.
     final params = hasService<OfflineContextParams>()
         ? getService<OfflineContextParams>()
         : container.registerSingleton(OfflineContextParams());
-    params.register(this);
+    params.register(_WorkspaceParams(this));
 
     if (hasService<RealtimeSocket>()) {
       final socket = getService<RealtimeSocket>();
@@ -78,34 +127,55 @@ class WorkspaceProvider<T extends BaseModel<T>> extends ChangeNotifier
   }
 
   static const _rememberedKey = 'workspace.slug';
+  static const _placeholder = '/{workspace}';
+  static const _membershipModels = {'workspace', 'workspace_user'};
 
-  final Future<List<T>> Function() _loader;
+  final T Function(Map<String, dynamic>) _model;
   final Future<Object?> Function()? _account;
+  final Future<List<T>> Function()? _list;
   final _log = getLogger('WorkspaceProvider');
 
+  /// The last workspace opened on this device is the one opened next.
+  final bool rememberLast;
+
+  /// What a request under `/{workspace}` goes under when there is no
+  /// workspace; `null` refuses it.
+  final String? workspaceless;
+
+  /// The columns the list carries (`X-Fields`).
+  final String fields;
+
   List<T> _workspaces = const [];
+  String? _slug;
   int? _currentId;
+  bool _loading = false;
   bool _loaded = false;
   Object? _error;
-  Future<void>? _initialization;
-  Future<void>? _refreshing;
+  Future<T?>? _loadFuture;
+  Future<T?>? _refreshing;
   bool _refreshAgain = false;
   String? _remembered;
+  bool _rememberedRead = false;
 
-  /// The workspace the account is leaving: its disappearance is not a loss.
-  int? _leaving;
+  /// The slugs this session cannot open: refused by the server, lost or left.
+  final _refused = <String>{};
 
-  /// The old slugs of a workspace renamed while the app held it, by id.
+  /// The id of a workspace renamed meanwhile, by a slug it had.
   final _renamed = <String, int>{};
 
-  /// Each read of the list and each local change takes a number: a read that
-  /// answers after a more recent one, or after a local change, is ignored (it
-  /// would tell an older list).
+  /// Bumped by a sign-out: a read for the account that left answers for nobody.
+  int _generation = 0;
+
+  /// Each list read and each local change takes a number: a read answering
+  /// after a more recent one, or after a local change, tells an older list.
   int _sequence = 0;
   int _applied = 0;
 
-  @override
-  Map<String, Object?> resolve() => {'workspace': currentSlug};
+  /// A workspace was opened this session: a list read then chooses none itself.
+  bool _opened = false;
+
+  /// The workspace being left: its disappearance is not a loss.
+  int? _leaving;
 
   /// In the server's order.
   List<T> get workspaces => _workspaces;
@@ -114,29 +184,21 @@ class WorkspaceProvider<T extends BaseModel<T>> extends ChangeNotifier
     for (final workspace in _workspaces) _slugOf(workspace),
   ];
 
-  T? get current => byId(_currentId);
+  T? get current => byId(_currentId) ?? bySlug(_slug);
 
-  String? get currentSlug {
-    final workspace = current;
+  /// The slug of the current workspace, which a request under `/{workspace}`
+  /// goes under.
+  String? get slug => _slug;
 
-    return workspace == null ? null : _slugOf(workspace);
-  }
+  bool get loading => _loading;
 
   /// Whether the list has been read at least once (or failed, see [error]).
-  bool get isLoaded => _loaded;
+  bool get loaded => _loaded;
 
   /// What the last read of the list ran into, if it failed.
   Object? get error => _error;
 
   bool get hasWorkspaces => _workspaces.isNotEmpty;
-
-  /// Whether [event] concerns the current workspace: its `workspace` field
-  /// names it, or it names none (reading again only costs one read).
-  bool concernsCurrent(ResourceChangedEvent event) {
-    final workspace = event.data?['workspace'];
-
-    return workspace == null || workspace == _currentId;
-  }
 
   T? byId(int? id) => id == null
       ? null
@@ -153,101 +215,83 @@ class WorkspaceProvider<T extends BaseModel<T>> extends ChangeNotifier
   String? renamedSlug(String slug) {
     final workspace = byId(_renamed[slug]);
 
-    return workspace == null ? null : _slugOf(workspace);
+    return workspace == null || _slugOf(workspace) == slug
+        ? null
+        : _slugOf(workspace);
   }
 
-  /// Reads the workspaces, once per session. The current one is
-  /// [preferredSlug] (the URL's) if it is in the list, otherwise the
-  /// [defaultOf] the list, otherwise the first.
+  /// Whether this session cannot open [slug]: the server refused it, or the
+  /// account lost or left it.
+  bool isRefused(String slug) => _refused.contains(slug);
+
+  /// Whether [event] concerns the current workspace: its `workspace` field
+  /// names it, or it names none (reading again only costs one read).
+  bool concernsCurrent(ResourceChangedEvent event) {
+    final workspace = event.data?['workspace'];
+
+    return workspace == null || workspace == _currentId;
+  }
+
+  /// The workspaces of the account, read once, after the account itself.
   ///
-  /// A failure stays the answer until [retry]: a router calls this on each of
-  /// its passes, and reading again there would turn a server that does not
-  /// answer into a loop of requests.
-  Future<void> initialize({String? preferredSlug}) {
+  /// A failure stays the answer until [retry]: a router asks on each of its
+  /// passes, and reading again there would turn a server that does not answer
+  /// into a loop of requests. Nothing opened yet, the read opens the choice.
+  Future<T?> load() {
     if (_loaded) {
-      return Future.value();
+      return Future.value(current);
     }
 
-    final running = _initialization;
-
-    if (running != null) {
-      return running;
-    }
-
-    late final Future<void> run;
-    run = _initialize(preferredSlug).whenComplete(() {
-      if (identical(_initialization, run)) {
-        _initialization = null;
-      }
-    });
-
-    return _initialization = run;
+    return _loadFuture ??= _load(_generation);
   }
 
-  Future<void> _initialize(String? preferredSlug) async {
-    await _readAccount();
-    _remembered ??= (await SharedPreferences.getInstance()).getString(
-      _rememberedKey,
-    );
+  Future<T?> _load(int asked) async {
+    _loading = true;
 
     try {
-      await _read(preferredSlug);
-    } catch (error) {
-      // The first authenticated read of a session races the sign-in: the event
-      // a router redirects on is fired from the call that is still setting
-      // the tokens, and the read can come back as a 401. A second read, once
-      // the loop has passed; a second failure is a real one.
-      _log.fine(
-        'Workspaces load failed, reading again once the session has settled',
-        error,
-      );
+      await _readRemembered();
+      await _readAccount();
 
-      try {
-        await Future<void>.delayed(Duration.zero);
-        await _read(preferredSlug);
-      } catch (error, stackTrace) {
+      // Signed out meanwhile: nothing to read for the account that left.
+      if (asked != _generation) {
+        return null;
+      }
+
+      await _read();
+
+      if (asked == _generation && !_opened && _slug == null) {
+        _open(_choose());
+      }
+    } catch (error, stackTrace) {
+      if (asked == _generation) {
         _log.warning('Workspaces load failed', error, stackTrace);
         _error = error;
         _loaded = true;
         notifyListeners();
-
-        return;
+      }
+    } finally {
+      if (asked == _generation) {
+        _loading = false;
+        _loadFuture = null;
       }
     }
 
-    unawaited(_afterRead());
+    return current;
   }
 
-  /// A failure of the account read is the list's to report: its read runs
-  /// into the same.
-  Future<void> _readAccount() async {
-    final account = _account;
-
-    if (account == null) {
-      return;
-    }
-
-    try {
-      await account();
-    } catch (error) {
-      _log.fine('Account load failed, reading the workspaces anyway', error);
-    }
-  }
-
-  /// Reads everything again: after a failure, or for a session that opens
-  /// (never what a previous one read).
-  Future<void> retry() {
+  /// Lets a failed read try again.
+  Future<T?> retry() {
     _loaded = false;
     _error = null;
-    _initialization = null;
+    _loadFuture = null;
 
-    return initialize();
+    return load();
   }
 
-  /// Reads the list again, and what comes with it. Called during such a read,
-  /// it runs another one after: what changed meanwhile may be missing from the
-  /// answer in progress.
-  Future<void> refresh() {
+  /// The list read again, and what comes with it ([loadRelated]). Called during
+  /// such a read, it runs another one after: what changed meanwhile may be
+  /// missing from the answer in progress. A failure keeps the list held.
+  Future<T?> refresh() {
     final running = _refreshing;
 
     if (running != null) {
@@ -256,22 +300,17 @@ class WorkspaceProvider<T extends BaseModel<T>> extends ChangeNotifier
       return running;
     }
 
-    return _refreshing = _runRefresh();
+    return _refreshing = _refresh();
   }
 
-  /// For the interceptor: joins a read in progress rather than asking for
-  /// another, otherwise a read of that one failing the same way would ask for
-  /// one again, endlessly.
-  Future<void> refreshAfterError() => _refreshing ?? refresh();
-
-  Future<void> _runRefresh() async {
+  Future<T?> _refresh() async {
     try {
       do {
         _refreshAgain = false;
 
         try {
           await _read();
-          await _afterRead();
+          await loadRelated();
         } catch (error, stackTrace) {
           _log.warning('Workspaces refresh failed', error, stackTrace);
         }
@@ -279,21 +318,286 @@ class WorkspaceProvider<T extends BaseModel<T>> extends ChangeNotifier
     } finally {
       _refreshing = null;
     }
+
+    return current;
   }
 
-  Future<void> _read([String? preferredSlug]) async {
-    final sequence = ++_sequence;
-    final list = await _loader();
+  /// For the interceptor: joins a read in progress rather than asking for
+  /// another, otherwise a read of that one failing the same way would ask
+  /// again, endlessly.
+  Future<T?> refreshAfterError() => _refreshing ?? refresh();
 
-    if (sequence < _applied) {
+  /// The current workspace, chosen when there is none yet: what a request
+  /// under `/{workspace}` waits for.
+  Future<String?> ensureCurrent() async {
+    if (_slug != null) {
+      return _slug;
+    }
+
+    await load();
+
+    if (_slug == null) {
+      _open(_choose());
+    }
+
+    return _slug;
+  }
+
+  /// What the URL should say, given the slug it carries.
+  Future<WorkspaceDecision> resolve(String? slug) async {
+    await _readRemembered();
+    await _readAccount();
+
+    final moved = slug == null ? null : renamedSlug(slug);
+
+    if (moved != null) {
+      _openSlug(moved);
+
+      return WorkspaceRedirect(moved);
+    }
+
+    if (slug != null && !_refused.contains(slug)) {
+      _openSlug(slug);
+      unawaited(load());
+
+      return const WorkspaceStay();
+    }
+
+    await load();
+
+    if (_error != null) {
+      return const WorkspaceFailed();
+    }
+
+    final pick = _choose();
+
+    if (pick == null) {
+      return const WorkspaceEmpty();
+    }
+
+    _open(pick);
+
+    return WorkspaceRedirect(_slugOf(pick));
+  }
+
+  /// Makes [workspace] current. The URL follows it, through whoever navigates.
+  void select(T workspace) => _open(workspace);
+
+  /// Makes the workspace of [slug] current if the account has it.
+  Future<bool> selectSlug(String slug) async {
+    await load();
+
+    final workspace = bySlug(slug);
+
+    if (workspace != null) {
+      _open(workspace);
+    }
+
+    return workspace != null;
+  }
+
+  /// Adds a workspace just created or joined, before the list read again says
+  /// so. It only becomes current when none is: otherwise the URL picks it.
+  void adopt(T workspace) {
+    _applied = ++_sequence;
+    _workspaces = List.unmodifiable([
+      ..._workspaces.where((item) => item.id != workspace.id),
+      workspace,
+    ]);
+    _loaded = true;
+    _error = null;
+    _refused.remove(_slugOf(workspace));
+
+    if (_slug == null) {
+      _open(workspace);
+    }
+
+    notifyListeners();
+    unawaited(refresh());
+  }
+
+  /// Creates a workspace (`POST /workspaces`) and makes it current.
+  Future<T> create(Map<String, dynamic> payload) async {
+    final response = await getService<Fetcher>().post('/workspaces', payload);
+    final workspace = _model(response.data as Map<String, dynamic>);
+
+    _applied = ++_sequence;
+    _workspaces = List.unmodifiable([
+      ..._workspaces.where((item) => item.id != workspace.id),
+      workspace,
+    ]);
+    _refused.remove(_slugOf(workspace));
+    _open(workspace);
+    notifyListeners();
+
+    return workspace;
+  }
+
+  /// Deletes a workspace (`DELETE /{slug}/workspace`); the choice follows when
+  /// it was current.
+  Future<T?> remove(String slug) async {
+    await getService<Fetcher>().delete('/$slug/workspace');
+    _drop(slug);
+
+    return current;
+  }
+
+  /// Leaves the current workspace through [request] (the application's route);
+  /// the choice follows. Noted before the request: a read answering meanwhile
+  /// does not announce it lost.
+  Future<T?> leave(Future<void> Function() request) async {
+    final workspace = current;
+
+    if (workspace == null) {
+      return null;
+    }
+
+    _leaving = workspace.id;
+
+    try {
+      await request();
+      _drop(_slugOf(workspace));
+    } finally {
+      _leaving = null;
+    }
+
+    return current;
+  }
+
+  /// Makes [slug] the account's default workspace, on the server: never a
+  /// side effect of a choice.
+  Future<void> makeDefault(String slug) async {
+    await getService<Fetcher>().put('/workspaces/$slug/default', null);
+    _workspaces = List.unmodifiable([
+      for (final workspace in _workspaces)
+        _model({...workspace.data, 'is_default': _slugOf(workspace) == slug}),
+    ]);
+    notifyListeners();
+  }
+
+  /// What the application reads along with the list (the current workspace's
+  /// detail, the invitations), after each read of it. Nothing by default.
+  @protected
+  Future<void> loadRelated() async {}
+
+  /// Reads the list again when a workspace or its members change.
+  @protected
+  void onResourceChanged(ResourceChangedEvent event) {
+    if (_membershipModels.contains(event.model)) {
+      unawaited(refresh());
+    }
+  }
+
+  /// Whether a tenant request refused this way says the workspaces changed
+  /// under the app (a 404: the workspace may be gone), for the interceptor to
+  /// read them again.
+  bool isWorkspaceError(int? status, Object? detail) => status == 404;
+
+  /// Points the realtime socket at the current workspace, on each change.
+  @protected
+  void follow(RealtimeSocket socket) => socket.watch(_slug);
+
+  /// Forgets the session's workspaces (a sign-out); what this device remembers
+  /// stays.
+  @protected
+  @mustCallSuper
+  void reset() {
+    _generation++;
+    _applied = ++_sequence;
+    _workspaces = const [];
+    _slug = null;
+    _currentId = null;
+    _loading = false;
+    _loaded = false;
+    _error = null;
+    _loadFuture = null;
+    _refreshing = null;
+    _refused.clear();
+    _renamed.clear();
+    _opened = false;
+    notifyListeners();
+  }
+
+  Future<void> _readRemembered() async {
+    if (_rememberedRead) {
       return;
     }
 
-    _applied = sequence;
-    _apply(list, preferredSlug);
+    _rememberedRead = true;
+
+    if (rememberLast) {
+      _remembered ??= (await SharedPreferences.getInstance()).getString(
+        _rememberedKey,
+      );
+    }
   }
 
-  void _apply(List<T> list, String? preferredSlug) {
+  void _remember(String? slug) {
+    if (!rememberLast) {
+      return;
+    }
+
+    _remembered = slug;
+    unawaited(
+      SharedPreferences.getInstance().then(
+        (preferences) => slug == null
+            ? preferences.remove(_rememberedKey)
+            : preferences.setString(_rememberedKey, slug),
+      ),
+    );
+  }
+
+  /// A failure of the account read is the list's to report: its read runs
+  /// into the same.
+  Future<void> _readAccount() async {
+    try {
+      final account = _account;
+
+      if (account != null) {
+        await account();
+      } else if (hasService<UserProvider>()) {
+        await getService<UserProvider>().load();
+      }
+    } catch (error) {
+      _log.fine('Account load failed, reading the workspaces anyway', error);
+    }
+  }
+
+  Future<void> _read() async {
+    final asked = ++_sequence;
+    final list = await _fetchList();
+
+    if (asked < _applied) {
+      return;
+    }
+
+    _applied = asked;
+    _apply(list);
+  }
+
+  Future<List<T>> _fetchList() async {
+    final list = _list;
+
+    if (list != null) {
+      return list();
+    }
+
+    final response = await getService<Fetcher>().get(
+      '/workspaces',
+      params: {'limit': 200},
+      headers: {'X-Fields': fields},
+    );
+    final data = response.data;
+    final items = data is Map ? data['items'] : null;
+
+    return [
+      if (items is List)
+        for (final item in items)
+          if (item is Map<String, dynamic>) _model(item),
+    ];
+  }
+
+  void _apply(List<T> list) {
     for (final workspace in list) {
       final before = byId(workspace.id);
 
@@ -303,181 +607,158 @@ class WorkspaceProvider<T extends BaseModel<T>> extends ChangeNotifier
     }
 
     final previous = current;
+
     _workspaces = List.unmodifiable(list);
     _loaded = true;
     _error = null;
-    _currentId =
-        (byId(_currentId) ??
-                bySlug(preferredSlug) ??
-                defaultOf(list) ??
-                list.firstOrNull)
-            ?.id;
+
+    final held = byId(_currentId) ?? bySlug(_slug);
+
+    _currentId = held?.id;
     notifyListeners();
 
-    if (previous != null &&
-        byId(previous.id) == null &&
-        previous.id != _leaving) {
+    if (held != null && _slugOf(held) != _slug) {
+      _follow(_slugOf(held));
+    } else if (previous != null && held == null && previous.id != _leaving) {
       getService<Bus>().fire(WorkspaceLostEvent(previous));
+      _refuse(_slugOf(previous));
     }
   }
 
-  /// What a read of the list brings along: the current workspace's metadata,
-  /// and what [loadRelated] adds.
-  Future<void> _afterRead() async {
-    if (_currentId != null && hasService<MetadataProvider>()) {
-      unawaited(
-        getService<MetadataProvider>().getMetadatas().then<void>(
-          (_) {},
-          onError: (Object error, StackTrace stackTrace) =>
-              _log.warning('Metadata load failed', error, stackTrace),
-        ),
-      );
+  void _open(T? workspace) {
+    if (workspace != null) {
+      _openSlug(_slugOf(workspace), workspace);
     }
-
-    await loadRelated();
   }
 
-  /// What the application reads along with the list (the current workspace's
-  /// detail, the invitations), after each read of it. Nothing by default.
-  @protected
-  Future<void> loadRelated() async {}
+  /// Makes [value] current, remembers it on this device and reads its
+  /// metadatas; every screen reads again when another one was current.
+  void _openSlug(String value, [T? workspace]) {
+    if (value.isEmpty || value == _slug) {
+      return;
+    }
 
-  /// The workspace to open when the URL names none of the account's: the one
-  /// [remember] kept on this device, as vue-fastedgy does. An application
-  /// keeping the choice elsewhere (on the server, to follow the account from
-  /// one device to another) overrides both.
-  @protected
-  T? defaultOf(List<T> workspaces) => _remembered == null
-      ? null
-      : workspaces
-            .where((workspace) => _slugOf(workspace) == _remembered)
-            .firstOrNull;
+    final previous = _slug;
 
-  /// Keeps [workspace] as the one to open next time, see [defaultOf].
-  @protected
-  Future<void> remember(T workspace) async {
-    final slug = _remembered = _slugOf(workspace);
-    await (await SharedPreferences.getInstance()).setString(
-      _rememberedKey,
-      slug,
+    _slug = value;
+    _currentId = (workspace ?? bySlug(value))?.id;
+    _opened = true;
+    _remember(value);
+    notifyListeners();
+    unawaited(_probe(value));
+
+    if (previous != null) {
+      getService<Bus>().fire(const WorkspaceSwitchedEvent());
+    }
+  }
+
+  /// The current workspace renamed: the same one, under its new slug.
+  void _follow(String value) {
+    _slug = value;
+    _remember(value);
+    notifyListeners();
+    unawaited(_probe(value));
+  }
+
+  /// Reads the metadatas of [value], the first request under its slug: the
+  /// server refusing it (404) is the account not being a member.
+  Future<void> _probe(String value) async {
+    if (!hasService<MetadataProvider>()) {
+      return;
+    }
+
+    final metadata = getService<MetadataProvider>();
+
+    if (!(metadata.prefix ?? '').contains(_placeholder)) {
+      return;
+    }
+
+    await metadata.getMetadatas();
+
+    final error = metadata.error;
+
+    if (_slug == value &&
+        error is HttpError &&
+        error.statusCode == 404 &&
+        (error.response?.requestOptions.path ?? '').contains('/$value/')) {
+      _refuse(value);
+    }
+  }
+
+  /// This session cannot open [value] any more: forgotten by the device, and
+  /// the choice opens another one in its place when it was current.
+  void _refuse(String value) {
+    _refused.add(value);
+
+    if (_remembered == value) {
+      _remember(null);
+    }
+
+    if (_slug == value) {
+      final pick = _loaded ? _choose() : null;
+
+      if (pick != null) {
+        _open(pick);
+      } else {
+        _slug = null;
+        _currentId = null;
+
+        if (!_loaded) {
+          unawaited(
+            load().then((_) {
+              if (_slug == null) {
+                _open(_choose());
+              }
+            }),
+          );
+        }
+      }
+    }
+
+    notifyListeners();
+  }
+
+  /// Drops a workspace the account no longer has; the choice follows when it
+  /// was current.
+  void _drop(String slug) {
+    _applied = ++_sequence;
+    _workspaces = List.unmodifiable(
+      _workspaces.where((item) => _slugOf(item) != slug),
     );
+    _refuse(slug);
   }
 
-  /// Makes [workspace] current and [remember]s it; nothing for the one that
-  /// already is. The switch is immediate, the future completes once the
-  /// choice is kept.
-  Future<void> select(T workspace) async {
-    if (workspace.id == _currentId) {
-      return;
-    }
+  /// The workspace to open when nothing names one: the last one of this
+  /// device, then the account's default, then the first; never one this
+  /// session cannot open.
+  T? _choose() {
+    final open = _workspaces.where(
+      (workspace) => !_refused.contains(_slugOf(workspace)),
+    );
+    final last = _remembered;
 
-    _currentId = workspace.id;
-    notifyListeners();
-
-    // Everything on screen belonged to the workspace left behind: each holder
-    // reads again, this provider included.
-    getService<Bus>().fire(const ResourcesStaleEvent());
-
-    try {
-      await remember(workspace);
-    } catch (error, stackTrace) {
-      _log.warning('Workspace choice not kept', error, stackTrace);
-    }
-  }
-
-  /// Makes the workspace of [slug] current if the account is a member of it.
-  Future<bool> selectSlug(String slug) async {
-    await initialize(preferredSlug: slug);
-
-    final workspace = bySlug(slug);
-
-    if (workspace == null) {
-      return false;
-    }
-
-    unawaited(select(workspace));
-
-    return true;
-  }
-
-  /// Adds a workspace just created or joined, before the list read again says
-  /// so (and lists the others).
-  ///
-  /// It only becomes current if it is the only one: otherwise the URL picks it,
-  /// as for any workspace. Picked here, a router would swap it right back for
-  /// the one of the URL still shown.
-  void adopt(T workspace) {
-    _applied = ++_sequence;
-    _workspaces = List.unmodifiable([
-      ..._workspaces.where((item) => item.id != workspace.id),
-      workspace,
-    ]);
-    _loaded = true;
-    _error = null;
-    _currentId ??= workspace.id;
-    notifyListeners();
-    unawaited(refresh());
-  }
-
-  /// Leaves the current workspace through [request]; the [defaultOf] or the
-  /// first of the others becomes current, if any remain. Noted before the
-  /// request: a read answering meanwhile does not report it lost.
-  Future<void> leave(Future<void> Function() request) async {
-    final workspace = current;
-
-    if (workspace == null) {
-      return;
-    }
-
-    _leaving = workspace.id;
-
-    try {
-      await request();
-
-      _applied = ++_sequence;
-      _workspaces = List.unmodifiable(
-        _workspaces.where((item) => item.id != workspace.id),
-      );
-      _currentId = (defaultOf(_workspaces) ?? _workspaces.firstOrNull)?.id;
-      notifyListeners();
-    } finally {
-      _leaving = null;
-    }
-
-    unawaited(_afterRead());
-  }
-
-  /// Reads the list again when a workspace or its members change.
-  @protected
-  void onResourceChanged(ResourceChangedEvent event) {
-    if (event.model == 'workspace' || event.model == 'workspace_user') {
-      unawaited(refresh());
-    }
-  }
-
-  /// Whether a tenant request refused this way says the workspaces changed
-  /// under the app (the workspace is gone: a 404), for the interceptor to read
-  /// them again.
-  bool isWorkspaceError(int? status, Object? detail) => status == 404;
-
-  /// Points the realtime socket at the current workspace, on each change.
-  @protected
-  void follow(RealtimeSocket socket) => socket.watch(currentSlug);
-
-  /// Forgets the session's workspaces (a sign-out).
-  @protected
-  @mustCallSuper
-  void reset() {
-    _applied = ++_sequence;
-    _workspaces = const [];
-    _currentId = null;
-    _loaded = false;
-    _error = null;
-    _initialization = null;
-    _renamed.clear();
-    notifyListeners();
+    return (last == null
+            ? null
+            : open
+                  .where((workspace) => _slugOf(workspace) == last)
+                  .firstOrNull) ??
+        open
+            .where((workspace) => workspace.getBool('is_default') ?? false)
+            .firstOrNull ??
+        open.firstOrNull;
   }
 
   static String _slugOf(BaseModel workspace) =>
       workspace.getString('slug') ?? '';
+}
+
+/// The `workspace` context param: what `/{workspace}` resolves to, the
+/// metadata prefix included.
+class _WorkspaceParams implements OfflineContextParamsResolver {
+  _WorkspaceParams(this._workspaces);
+
+  final WorkspaceProvider _workspaces;
+
+  @override
+  Map<String, Object?> resolve() => {'workspace': _workspaces.slug};
 }
