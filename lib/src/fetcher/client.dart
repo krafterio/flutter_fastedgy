@@ -20,6 +20,7 @@ import '../container/container.dart';
 import '../auth/token_storage.dart';
 import '../realtime/origin.dart';
 import '../realtime/realtime_events.dart' show ResourcesStaleEvent;
+import '../auth/auth_events.dart';
 import '../auth/auth_provider.dart';
 import 'cors_warning.dart' if (dart.library.js_interop) 'cors_warning_web.dart';
 import 'events.dart';
@@ -99,9 +100,13 @@ class Fetcher {
   Fetcher._({Dio? dio, Bus? bus})
     : _dio = dio ?? Dio(),
       _bus = bus ?? getService<Bus>() {
+    // A read in flight answers for the session it was sent in: the next one,
+    // another account maybe, asks again rather than riding it.
     _changes
       ..add(_bus.on<ResourceChangedEvent>().listen((_) => _pendingGets.clear()))
-      ..add(_bus.on<ResourcesStaleEvent>().listen((_) => _pendingGets.clear()));
+      ..add(_bus.on<ResourcesStaleEvent>().listen((_) => _pendingGets.clear()))
+      ..add(_bus.on<AuthLoggedEvent>().listen((_) => _pendingGets.clear()))
+      ..add(_bus.on<AuthLogoutEvent>().listen((_) => _pendingGets.clear()));
   }
 
   /// Create a new Fetcher instance with configurable interceptors

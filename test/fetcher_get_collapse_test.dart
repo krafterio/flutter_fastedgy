@@ -240,4 +240,26 @@ void main() {
 
     expect(held.seen, hasLength(2));
   });
+
+  for (final (name, event) in [
+    ('a sign-out', const AuthLogoutEvent()),
+    ('a sign-in', const AuthLoggedEvent()),
+  ]) {
+    test(
+      'a read asked after $name never rides one of the session before',
+      () async {
+        final held = heldFetcher({'items': []});
+
+        final before = held.fetcher.get('/workspaces');
+        getService<Bus>().fire(event);
+        await pumpEventQueue();
+        final after = held.fetcher.get('/workspaces');
+
+        held.release();
+        await Future.wait([before, after]);
+
+        expect(held.seen, hasLength(2));
+      },
+    );
+  }
 }
