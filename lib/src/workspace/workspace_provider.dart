@@ -259,8 +259,12 @@ class WorkspaceProvider<T extends BaseModel<T>> extends ChangeNotifier {
 
       await _read();
 
-      if (asked == _generation && !_opened && _slug == null) {
-        _open(_choose());
+      if (asked == _generation) {
+        if (!_opened && _slug == null) {
+          _open(_choose());
+        }
+
+        unawaited(_related());
       }
     } catch (error, stackTrace) {
       if (asked == _generation) {
@@ -407,13 +411,14 @@ class WorkspaceProvider<T extends BaseModel<T>> extends ChangeNotifier {
     _loaded = true;
     _error = null;
     _refused.remove(_slugOf(workspace));
+    // Before it opens: what this read brings along covers it.
+    unawaited(refresh());
 
     if (_slug == null) {
       _open(workspace);
     }
 
     notifyListeners();
-    unawaited(refresh());
   }
 
   /// Creates a workspace (`POST /workspaces`) and makes it current.
@@ -476,7 +481,8 @@ class WorkspaceProvider<T extends BaseModel<T>> extends ChangeNotifier {
   }
 
   /// What the application reads along with the list (the current workspace's
-  /// detail, the invitations), after each read of it. Nothing by default.
+  /// detail, the invitations), after each read of it and whenever another
+  /// workspace becomes current. Nothing by default.
   @protected
   Future<void> loadRelated() async {}
 
@@ -649,6 +655,19 @@ class WorkspaceProvider<T extends BaseModel<T>> extends ChangeNotifier {
 
     if (previous != null) {
       getService<Bus>().fire(const WorkspaceSwitchedEvent());
+    }
+
+    // A read of the list under way brings it along as it ends.
+    if (_loaded && _loadFuture == null && _refreshing == null) {
+      unawaited(_related());
+    }
+  }
+
+  Future<void> _related() async {
+    try {
+      await loadRelated();
+    } catch (error, stackTrace) {
+      _log.warning('Workspace related load failed', error, stackTrace);
     }
   }
 

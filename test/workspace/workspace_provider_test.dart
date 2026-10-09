@@ -4,7 +4,7 @@
  */
 
 // What the shared corpus (workspaces_corpus_test.dart) cannot say: the timing
-// of answers that cross.
+// of answers that cross, and what this package alone offers (loadRelated).
 
 import 'dart:async';
 
@@ -18,6 +18,16 @@ class _Workspace extends BaseModel<_Workspace> {
   _Workspace(super.data);
 }
 
+/// Notes the current slug each time it reads what comes with the list.
+class _Provider extends WorkspaceProvider<_Workspace> {
+  _Provider() : super(_Workspace.new);
+
+  final related = <String?>[];
+
+  @override
+  Future<void> loadRelated() async => related.add(slug);
+}
+
 Map<String, dynamic> _list(List<String> slugs) => {
   'items': [
     for (final (index, slug) in slugs.indexed) {'id': index + 1, 'slug': slug},
@@ -29,7 +39,7 @@ void main() {
 
   late List<String> sent;
   late FutureOr<MockResponse> Function(MockRequest) answer;
-  late WorkspaceProvider<_Workspace> workspaces;
+  late _Provider workspaces;
 
   setUp(() {
     SharedPreferences.setMockInitialValues({});
@@ -45,11 +55,40 @@ void main() {
       }, customInterceptors: [WorkspacePrefixInterceptor()]),
     );
     workspaces = container.registerSingleton<WorkspaceProvider>(
-      WorkspaceProvider<_Workspace>(_Workspace.new),
-    ) as WorkspaceProvider<_Workspace>;
+      _Provider(),
+    ) as _Provider;
   });
 
   tearDown(container.reset);
+
+  test('reads what comes with the list after each read of it, and for each '
+      'workspace made current', () async {
+    await workspaces.resolve(null);
+    await pumpEventQueue();
+    expect(workspaces.related, ['alpha']);
+
+    await workspaces.resolve('beta');
+    await pumpEventQueue();
+    expect(workspaces.related, ['alpha', 'beta']);
+
+    await workspaces.refresh();
+    expect(workspaces.related, ['alpha', 'beta', 'beta']);
+  });
+
+  test(
+    'reads what comes with a workspace adopted as the first one once',
+    () async {
+      answer = (request) => MockResponse.json(_list([]));
+      await workspaces.load();
+      await pumpEventQueue();
+
+      answer = (request) => MockResponse.json(_list(['alpha']));
+      workspaces.adopt(_Workspace({'id': 1, 'slug': 'alpha'}));
+      await pumpEventQueue();
+
+      expect(workspaces.related, [null, 'alpha']);
+    },
+  );
 
   test('reads the list once for requests answering 404 together', () async {
     await workspaces.resolve('alpha');
