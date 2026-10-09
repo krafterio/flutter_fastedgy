@@ -128,6 +128,7 @@ void main() {
     setUp(() {
       paths = [];
       workspaces = provider();
+      container.registerSingleton<WorkspaceProvider>(workspaces);
       container.registerSingleton<Fetcher>(
         createMockFetcher((request) {
           paths.add(request.path);
@@ -135,7 +136,7 @@ void main() {
           return request.path == '/alpha/gone'
               ? const MockResponse.error(404)
               : const MockResponse.json({});
-        }, customInterceptors: [WorkspacePrefixInterceptor(() => workspaces)]),
+        }, customInterceptors: [WorkspacePrefixInterceptor()]),
       );
     });
 

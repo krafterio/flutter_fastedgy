@@ -7,6 +7,7 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 
+import '../container/container.dart';
 import '../logging/logger.dart';
 import 'workspace_provider.dart';
 
@@ -18,18 +19,20 @@ import 'workspace_provider.dart';
 /// A path that keeps the placeholder is never sent: it would reach a route
 /// that does not exist and come back as a 404, hiding the real fault, a read
 /// of the tenant before a workspace is chosen.
+///
+/// The provider is the one registered as [WorkspaceProvider], looked up on
+/// each request: it is registered after the fetcher it serves. An application
+/// subclassing it registers its instance under both types.
 class WorkspacePrefixInterceptor extends Interceptor {
-  /// [workspaces] is looked up on each request: the provider is registered
-  /// after the fetcher it serves.
-  WorkspacePrefixInterceptor(this._workspaces);
-
   static const _placeholder = '/{workspace}';
 
   /// Marks a tenant request, to recognize its errors.
   static const _tenantKey = 'fastedgy.workspace';
 
-  final WorkspaceProvider? Function() _workspaces;
   final _log = getLogger('WorkspacePrefixInterceptor');
+
+  WorkspaceProvider? get _workspaces =>
+      hasService<WorkspaceProvider>() ? getService<WorkspaceProvider>() : null;
 
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
@@ -39,7 +42,7 @@ class WorkspacePrefixInterceptor extends Interceptor {
       return;
     }
 
-    final slug = _workspaces()?.currentSlug;
+    final slug = _workspaces?.currentSlug;
 
     if (slug == null || slug.isEmpty) {
       _log.warning(
@@ -63,7 +66,7 @@ class WorkspacePrefixInterceptor extends Interceptor {
 
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
-    final workspaces = _workspaces();
+    final workspaces = _workspaces;
 
     if (workspaces != null && err.requestOptions.extra[_tenantKey] != null) {
       final data = err.response?.data;
