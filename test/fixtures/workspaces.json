@@ -368,6 +368,26 @@
             ]
         },
         {
+            "name": "a request outside the workspace answering 404 reads nothing again",
+            "list": ["alpha", "beta"],
+            "steps": [
+                {
+                    "open": "alpha",
+                    "expect": {
+                        "slug": "alpha"
+                    }
+                },
+                {
+                    "request": "GET /me/missing",
+                    "expect": {
+                        "failed": true,
+                        "slug": "alpha",
+                        "requests": ["GET /me/missing"]
+                    }
+                }
+            ]
+        },
+        {
             "name": "a current workspace gone from the list is announced, and the choice opens another one",
             "list": ["alpha", "beta_default"],
             "steps": [
