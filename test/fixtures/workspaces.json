@@ -235,6 +235,29 @@
             ]
         },
         {
+            "name": "a slug the server refuses leaves what the device remembered as it was",
+            "device": "beta",
+            "list": ["alpha", "beta"],
+            "server": {
+                "GET /gamma/dataset/metadatas": {
+                    "status": 404,
+                    "body": {
+                        "detail": "Aucun workspace trouvé"
+                    }
+                }
+            },
+            "steps": [
+                {
+                    "open": "gamma",
+                    "expect": {
+                        "decision": "stay",
+                        "slug": "beta",
+                        "device": "beta"
+                    }
+                }
+            ]
+        },
+        {
             "name": "the list does not decide whether a slug can be opened, the server does",
             "list": ["alpha"],
             "steps": [

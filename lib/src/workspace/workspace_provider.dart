@@ -639,6 +639,9 @@ class WorkspaceProvider<T extends BaseModel<T>> extends ChangeNotifier {
 
   /// Makes [value] current, remembers it on this device and reads its
   /// metadatas; every screen reads again when another one was current.
+  ///
+  /// A slug the list does not hold is remembered once the server accepts it
+  /// ([_probe]): refused, it would take what the device remembered with it.
   void _openSlug(String value, [T? workspace]) {
     if (value.isEmpty || value == _slug) {
       return;
@@ -649,7 +652,11 @@ class WorkspaceProvider<T extends BaseModel<T>> extends ChangeNotifier {
     _slug = value;
     _currentId = (workspace ?? bySlug(value))?.id;
     _opened = true;
-    _remember(value);
+
+    if (_currentId != null) {
+      _remember(value);
+    }
+
     notifyListeners();
     unawaited(_probe(value));
 
@@ -680,27 +687,33 @@ class WorkspaceProvider<T extends BaseModel<T>> extends ChangeNotifier {
   }
 
   /// Reads the metadatas of [value], the first request under its slug: the
-  /// server refusing it (404) is the account not being a member.
+  /// server refusing it (404) is the account not being a member, accepting it
+  /// is what lets the device remember it.
   Future<void> _probe(String value) async {
-    if (!hasService<MetadataProvider>()) {
-      return;
-    }
+    final metadata = hasService<MetadataProvider>()
+        ? getService<MetadataProvider>()
+        : null;
 
-    final metadata = getService<MetadataProvider>();
+    if (metadata == null || !(metadata.prefix ?? '').contains(_placeholder)) {
+      _remember(value);
 
-    if (!(metadata.prefix ?? '').contains(_placeholder)) {
       return;
     }
 
     await metadata.getMetadatas();
 
+    if (_slug != value) {
+      return;
+    }
+
     final error = metadata.error;
 
-    if (_slug == value &&
-        error is HttpError &&
+    if (error is HttpError &&
         error.statusCode == 404 &&
         (error.response?.requestOptions.path ?? '').contains('/$value/')) {
       _refuse(value);
+    } else {
+      _remember(value);
     }
   }
 
