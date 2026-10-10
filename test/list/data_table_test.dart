@@ -137,4 +137,31 @@ void main() {
 
     grid.dispose();
   });
+
+  test('opens a table and a grid on their custom views', () async {
+    ViewServer(server).add({
+      'name': 'Everyone',
+      'is_default': true,
+      'order_by': ['name:asc'],
+    });
+
+    final table = DataTable<Thing>(
+      api,
+      columns: const [DataTableColumn('name')],
+      views: const DataIteratorViews(),
+    );
+    final grid = DataGrid<Thing>(
+      api,
+      fields: ['name'],
+      views: const DataIteratorViews(),
+    );
+
+    await settle();
+
+    expect(table.orderBy, ['name:asc']);
+    expect(grid.orderBy, ['name:asc']);
+
+    table.dispose();
+    grid.dispose();
+  });
 }
