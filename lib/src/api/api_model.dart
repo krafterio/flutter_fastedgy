@@ -13,6 +13,7 @@ import '../fetcher/client.dart';
 import '../metadata/metadata_provider.dart';
 import '../metadata/models.dart';
 import '../realtime/origin.dart';
+import 'api_helpers.dart';
 import 'api_model_engine.dart';
 import 'api_query.dart';
 import 'base_model.dart';
@@ -250,6 +251,28 @@ abstract class ApiModel<T extends BaseModel<T>> {
 
   Future<T> get(Object id, {FieldsOptions? options, ApiParams? params}) async =>
       (await _resolveEngine()).get(id, options: options, params: params);
+
+  /// The ids before and after the record [id] in the list [filter] and
+  /// [orderBy] read, null at either end: `GET {path}/{id}/siblings`, which a
+  /// model opens with `siblings=True`.
+  Future<({Object? previous, Object? next})> siblings(
+    Object id, {
+    Object? filter,
+    Object? orderBy,
+    ApiParams? params,
+  }) async {
+    final query = ListQuery(filter: filter, orderBy: orderBy).toMap();
+    final response = await fetcher.get(
+      '${await resolvePath()}/$id/siblings',
+      params: ApiHelpers.buildQueryParams(query),
+      headers: ApiHelpers.buildHeaders(query, extraHeaders: params?.headers),
+    );
+    final data = response.data;
+
+    return data is Map
+        ? (previous: data['previous'] as Object?, next: data['next'] as Object?)
+        : (previous: null, next: null);
+  }
 
   /// Same read as [get], keeping whether the local mirror answered instead of
   /// the server.
