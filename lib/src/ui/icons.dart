@@ -3,7 +3,7 @@
  * MIT License (see LICENSE file).
  */
 
-import 'package:material_ui/material_ui.dart';
+import 'package:flutter/widgets.dart';
 
 import 'theme/component_theme.dart';
 
@@ -96,59 +96,100 @@ enum FastEdgyGlyph {
   redo,
 }
 
+// Material's glyphs, by their code point in the MaterialIcons font a Flutter
+// app bundles (`uses-material-design`): the marks of `Icons`, without
+// importing Material. A test holds each one to its `Icons` twin.
+const _materialFont = 'MaterialIcons';
+
 const Map<FastEdgyGlyph, IconData> _material = {
   // Material ships no bare slash; this is the only glyph it has that draws one,
   // circle and all. Distinct from `add` on purpose — sharing that one would put
   // the same picture on "insert a block" and on "add a row". An application
   // with its own icon set gives this the character itself.
-  FastEdgyGlyph.slash: Icons.dnd_forwardslash,
-  FastEdgyGlyph.bold: Icons.format_bold,
-  FastEdgyGlyph.italic: Icons.format_italic,
-  FastEdgyGlyph.underline: Icons.format_underlined,
-  FastEdgyGlyph.strikethrough: Icons.format_strikethrough,
-  FastEdgyGlyph.code: Icons.code,
+  FastEdgyGlyph.slash: IconData(0xe1eb, fontFamily: _materialFont),
+  FastEdgyGlyph.bold: IconData(0xe2af, fontFamily: _materialFont),
+  FastEdgyGlyph.italic: IconData(0xe2b6, fontFamily: _materialFont),
+  FastEdgyGlyph.underline: IconData(0xe2c2, fontFamily: _materialFont),
+  FastEdgyGlyph.strikethrough: IconData(0xe2bf, fontFamily: _materialFont),
+  FastEdgyGlyph.code: IconData(0xe176, fontFamily: _materialFont),
   // Material ships no H1 and no H2; `title` is the one glyph it has for a
   // heading at all. An application with its own set draws the two apart.
-  FastEdgyGlyph.heading1: Icons.title,
-  FastEdgyGlyph.heading2: Icons.format_size,
-  FastEdgyGlyph.heading3: Icons.text_fields,
-  FastEdgyGlyph.table: Icons.table_chart_outlined,
-  FastEdgyGlyph.quote: Icons.format_quote,
-  FastEdgyGlyph.bulletedList: Icons.format_list_bulleted,
-  FastEdgyGlyph.numberedList: Icons.format_list_numbered,
-  FastEdgyGlyph.todoList: Icons.checklist,
-  FastEdgyGlyph.rule: Icons.horizontal_rule,
-  FastEdgyGlyph.undo: Icons.undo,
-  FastEdgyGlyph.redo: Icons.redo,
-  FastEdgyGlyph.check: Icons.check,
-  FastEdgyGlyph.copy: Icons.copy,
-  FastEdgyGlyph.copied: Icons.check,
-  FastEdgyGlyph.cut: Icons.content_cut,
-  FastEdgyGlyph.paste: Icons.content_paste,
-  FastEdgyGlyph.selectAll: Icons.select_all,
-  FastEdgyGlyph.title: Icons.title,
-  FastEdgyGlyph.link: Icons.link,
-  FastEdgyGlyph.openExternal: Icons.open_in_new,
-  FastEdgyGlyph.unlink: Icons.link_off,
-  FastEdgyGlyph.add: Icons.add,
-  FastEdgyGlyph.insertLeft: Icons.keyboard_tab,
-  FastEdgyGlyph.insertRight: Icons.keyboard_tab,
-  FastEdgyGlyph.insertAbove: Icons.vertical_align_top,
-  FastEdgyGlyph.insertBelow: Icons.vertical_align_bottom,
-  FastEdgyGlyph.duplicate: Icons.content_copy,
-  FastEdgyGlyph.clear: Icons.backspace_outlined,
-  FastEdgyGlyph.delete: Icons.delete_outline,
+  FastEdgyGlyph.heading1: IconData(0xe668, fontFamily: _materialFont),
+  FastEdgyGlyph.heading2: IconData(0xe2be, fontFamily: _materialFont),
+  FastEdgyGlyph.heading3: IconData(0xe649, fontFamily: _materialFont),
+  FastEdgyGlyph.table: IconData(0xf41d, fontFamily: _materialFont),
+  FastEdgyGlyph.quote: IconData(0xe2bc, fontFamily: _materialFont),
+  FastEdgyGlyph.bulletedList: IconData(
+    0xe2b8,
+    fontFamily: _materialFont,
+    matchTextDirection: true,
+  ),
+  FastEdgyGlyph.numberedList: IconData(0xe2b9, fontFamily: _materialFont),
+  FastEdgyGlyph.todoList: IconData(0xe15b, fontFamily: _materialFont),
+  FastEdgyGlyph.rule: IconData(0xe31f, fontFamily: _materialFont),
+  FastEdgyGlyph.undo: IconData(
+    0xe68c,
+    fontFamily: _materialFont,
+    matchTextDirection: true,
+  ),
+  FastEdgyGlyph.redo: IconData(
+    0xe512,
+    fontFamily: _materialFont,
+    matchTextDirection: true,
+  ),
+  FastEdgyGlyph.check: IconData(0xe156, fontFamily: _materialFont),
+  FastEdgyGlyph.copy: IconData(0xe190, fontFamily: _materialFont),
+  FastEdgyGlyph.copied: IconData(0xe156, fontFamily: _materialFont),
+  FastEdgyGlyph.cut: IconData(0xe191, fontFamily: _materialFont),
+  FastEdgyGlyph.paste: IconData(0xe192, fontFamily: _materialFont),
+  FastEdgyGlyph.selectAll: IconData(0xe56e, fontFamily: _materialFont),
+  FastEdgyGlyph.title: IconData(0xe668, fontFamily: _materialFont),
+  FastEdgyGlyph.link: IconData(0xe380, fontFamily: _materialFont),
+  FastEdgyGlyph.openExternal: IconData(
+    0xe45c,
+    fontFamily: _materialFont,
+    matchTextDirection: true,
+  ),
+  FastEdgyGlyph.unlink: IconData(0xe381, fontFamily: _materialFont),
+  FastEdgyGlyph.add: IconData(0xe047, fontFamily: _materialFont),
+  FastEdgyGlyph.insertLeft: IconData(
+    0xe35b,
+    fontFamily: _materialFont,
+    matchTextDirection: true,
+  ),
+  FastEdgyGlyph.insertRight: IconData(
+    0xe35b,
+    fontFamily: _materialFont,
+    matchTextDirection: true,
+  ),
+  FastEdgyGlyph.insertAbove: IconData(0xe69d, fontFamily: _materialFont),
+  FastEdgyGlyph.insertBelow: IconData(0xe69b, fontFamily: _materialFont),
+  FastEdgyGlyph.duplicate: IconData(0xe190, fontFamily: _materialFont),
+  FastEdgyGlyph.clear: IconData(
+    0xeeb5,
+    fontFamily: _materialFont,
+    matchTextDirection: true,
+  ),
+  FastEdgyGlyph.delete: IconData(0xe1bb, fontFamily: _materialFont),
   // Turned the way each is dragged, and distinct: a row grip and a column
   // grip drawn alike are two affordances nobody can tell apart.
-  FastEdgyGlyph.gripRow: Icons.drag_indicator,
-  FastEdgyGlyph.gripColumn: Icons.drag_handle,
-  FastEdgyGlyph.image: Icons.image_outlined,
-  FastEdgyGlyph.imageMissing: Icons.broken_image_outlined,
-  FastEdgyGlyph.close: Icons.close,
-  FastEdgyGlyph.download: Icons.download,
-  FastEdgyGlyph.resetZoom: Icons.restart_alt,
-  FastEdgyGlyph.previous: Icons.chevron_left,
-  FastEdgyGlyph.next: Icons.chevron_right,
+  FastEdgyGlyph.gripRow: IconData(0xe207, fontFamily: _materialFont),
+  FastEdgyGlyph.gripColumn: IconData(0xe206, fontFamily: _materialFont),
+  FastEdgyGlyph.image: IconData(0xf120, fontFamily: _materialFont),
+  FastEdgyGlyph.imageMissing: IconData(0xeeff, fontFamily: _materialFont),
+  FastEdgyGlyph.close: IconData(0xe16a, fontFamily: _materialFont),
+  FastEdgyGlyph.download: IconData(0xe201, fontFamily: _materialFont),
+  FastEdgyGlyph.resetZoom: IconData(0xe531, fontFamily: _materialFont),
+  FastEdgyGlyph.previous: IconData(
+    0xe15e,
+    fontFamily: _materialFont,
+    matchTextDirection: true,
+  ),
+  FastEdgyGlyph.next: IconData(
+    0xe15f,
+    fontFamily: _materialFont,
+    matchTextDirection: true,
+  ),
 };
 
 /// The glyphs the UI module draws, in one place.
