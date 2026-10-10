@@ -11,6 +11,7 @@
 /// beside its usual entry point.
 library;
 
+export 'src/list/api_options.dart';
 export 'src/list/column_filter.dart';
 export 'src/list/custom_views.dart';
 export 'src/list/data_iterator.dart';
