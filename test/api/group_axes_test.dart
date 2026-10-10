@@ -48,7 +48,7 @@ void main() {
                     'color': '#ff0000',
                     'is_done': false,
                   },
-                  {'id': 7, 'name': 'Done', 'color': null, 'is_done': true},
+                  {'id': 7, 'name': 'Done', 'color': 4, 'is_done': true},
                 ]
               : [
                   {'id': 1, 'name': 'A'},
@@ -131,6 +131,8 @@ void main() {
     expect(filterOf(requests.single), ['is_done', 'is false']);
     expect(source.groups.map((group) => group.key), ['empty', 'id:3', 'id:7']);
     expect(source.groups[1].color, '#ff0000');
+    expect(source.groups[2].color, isNull, reason: 'an index is no color');
+    expect(source.groups[2].record?['color'], 4);
     expect(source.groups[2].record?['is_done'], isTrue);
 
     source.dispose();

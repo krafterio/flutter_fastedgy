@@ -375,7 +375,11 @@ class RelationGroupSource extends GroupSource {
         value: record.id,
         label: record.getString(labelField) ?? '#${record.id}',
         predicate: [field, '=', record.id],
-        color: colorField == null ? null : record.getString(colorField!),
+        // A color the model keeps otherwise (an index in a palette) is the
+        // screen's to read from the record.
+        color: record.data[colorField] is String
+            ? record.data[colorField] as String
+            : null,
         record: record.data,
       ),
     if (includeEmpty && !emptyFirst && _readable && !_collection.hasNextPage)
