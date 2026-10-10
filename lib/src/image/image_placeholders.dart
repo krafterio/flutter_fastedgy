@@ -3,10 +3,15 @@
  * MIT License (see LICENSE file).
  */
 
-import 'package:material_ui/material_ui.dart';
+import 'package:flutter/widgets.dart';
 
 import '../container/container.dart';
+import '../ui/icons.dart';
+import '../ui/theme/theme.dart';
 
+/// What an image shows while it loads, and when it cannot be read: drawn with
+/// the roles of the [FastEdgyTheme] in scope, so that a dark theme gets dark
+/// placeholders, and with its glyph for a picture that could not be read.
 class ImagePlaceholders {
   const ImagePlaceholders();
 
@@ -18,16 +23,21 @@ class ImagePlaceholders {
     return Container(
       width: width,
       height: height,
-      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.12),
+      color: FastEdgyTheme.of(context).colors.ink.withValues(alpha: 0.12),
     );
   }
 
   Widget error(BuildContext context, {double? width, double? height}) {
+    final colors = FastEdgyTheme.of(context).colors;
+
     return Container(
       width: width,
       height: height,
-      color: Colors.grey[300],
-      child: const Icon(Icons.broken_image, color: Colors.grey),
+      color: colors.subtleSurface,
+      child: Icon(
+        FastEdgyIcons.of(context)[FastEdgyGlyph.imageMissing],
+        color: colors.muted,
+      ),
     );
   }
 }
