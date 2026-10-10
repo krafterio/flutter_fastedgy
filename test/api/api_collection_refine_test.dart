@@ -352,6 +352,46 @@ void main() {
     });
   });
 
+  group('silent re-read', () {
+    test('a page turned in place is read again alone', () async {
+      seed(20, serverTotal: 100);
+      final collection = collectionOf(limit: 20);
+      await collection.load();
+      await collection.setPage(3);
+
+      await collection.refreshQuietly();
+
+      // Pages 1 to 3 at once would turn the page shown into three of them.
+      expect(requests.last.queryParameters['offset'], 40);
+      expect(requests.last.queryParameters['limit'], 20);
+      expect(collection.page, 3);
+      expect(collection.total, 100);
+      expect(collection.totalPages, 5);
+    });
+
+    test('pages loaded on are read again together', () async {
+      seed(20, serverTotal: 100);
+      final collection = collectionOf(limit: 20);
+      await collection.loadThroughPage(2);
+      await collection.loadMore();
+
+      await collection.refreshQuietly();
+
+      expect(requests.last.queryParameters['offset'], 0);
+      expect(requests.last.queryParameters['limit'], 60);
+
+      await collection.setPage(2);
+      await collection.loadMore();
+
+      await collection.refreshQuietly();
+
+      expect(requests.last.queryParameters['offset'], 20);
+      expect(requests.last.queryParameters['limit'], 40);
+      expect(collection.page, 3);
+      expect(collection.totalPages, 5);
+    });
+  });
+
   group('in flight', () {
     test('the rows and the total stay put until the response', () async {
       seed(2, serverTotal: 2);

@@ -113,6 +113,12 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
   ListQuery? _query;
   int? _limit;
   int _page = 1;
+
+  /// First page of the rows held, [page] being the last: the page a read put in
+  /// place of the rows ([setPage], [nextPage], [previousPage]), 1 when they run
+  /// from the start ([loadThroughPage], a seed). [loadMore] only moves [page].
+  /// The range a silent re-read reads again.
+  int _firstPage = 1;
   int _total = 0;
   int _totalPages = 0;
   ListSort _sort = ListSort.empty;
@@ -196,6 +202,7 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
       _page = pageSize != null && pageSize > 0 && seed.length > pageSize
           ? (seed.length / pageSize).ceil()
           : 1;
+      _firstPage = 1;
       _totalPages = pageSize != null && pageSize > 0
           ? (_total / pageSize).ceil()
           : (_total > 0 ? 1 : 0);
@@ -414,8 +421,8 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
           orderBy: orderBy,
           filter: filter,
           params: params,
-          limit: pageSize != null ? pageSize * _page : null,
-          offset: 0,
+          limit: pageSize != null ? pageSize * (_page - _firstPage + 1) : null,
+          offset: pageSize != null ? pageSize * (_firstPage - 1) : 0,
         ),
       );
       if (_disposed || generation != _generation) return;
@@ -495,6 +502,7 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
       );
       if (_disposed || generation != _generation) return false;
       _page = target;
+      if (!append) _firstPage = spansPages ? 1 : target;
       _total = result.total;
       if (spansPages) {
         _totalPages = (result.total / pageSize).ceil();
