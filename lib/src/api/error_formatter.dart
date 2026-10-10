@@ -118,7 +118,7 @@ FormattedError formatApiError(dynamic errorData, {String? defaultTitle}) {
 
     // Group errors by field if needed, or return all
     return FormattedError(
-      title: 'Erreur de validation',
+      title: t('Validation error'),
       fieldErrors: fieldErrors,
     );
   }
