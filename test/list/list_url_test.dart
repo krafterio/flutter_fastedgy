@@ -43,7 +43,10 @@ void main() {
     late ListUrl url;
     var made = false;
 
-    Future<void> mount(WidgetTester tester) async {
+    Future<void> mount(
+      WidgetTester tester, {
+      bool Function(GoRouterState state)? shows,
+    }) async {
       made = false;
       router = GoRouter(
         initialLocation: '/things?q=lamp',
@@ -53,7 +56,7 @@ void main() {
             builder: (context, state) {
               if (!made) {
                 made = true;
-                url = ListUrl.router(context);
+                url = ListUrl.router(context, shows: shows);
               }
 
               return const SizedBox();
@@ -118,5 +121,30 @@ void main() {
         expect(router.state.uri.queryParameters, {'q': 'other'});
       },
     );
+
+    testWidgets('follows the routes it is told are the list\'s', (
+      tester,
+    ) async {
+      await mount(
+        tester,
+        shows: (state) => state.fullPath?.startsWith('/things') ?? false,
+      );
+      final heard = <Map<String, String>>[];
+
+      url.addListener(() => heard.add(url.read()));
+
+      router.go('/things/3?q=lamp');
+      await tester.pumpAndSettle();
+      url.write({'q': 'desk'});
+      await tester.pumpAndSettle();
+
+      expect(router.state.uri.path, '/things/3');
+      expect(router.state.uri.queryParameters, {'q': 'desk'});
+
+      router.go('/things?q=chair');
+      await tester.pumpAndSettle();
+
+      expect(heard.last, {'q': 'chair'});
+    });
   });
 }

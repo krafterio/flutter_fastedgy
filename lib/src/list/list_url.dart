@@ -17,13 +17,19 @@ import 'package:go_router/go_router.dart';
 abstract class ListUrl implements Listenable {
   /// The query of the router shown in [context]: read there, written by
   /// replacing the location, never by pushing one, and only while the route
-  /// it was made on is the one shown.
-  factory ListUrl.router(BuildContext context, {String prefix = ''}) {
+  /// it was made on is the one shown, or one [shows] says is the list's: a
+  /// record opened over the list under a route of its own.
+  factory ListUrl.router(
+    BuildContext context, {
+    String prefix = '',
+    bool Function(GoRouterState state)? shows,
+  }) {
     final state = GoRouterState.of(context);
+    final route = state.fullPath;
 
     return _RouterUrl(
       GoRouter.of(context),
-      state.fullPath,
+      shows ?? (shown) => shown.fullPath == route,
       prefix,
       state.uri.queryParameters,
     );
@@ -172,7 +178,7 @@ abstract class _KeysUrl implements ListUrl {
 }
 
 class _RouterUrl extends _KeysUrl {
-  _RouterUrl(this._router, this._route, super.prefix, this._entry) {
+  _RouterUrl(this._router, this._shows, super.prefix, this._entry) {
     _last = _keysOf(_entry);
   }
 
@@ -182,9 +188,9 @@ class _RouterUrl extends _KeysUrl {
   /// covered by another one.
   final Map<String, String> _entry;
 
-  /// The route the list is drawn on, `/w/:workspace/tasks`: the location
-  /// another workspace shows is still the list's.
-  final String? _route;
+  /// Whether the location shown is the list's: the route it is drawn on,
+  /// `/w/:workspace/tasks`, so that another workspace's is still the list's.
+  final bool Function(GoRouterState state) _shows;
 
   @override
   Listenable get _source => _router.routerDelegate;
@@ -192,7 +198,7 @@ class _RouterUrl extends _KeysUrl {
   @override
   Object get _location => _router;
 
-  bool get _shown => _router.state.fullPath == _route;
+  bool get _shown => _shows(_router.state);
 
   @override
   Map<String, String>? get _query =>
@@ -223,7 +229,7 @@ class _RouterUrl extends _KeysUrl {
 
   @override
   ListUrl withPrefix(String prefix) =>
-      _RouterUrl(_router, _route, prefix, _query ?? _entry);
+      _RouterUrl(_router, _shows, prefix, _query ?? _entry);
 }
 
 class _MemoryQuery extends ChangeNotifier {
