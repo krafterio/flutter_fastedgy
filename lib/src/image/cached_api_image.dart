@@ -208,7 +208,7 @@ class _CachedApiImageState extends State<CachedApiImage> {
     // ratio, which is an inherited value and not one to read before this.
     if (!_probedCache && (widget.width != null || widget.height != null)) {
       _probedCache = true;
-      _imageBytes = getService<fastedgy_cache.ImageCache>().getCachedImage(
+      _imageBytes = getService<fastedgy_cache.ApiImageCache>().getCachedImage(
         _getCacheKey(),
       );
     }
@@ -302,7 +302,7 @@ class _CachedApiImageState extends State<CachedApiImage> {
     Object error,
     StackTrace? stackTrace,
   ) {
-    getService<fastedgy_cache.ImageCache>().clearCache(_getCacheKey());
+    getService<fastedgy_cache.ApiImageCache>().clearCache(_getCacheKey());
 
     if (widget.errorBuilder != null) {
       return widget.errorBuilder!(context, error, stackTrace);
@@ -315,7 +315,7 @@ class _CachedApiImageState extends State<CachedApiImage> {
     if (!mounted || _isDisposed) return;
 
     final cacheKey = _getCacheKey(constraints: constraints);
-    final imageCache = getService<fastedgy_cache.ImageCache>();
+    final imageCache = getService<fastedgy_cache.ApiImageCache>();
 
     // Check cache
     final cachedImage = imageCache.getCachedImage(cacheKey);

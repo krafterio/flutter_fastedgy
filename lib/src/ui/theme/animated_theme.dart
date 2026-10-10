@@ -8,8 +8,8 @@ import 'package:flutter/widgets.dart';
 import 'theme.dart';
 import 'theme_data.dart';
 
-class ThemeDataTween extends Tween<FastEdgyThemeData> {
-  ThemeDataTween({super.begin, super.end});
+class FastEdgyThemeDataTween extends Tween<FastEdgyThemeData> {
+  FastEdgyThemeDataTween({super.begin, super.end});
 
   @override
   FastEdgyThemeData lerp(double t) => FastEdgyThemeData.lerp(begin!, end!, t);
@@ -20,11 +20,11 @@ class ThemeDataTween extends Tween<FastEdgyThemeData> {
 ///
 /// Optional in every sense: an application that wants an instant switch mounts
 /// [FastEdgyTheme] directly and pays nothing for this.
-class AnimatedTheme extends ImplicitlyAnimatedWidget {
+class FastEdgyAnimatedTheme extends ImplicitlyAnimatedWidget {
   final FastEdgyThemeData data;
   final Widget child;
 
-  const AnimatedTheme({
+  const FastEdgyAnimatedTheme({
     required this.data,
     required this.child,
     super.key,
@@ -34,19 +34,21 @@ class AnimatedTheme extends ImplicitlyAnimatedWidget {
   });
 
   @override
-  AnimatedWidgetBaseState<AnimatedTheme> createState() => _AnimatedThemeState();
+  AnimatedWidgetBaseState<FastEdgyAnimatedTheme> createState() =>
+      _AnimatedThemeState();
 }
 
-class _AnimatedThemeState extends AnimatedWidgetBaseState<AnimatedTheme> {
-  ThemeDataTween? _data;
+class _AnimatedThemeState
+    extends AnimatedWidgetBaseState<FastEdgyAnimatedTheme> {
+  FastEdgyThemeDataTween? _data;
 
   @override
   void forEachTween(TweenVisitor<dynamic> visitor) {
     _data = visitor(
       _data,
       widget.data,
-      (value) => ThemeDataTween(begin: value as FastEdgyThemeData),
-    ) as ThemeDataTween?;
+      (value) => FastEdgyThemeDataTween(begin: value as FastEdgyThemeData),
+    ) as FastEdgyThemeDataTween?;
   }
 
   @override

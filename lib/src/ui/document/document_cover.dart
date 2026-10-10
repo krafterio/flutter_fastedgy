@@ -69,7 +69,7 @@ class _DocumentCoverState extends State<DocumentCover> {
           children: [
             // No image pipeline registered - a headless run - shows the band
             // rather than failing on a missing service.
-            if (hasService<ImageCache>())
+            if (hasService<ApiImageCache>())
               LayoutBuilder(
                 // Both dimensions, always: an image given only its height keeps
                 // its intrinsic width and sits letterboxed in the middle of the

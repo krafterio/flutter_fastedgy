@@ -87,7 +87,7 @@ class ImageCacheStats {
 /// - Pending request deduplication
 /// - Stats (hits, misses, hit rate)
 /// - Clear on logout
-class ImageCache {
+class ApiImageCache {
   final Bus _bus;
   final _logger = getLogger('ImageCache');
 
@@ -104,7 +104,7 @@ class ImageCache {
   int _cacheHits = 0;
   int _cacheMisses = 0;
 
-  ImageCache(
+  ApiImageCache(
     this._bus, {
     this.maxCacheEntries = 150,
     this.maxCacheSizeBytes = 50 * 1024 * 1024, // 50MB

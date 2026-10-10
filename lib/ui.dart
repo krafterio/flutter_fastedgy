@@ -12,7 +12,9 @@ library;
 
 // Theme — the engine only: what carries a theme and how one is found. A module
 // declares its own beside its widgets.
-export 'src/ui/theme/animated_theme.dart' show AnimatedTheme, ThemeDataTween;
+export 'src/ui/theme/animated_theme.dart'
+    show FastEdgyAnimatedTheme, FastEdgyThemeDataTween;
+export 'src/ui/theme/legacy_names.dart';
 export 'src/ui/theme/breakpoints.dart';
 export 'src/ui/theme/color_scheme.dart' show ColorRoles;
 export 'src/ui/theme/component_theme.dart'

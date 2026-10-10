@@ -125,7 +125,7 @@ class CachedApiImageProvider extends ImageProvider<CachedApiImageProvider> {
     }
 
     final cacheKey = _getCacheKey(configurationSize: configurationSize);
-    final imageCache = getService<fastedgy_cache.ImageCache>();
+    final imageCache = getService<fastedgy_cache.ApiImageCache>();
 
     // Check cache
     final cachedImage = imageCache.getCachedImage(cacheKey);

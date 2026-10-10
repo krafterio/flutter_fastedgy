@@ -125,7 +125,7 @@ Future<void> initializeFastEdgy({
   Fetcher Function()? fetcherFactory,
   AuthProvider Function()? authProviderFactory,
   MetadataProvider Function()? metadataProviderFactory,
-  ImageCache Function()? imageCacheFactory,
+  ApiImageCache Function()? imageCacheFactory,
   StorageDownloader Function()? storageDownloaderFactory,
   StorageUploader Function()? storageUploaderFactory,
 }) async {
@@ -221,11 +221,11 @@ Future<void> initializeFastEdgy({
     );
   }
 
-  // ImageCache
-  if (!hasService<ImageCache>()) {
-    container.registerSingleton<ImageCache>(
+  // ApiImageCache
+  if (!hasService<ApiImageCache>()) {
+    container.registerSingleton<ApiImageCache>(
       imageCacheFactory?.call() ??
-          ImageCache(
+          ApiImageCache(
             getService<Bus>(),
             maxCacheEntries: imageCacheMaxEntries ?? 150,
             maxCacheSizeBytes: imageCacheMaxSizeBytes ?? 50 * 1024 * 1024,

@@ -72,6 +72,7 @@ export 'src/realtime/resource_watch.dart';
 
 // Image
 export 'src/image/image.dart';
+export 'src/image/legacy_names.dart';
 
 // Storage
 export 'src/storage/storage.dart';
