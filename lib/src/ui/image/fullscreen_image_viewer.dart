@@ -3,12 +3,20 @@
  * MIT License (see LICENSE file).
  */
 
-import 'package:material_ui/material_ui.dart';
+import 'dart:math' as math;
+
 import 'package:flutter/services.dart';
-import 'package:flutter_fastedgy/flutter_fastedgy.dart';
+import 'package:flutter/widgets.dart';
+
+import '../../i18n/i18n.dart';
+import '../../image/cached_api_image.dart';
 
 import '../icons.dart';
 import '../theme/theme.dart';
+
+// The viewer always opens on black, whatever the theme: its own two inks.
+const _black = Color(0xFF000000);
+const _white = Color(0xFFFFFFFF);
 
 /// One image the viewer shows: where to read it, and what to call it when saved.
 class ViewerImage {
@@ -55,7 +63,7 @@ class FullScreenImageViewer extends StatefulWidget {
     Navigator.of(context, rootNavigator: true).push(
       PageRouteBuilder<void>(
         opaque: false,
-        barrierColor: Colors.black.withValues(alpha: 0.95),
+        barrierColor: _black.withValues(alpha: 0.95),
         barrierDismissible: true,
         pageBuilder: (context, animation, secondaryAnimation) =>
             FullScreenImageViewer(
@@ -210,9 +218,9 @@ class _FullScreenImageViewerState extends State<FullScreenImageViewer> {
     return Focus(
       autofocus: true,
       onKeyEvent: _onKey,
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        body: Stack(
+      child: DefaultTextStyle(
+        style: typography.body.copyWith(color: _white),
+        child: Stack(
           children: [
             PageView.builder(
               controller: _pageController,
@@ -237,19 +245,15 @@ class _FullScreenImageViewerState extends State<FullScreenImageViewer> {
                     // opens on black: without this it reads as an image that
                     // failed rather than one on its way.
                     loadingBuilder: (context) => Center(
-                      child: SizedBox(
-                        width: 28,
-                        height: 28,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white.withValues(alpha: 0.7),
-                        ),
+                      child: _Spinner(
+                        size: 28,
+                        color: _white.withValues(alpha: 0.7),
                       ),
                     ),
                     errorBuilder: (context, error, stackTrace) => Icon(
                       icons[FastEdgyGlyph.imageMissing],
                       size: 64,
-                      color: Colors.white.withValues(alpha: 0.5),
+                      color: _white.withValues(alpha: 0.5),
                     ),
                   ),
                 ),
@@ -331,13 +335,13 @@ class _FullScreenImageViewerState extends State<FullScreenImageViewer> {
                       vertical: 6,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.5),
+                      color: _black.withValues(alpha: 0.5),
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: Text(
                       '${_index + 1} / ${_images.length}',
                       style: typography.mono.copyWith(
-                        color: Colors.white,
+                        color: _white,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -370,9 +374,21 @@ class _ViewerButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final enabled = onTap != null && !busy;
+    final small = FastEdgyTheme.of(context).typography.small;
 
-    return Tooltip(
-      message: label,
+    return RawTooltip(
+      semanticsTooltip: label,
+      tooltipBuilder: (context, animation) => FadeTransition(
+        opacity: animation,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: _black.withValues(alpha: 0.8),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Text(label, style: small.copyWith(color: _white)),
+        ),
+      ),
       child: MouseRegion(
         cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
         child: GestureDetector(
@@ -381,25 +397,86 @@ class _ViewerButton extends StatelessWidget {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: enabled ? 0.5 : 0.25),
+              color: _black.withValues(alpha: enabled ? 0.5 : 0.25),
               shape: BoxShape.circle,
             ),
             child: busy
                 ? const Padding(
                     padding: EdgeInsets.all(10),
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
+                    child: _Spinner(size: 20, color: _white),
                   )
                 : Icon(
                     icon,
                     size: 18,
-                    color: Colors.white.withValues(alpha: enabled ? 1 : 0.4),
+                    color: _white.withValues(alpha: enabled ? 1 : 0.4),
                   ),
           ),
         ),
       ),
     );
   }
+}
+
+/// A ring turning while something loads, drawn by the viewer: the widgets
+/// layer has no progress indicator, and Material's would tie it to Material.
+class _Spinner extends StatefulWidget {
+  final double size;
+  final Color color;
+
+  const _Spinner({required this.size, required this.color});
+
+  @override
+  State<_Spinner> createState() => _SpinnerState();
+}
+
+class _SpinnerState extends State<_Spinner>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _turns = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _turns.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.square(
+      dimension: widget.size,
+      child: RotationTransition(
+        turns: _turns,
+        child: CustomPaint(painter: _ArcPainter(widget.color)),
+      ),
+    );
+  }
+}
+
+class _ArcPainter extends CustomPainter {
+  final Color color;
+
+  const _ArcPainter(this.color);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const stroke = 2.0;
+
+    canvas.drawArc(
+      const Offset(stroke / 2, stroke / 2) &
+          Size(size.width - stroke, size.height - stroke),
+      0,
+      math.pi * 1.5,
+      false,
+      Paint()
+        ..color = color
+        ..strokeWidth = stroke
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_ArcPainter oldDelegate) => oldDelegate.color != color;
 }
