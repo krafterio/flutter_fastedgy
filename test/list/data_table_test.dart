@@ -50,13 +50,14 @@ void main() {
           const DataTableColumn('status', filterable: true),
           const DataTableColumn('owner.name', sortable: false, label: 'Who'),
           const DataTableColumn('missing', type: 'date'),
+          const DataTableColumn('owner', filterable: true),
         ],
         additionalFields: ['owner.id'],
       );
 
       await settle();
 
-      final [name, initials, status, owner, missing] = table.columns;
+      final [name, initials, status, owner, missing, relation] = table.columns;
 
       expect((name.title, name.type, name.isSortable), ('name', 'char', true));
       expect((initials.title, initials.isSortable), ('Initials', false));
@@ -71,8 +72,9 @@ void main() {
       );
       expect(
         sent(server.lists.single)['fields'],
-        'id,name,initials,status,owner.name,missing,owner.id',
+        'id,name,initials,status,owner.name,missing,owner,owner.id',
       );
+      expect(relation.filter, isA<RelationColumnFilter>());
       expect(table.pageSize, 100);
       expect(table.availablePageSizes, [25, 50, 100, 150, 200]);
 

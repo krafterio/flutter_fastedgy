@@ -9,8 +9,10 @@ import '../api/base_model.dart';
 import '../container/container.dart';
 import '../metadata/metadata_provider.dart';
 import '../metadata/models.dart';
+import '../query/registry.dart';
 import 'column_filter.dart';
 import 'data_iterator.dart';
+import 'sortable.dart';
 
 /// A column of a [DataTable]: the column of vue-fastedgy and melimelo's
 /// `SimpleTableColumn` in one.
@@ -87,21 +89,27 @@ class DataTableColumn {
   /// The field a tap on its header sorts on.
   String get orderField => sortField ?? key;
 
-  /// The column with what the metadata say of [field].
-  DataTableColumn _resolve(MetadataField field) => DataTableColumn._resolved(
-    key,
-    label: label,
-    width: width,
-    flex: flex,
-    sortable: sortable,
-    sortField: sortField,
-    type: type ?? field.type,
-    align: align,
-    currency: currency,
-    filter: filter ?? (filterable ? columnFilterOf(field, label: label) : null),
-    filterable: filterable,
-    meta: field,
-  );
+  /// The column with what the metadata say of [field], its relation read in
+  /// [context].
+  DataTableColumn _resolve(MetadataField field, ValueSourceContext context) =>
+      DataTableColumn._resolved(
+        key,
+        label: label,
+        width: width,
+        flex: flex,
+        sortable: sortable,
+        sortField: sortField,
+        type: type ?? field.type,
+        align: align,
+        currency: currency,
+        filter:
+            filter ??
+            (filterable
+                ? columnFilterOf(field, label: label, context: context)
+                : null),
+        filterable: filterable,
+        meta: field,
+      );
 }
 
 /// A list read as columns, the port of `useDataTable`: a [DataIterator] that
@@ -196,7 +204,12 @@ class DataTable<T extends BaseModel<T>> extends DataIterator<T> {
       field = _metadatas[field?.target]?.fields[name];
     }
 
-    return field == null ? column : column._resolve(field);
+    return field == null
+        ? column
+        : column._resolve(
+            field,
+            ValueSourceContext(prefix: apiPrefixOf(api), metadatas: _metadatas),
+          );
   }
 }
 

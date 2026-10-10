@@ -3,11 +3,14 @@
  * MIT License (see LICENSE file).
  */
 
+import 'package:flutter_fastedgy/flutter_fastedgy.dart';
 import 'package:flutter_fastedgy/list.dart';
 import 'package:flutter_fastedgy/query.dart';
+import 'package:flutter_fastedgy/testing.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/fake_metadata.dart';
+import 'list_support.dart';
 
 void main() {
   group('the rules of a column', () {
@@ -213,6 +216,73 @@ void main() {
         ['open'],
       );
       expect(columnFilterOf(metaField('owner', type: 'many2one')), isNull);
+    });
+  });
+
+  group('the filter of a relation', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
+
+    late ThingServer server;
+
+    setUp(() async {
+      await setUpList();
+      server = ThingServer()
+        ..answer = (request) {
+          final id = int.tryParse(request.path.split('/').last);
+
+          return id == null || id > 100
+              ? null
+              : MockResponse.json({'id': id, 'name': 'Thing $id'});
+        };
+    });
+
+    test('reads the records chosen, and names them once resolved', () async {
+      final filter = RelationColumnFilter(
+        'owner',
+        'Owner',
+        source: ValueSource(
+          reader: ThingApi(server.fetcher),
+          fields: const ['name'],
+          label: (record) => '${record['name']}',
+        ),
+      );
+      final rules = filter.write({3, null});
+
+      expect(rules, [
+        [
+          '|',
+          [
+            [
+              'owner',
+              'in',
+              [3],
+            ],
+            ['owner', 'is empty'],
+          ],
+        ],
+      ]);
+      expect(filter.read(rules), {3, null});
+      expect(filter.describe({3, 4}), '#3, #4');
+
+      filter.remember(4, 'Four');
+      await filter.resolveLabels({3, 4, null});
+
+      expect(filter.describe({3, 4, null}), 'Thing 3, Four, Empty');
+      expect(server.requests.single.headers['X-Fields'], 'id,name');
+    });
+
+    test('is chosen for a relation whose model the context reads', () {
+      final filter = columnFilterOf(
+        metaField('owner', type: 'many2one', target: 'thing'),
+        context: const ValueSourceContext(prefix: '/acme'),
+      );
+
+      expect(filter, isA<RelationColumnFilter>());
+      expect(
+        ((filter! as RelationColumnFilter).source.reader! as GenericApiModel)
+            .basePath,
+        '/acme',
+      );
     });
   });
 }

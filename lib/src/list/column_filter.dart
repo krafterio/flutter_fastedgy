@@ -5,12 +5,14 @@
 
 import 'package:intl/intl.dart';
 
+import '../api/api_query.dart';
 import '../api/list_filter.dart';
 import '../i18n/i18n.dart';
 import '../metadata/models.dart';
 import '../query/catalog.dart';
 import '../query/dates.dart';
 import '../query/query_expression.dart';
+import '../query/registry.dart';
 
 /// Rules all applying, `[field, operator, value]` or a group of them.
 typedef FilterRules = List<List<Object?>>;
@@ -231,6 +233,60 @@ class DateRangeColumnFilter extends ColumnFilter<DayBounds> {
   }
 }
 
+/// The values [rules] choose: `in` them, `=` one, `is empty` for null.
+Set<Object?>? _readValues(FilterRules rules) {
+  final chosen = <Object?>{};
+
+  void take(Object? rule) {
+    switch (rule) {
+      case [_, 'is empty']:
+        chosen.add(null);
+      case [_, 'in', final List values]:
+        chosen.addAll(values);
+      case [_, '=', final Object value]:
+        chosen.add(value);
+    }
+  }
+
+  for (final rule in rules) {
+    if (rule case ['|', final List inner]) {
+      inner.forEach(take);
+    } else {
+      take(rule);
+    }
+  }
+
+  return chosen.isEmpty ? null : chosen;
+}
+
+/// The rules choosing [value] on [field], « no value » for null.
+FilterRules _writeValues(String field, Set<Object?>? value) {
+  final values = [...?value?.whereType<Object>()];
+  final empty = value?.contains(null) ?? false;
+
+  if (values.isEmpty) {
+    return [
+      if (empty) [field, 'is empty'],
+    ];
+  }
+
+  if (!empty) {
+    return [
+      [field, 'in', values],
+    ];
+  }
+
+  return [
+    [
+      '|',
+      [
+        [field, 'in', values],
+        [field, 'is empty'],
+      ],
+    ],
+  ];
+}
+
 /// A value offered by a choice filter, null standing for no value.
 class ColumnFilterOption {
   const ColumnFilterOption(this.value, this.label);
@@ -247,58 +303,10 @@ class ChoiceColumnFilter extends ColumnFilter<Set<Object?>> {
   final List<ColumnFilterOption> options;
 
   @override
-  Set<Object?>? read(FilterRules rules) {
-    final chosen = <Object?>{};
-
-    void take(Object? rule) {
-      switch (rule) {
-        case [_, 'is empty']:
-          chosen.add(null);
-        case [_, 'in', final List values]:
-          chosen.addAll(values);
-        case [_, '=', final Object value]:
-          chosen.add(value);
-      }
-    }
-
-    for (final rule in rules) {
-      if (rule case ['|', final List inner]) {
-        inner.forEach(take);
-      } else {
-        take(rule);
-      }
-    }
-
-    return chosen.isEmpty ? null : chosen;
-  }
+  Set<Object?>? read(FilterRules rules) => _readValues(rules);
 
   @override
-  FilterRules write(Set<Object?>? value) {
-    final values = [...?value?.whereType<Object>()];
-    final empty = value?.contains(null) ?? false;
-
-    if (values.isEmpty) {
-      return [
-        if (empty) [field, 'is empty'],
-      ];
-    }
-
-    if (!empty) {
-      return [
-        [field, 'in', values],
-      ];
-    }
-
-    return [
-      [
-        '|',
-        [
-          [field, 'in', values],
-          [field, 'is empty'],
-        ],
-      ],
-    ];
-  }
+  FilterRules write(Set<Object?>? value) => _writeValues(field, value);
 
   @override
   String describe(Set<Object?> value) => [
@@ -307,11 +315,70 @@ class ChoiceColumnFilter extends ColumnFilter<Set<Object?>> {
   ].join(', ');
 }
 
+/// Records of a relation, « no value » included when the set holds null:
+/// `in` their ids, with `is empty` as an alternative. The records come from
+/// [source], which an editor lists and searches; the chips name those it
+/// [remember]s or resolves, `#id` the others.
+class RelationColumnFilter extends ColumnFilter<Set<Object?>> {
+  RelationColumnFilter(super.field, super.label, {required this.source});
+
+  final ValueSource source;
+
+  final _labels = <Object?, String>{};
+
+  @override
+  Set<Object?>? read(FilterRules rules) => _readValues(rules);
+
+  @override
+  FilterRules write(Set<Object?>? value) => _writeValues(field, value);
+
+  @override
+  String describe(Set<Object?> value) =>
+      [for (final id in value) id == null ? t('Empty') : _labels[id] ?? '#$id']
+          .join(', ');
+
+  /// Names the record [id] in the chips, as the editor showing it does.
+  void remember(Object id, String label) => _labels[id] = label;
+
+  /// Reads the records of [ids] not named yet, to name them in the chips.
+  Future<void> resolveLabels(Iterable<Object?> ids) async {
+    final reader = source.reader;
+    final label = source.label;
+
+    if (reader == null || label == null) {
+      return;
+    }
+
+    for (final id in ids) {
+      if (id == null || _labels.containsKey(id)) {
+        continue;
+      }
+
+      try {
+        final record = await reader.get(
+          id,
+          options: FieldsOptions(fields: ['id', ...?source.fields]),
+        );
+
+        _labels[id] = label(record.data);
+      } catch (_) {
+        // Unread, it stays `#id`.
+      }
+    }
+  }
+}
+
 /// The filter of a column on [field], by the kind of the field: a text, the
-/// bounds of a number or of a date, values among its choices. Null for a kind
-/// no column filter reads.
-ColumnFilter<Object>? columnFilterOf(MetadataField field, {String? label}) {
+/// bounds of a number or of a date, values among its choices, records of a
+/// relation read through the value source of its model in [context]. Null
+/// for a kind no column filter reads.
+ColumnFilter<Object>? columnFilterOf(
+  MetadataField field, {
+  String? label,
+  ValueSourceContext? context,
+}) {
   final title = label ?? field.label;
+  final target = field.target;
 
   return switch (kindOf(field)) {
     FieldKind.text => TextColumnFilter(field.name, title),
@@ -332,6 +399,13 @@ ColumnFilter<Object>? columnFilterOf(MetadataField field, {String? label}) {
         if (!field.required) ColumnFilterOption(null, t('Empty')),
       ],
     ),
+    FieldKind.single || FieldKind.multiple
+        when target != null && context != null =>
+      RelationColumnFilter(
+        field.name,
+        title,
+        source: resolveValueSource(target, context),
+      ),
     _ => null,
   };
 }
