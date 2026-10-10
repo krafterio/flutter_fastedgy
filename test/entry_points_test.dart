@@ -24,6 +24,7 @@ const _free = [
   'core.dart',
   'theme.dart',
   'interaction.dart',
+  'query.dart',
   'responsive.dart',
   'testing.dart',
   'workspace.dart',
