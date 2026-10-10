@@ -18,3 +18,4 @@ export 'src/query/labels.dart';
 export 'src/query/order_by.dart';
 export 'src/query/query_expression.dart';
 export 'src/query/query_fields.dart';
+export 'src/query/registry.dart';
