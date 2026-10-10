@@ -31,6 +31,7 @@ class DataTableColumn {
     this.currency,
     this.filter,
     this.filterable = false,
+    this.editable = false,
   }) : meta = null;
 
   const DataTableColumn._resolved(
@@ -45,6 +46,7 @@ class DataTableColumn {
     required this.currency,
     required this.filter,
     required this.filterable,
+    required this.editable,
     required this.meta,
   });
 
@@ -79,6 +81,10 @@ class DataTableColumn {
   final ColumnFilter<Object>? filter;
   final bool filterable;
 
+  /// Its cells are edited in place, with the editor of the kind of their
+  /// field, unless the field is read-only or computed.
+  final bool editable;
+
   /// The field the column shows, once the metadata are read.
   final MetadataField? meta;
 
@@ -90,6 +96,15 @@ class DataTableColumn {
 
   /// The field a tap on its header sorts on.
   String get orderField => sortField ?? key;
+
+  /// Whether its cells are edited in place: asked to, on a field the metadata
+  /// let write.
+  bool get isEditable =>
+      editable &&
+      meta != null &&
+      !meta!.readonly &&
+      meta!.type != 'computed' &&
+      !key.contains('.');
 
   /// The column at [size], its own width for null.
   DataTableColumn _sized(int? size) => size == null
@@ -106,6 +121,7 @@ class DataTableColumn {
           currency: currency,
           filter: filter,
           filterable: filterable,
+          editable: editable,
           meta: meta,
         );
 
@@ -128,6 +144,7 @@ class DataTableColumn {
                 ? columnFilterOf(field, label: label, context: context)
                 : null),
         filterable: filterable,
+        editable: editable,
         meta: field,
       );
 }

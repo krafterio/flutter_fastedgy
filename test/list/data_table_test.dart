@@ -138,6 +138,39 @@ void main() {
     grid.dispose();
   });
 
+  test(
+    'edits in place a column asked to, on a field the metadata let write',
+    () async {
+      metadata.models['thing']!.fields['code'] = metaField(
+        'code',
+        type: 'char',
+        readonly: true,
+      );
+
+      final table = DataTable<Thing>(
+        api,
+        columns: const [
+          DataTableColumn('name', editable: true),
+          DataTableColumn('status'),
+          DataTableColumn('initials', editable: true),
+          DataTableColumn('code', editable: true),
+          DataTableColumn('owner.name', editable: true),
+        ],
+      );
+
+      expect(table.columns.first.isEditable, isFalse);
+
+      await settle();
+
+      expect(
+        [for (final column in table.columns) column.isEditable],
+        [true, false, false, false, false],
+      );
+
+      table.dispose();
+    },
+  );
+
   test('opens a table and a grid on their custom views', () async {
     ViewServer(server).add({
       'name': 'Everyone',
