@@ -144,9 +144,18 @@ void main() {
       expect(sort.keys.map((key) => key.field), ['name', 'id']);
     });
 
+    test('reads a bare field as ascending, as the server does', () {
+      final sort = ListSort.decode(
+        ' name , secret, name:desc, status.label ',
+        allow: (field) => field != 'secret',
+      );
+
+      expect(sort, const ListSort([SortKey('name'), SortKey('status.label')]));
+    });
+
     test('skips a level without a direction it knows', () {
       final sort = ListSort.decode(
-        ' name : DESC , , -id, id, :asc, time:up, amount:asc ',
+        ' name : DESC , , -id, :asc, time:up, amount:asc ',
       );
 
       expect(

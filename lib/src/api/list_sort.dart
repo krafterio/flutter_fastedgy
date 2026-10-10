@@ -114,7 +114,8 @@ class ListSort {
   String encode() => toOrderBy().join(',');
 
   /// Reads back what [encode] wrote. Tolerant by contract — a URL is user
-  /// input: it never throws, skips blanks and any level that is not
+  /// input: it never throws, reads a bare `field` as ascending (as the server
+  /// does), skips blanks, a former `-field` and any other level that is not
   /// `field:asc` or `field:desc`, keeps the first mention of a repeated field,
   /// and drops any field [allow] refuses (an ordering on a column this list
   /// does not have would make the server answer 400).
@@ -129,15 +130,14 @@ class ListSort {
     for (final part in raw.split(',')) {
       final token = part.trim();
       final separator = token.lastIndexOf(':');
-
-      if (separator <= 0) {
-        continue;
-      }
-
-      final field = token.substring(0, separator).trim();
-      final direction = token.substring(separator + 1).trim().toLowerCase();
+      final bare = separator < 0;
+      final field = bare ? token : token.substring(0, separator).trim();
+      final direction = bare
+          ? 'asc'
+          : token.substring(separator + 1).trim().toLowerCase();
 
       if (field.isEmpty ||
+          (bare && field.startsWith('-')) ||
           (direction != 'asc' && direction != 'desc') ||
           (allow != null && !allow(field))) {
         continue;
