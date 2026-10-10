@@ -46,6 +46,7 @@ MetadataField metaField(
   bool searchable = false,
   String? target,
   List<String>? targets,
+  String? inverse,
   Map<String, String>? choices,
   String? localPlaceholder,
   List<String> filterOperators = const [],
@@ -60,6 +61,7 @@ MetadataField metaField(
   filterOperators: filterOperators,
   target: target,
   targets: targets,
+  inverse: inverse,
   choices: choices,
   localPlaceholder: localPlaceholder,
 );

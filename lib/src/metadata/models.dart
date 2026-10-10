@@ -15,6 +15,10 @@ class MetadataField {
   final List<String> filterOperators;
   final String? target;
   final List<String>? targets;
+
+  /// The relation of [target] leading back to this field's model, when the
+  /// server knows one (`owner` for `owned_households`).
+  final String? inverse;
   final Map<String, String>? choices;
 
   /// The value a new record starts with when none is given.
@@ -38,6 +42,7 @@ class MetadataField {
     required this.filterOperators,
     this.target,
     this.targets,
+    this.inverse,
     this.choices,
     this.defaultValue,
     this.localPlaceholder,
@@ -67,6 +72,7 @@ class MetadataField {
       targets: (json['targets'] as List<dynamic>?)
           ?.map((e) => e as String)
           .toList(),
+      inverse: json['inverse'] as String?,
       choices: (json['choices'] as Map<String, dynamic>?)?.map(
         (key, value) => MapEntry(key, value as String),
       ),
@@ -88,6 +94,7 @@ class MetadataField {
       'filter_operators': filterOperators,
       'target': target,
       'targets': targets,
+      'inverse': inverse,
       'choices': choices,
       'default': defaultValue,
       'local_placeholder': localPlaceholder,

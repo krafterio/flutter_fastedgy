@@ -110,6 +110,20 @@ const _metadatasPayload = {
         'choices': null,
         'local_placeholder': 'DRAFT-{seq}',
       },
+      'workspace': {
+        'name': 'workspace',
+        'label': 'Workspace',
+        'type': 'many2one',
+        'readonly': false,
+        'required': true,
+        'searchable': true,
+        'extra': false,
+        'filter_operators': <String>['=', 'in'],
+        'target': 'workspace',
+        'targets': null,
+        'inverse': 'workspace_users',
+        'choices': null,
+      },
     },
   },
 };
@@ -198,6 +212,26 @@ void main() {
       expect(model?.placeholderFields.map((field) => field.name), [
         'reference',
       ]);
+    });
+
+    test('keeps the relation leading back, offline too', () async {
+      adapter.routes['GET /dataset/metadatas'] = (options) => _metadatasPayload;
+
+      final online = await provider.getMetadatas();
+
+      adapter.offline = true;
+      final offline = await DefaultMetadataProvider(
+        _fetcher(adapter),
+        _MockAuthProvider(),
+        getService<Bus>(),
+      ).getMetadatas();
+
+      for (final metadatas in [online, offline]) {
+        final fields = metadatas?['workspace_user']?.fields;
+
+        expect(fields?['workspace']?.inverse, 'workspace_users');
+        expect(fields?['role']?.inverse, isNull);
+      }
     });
 
     test('a model announcing no regime is not replicated', () async {
