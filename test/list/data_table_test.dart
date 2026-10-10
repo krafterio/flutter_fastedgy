@@ -75,6 +75,13 @@ void main() {
         'id,name,initials,status,owner.name,missing,owner,owner.id',
       );
       expect(relation.filter, isA<RelationColumnFilter>());
+      expect(
+        (
+          table.valueSources.prefix,
+          table.valueSources.metadatas?['user']?.fields['name']?.label,
+        ),
+        ('/acme', 'Owner name'),
+      );
       expect(table.pageSize, 100);
       expect(table.availablePageSizes, [25, 50, 100, 150, 200]);
 

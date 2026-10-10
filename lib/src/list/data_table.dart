@@ -240,6 +240,11 @@ class DataTable<T extends BaseModel<T>> extends DataIterator<T> {
   /// The columns shown, with what the metadata say once they are read.
   List<DataTableColumn> get columns => _columns;
 
+  /// Where the records of the relations of its rows are listed and read: its
+  /// prefix and the metadata it read.
+  ValueSourceContext get valueSources =>
+      ValueSourceContext(prefix: apiPrefixOf(api), metadatas: _metadatas);
+
   set columns(List<DataTableColumn> value) {
     _declared = value;
     layout?.declared = [for (final column in value) column.key];
@@ -321,12 +326,7 @@ class DataTable<T extends BaseModel<T>> extends DataIterator<T> {
       field = _metadatas[field?.target]?.fields[name];
     }
 
-    return field == null
-        ? column
-        : column._resolve(
-            field,
-            ValueSourceContext(prefix: apiPrefixOf(api), metadatas: _metadatas),
-          );
+    return field == null ? column : column._resolve(field, valueSources);
   }
 
   @override
