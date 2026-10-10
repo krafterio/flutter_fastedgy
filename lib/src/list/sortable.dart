@@ -12,7 +12,7 @@ final _log = getLogger('Sortable');
 
 /// Where an api model answers: its prefix (`/{workspace}`, `/console`), its
 /// path without the last segment when it names no model.
-String apiPrefixOf(ApiModel api) {
+String apiPrefixOf(ApiModel<dynamic> api) {
   if (api.modelName != null) {
     return api.basePath;
   }

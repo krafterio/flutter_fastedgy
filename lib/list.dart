@@ -13,6 +13,7 @@ library;
 
 export 'src/list/api_options.dart';
 export 'src/list/column_filter.dart';
+export 'src/list/column_layout.dart';
 export 'src/list/custom_views.dart';
 export 'src/list/data_groups.dart';
 export 'src/list/data_iterator.dart';

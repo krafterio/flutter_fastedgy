@@ -349,7 +349,7 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
   int _latest = 0;
 
   /// The fields the last read carried.
-  String? _readFields;
+  Set<String> _readFields = const {};
 
   int? _restoreScroll;
   Timer? _searchTimer;
@@ -622,6 +622,10 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
   /// reads the rows again.
   @protected
   void fieldsChanged() => _changed();
+
+  /// The columns the list shows, as a view keeps them in `display_fields`;
+  /// null for a list that does not choose its columns.
+  List<Object?>? get displayFields => null;
 
   // The order.
 
@@ -1096,7 +1100,7 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
         _groupBy = groupByOf(start.groupBy);
       }
 
-      _applyState(start, query);
+      applyView(start, query);
     }
 
     _opened = true;
@@ -1116,9 +1120,10 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
           );
   }
 
-  /// Holds what [view] says besides its filters and its order, unless
-  /// [query] says it.
-  void _applyState(CustomView? view, Map<String, String> query) {
+  /// Shows what [view] says besides its filters, its order and its grouping,
+  /// none for null: what it holds of the screen, unless [query] says it, and
+  /// for a table its columns.
+  void applyView(CustomView? view, Map<String, String> query) {
     for (final MapEntry(key: name, value: one) in viewState.entries) {
       final key = one.key;
 
@@ -1141,8 +1146,9 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
 
     final run = ++_latest;
     final field = _groupBy;
+    final unread = fields.any((one) => !_readFields.contains(one));
 
-    _readFields = fields.join(',');
+    _readFields = {...fields};
 
     // Another shape, flat or grouped by another field: the rows held go, and
     // the flat ones no longer follow the changes meanwhile.
@@ -1155,7 +1161,8 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
     }
 
     if (field != null) {
-      await _readGroups(run, field, mode);
+      // A field the groups have not read yet reads their first pages with it.
+      await _readGroups(run, field, unread ? _Read.page : mode);
     } else if (mode == _Read.more) {
       await _collection.loadMore();
     } else {
@@ -1393,7 +1400,7 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
 
     if (reload || (pageChanged && !append)) {
       unawaited(_read());
-    } else if (_latest > 0 && fields.join(',') != _readFields) {
+    } else if (_latest > 0 && fields.any((one) => !_readFields.contains(one))) {
       unawaited(_read(_Read.held));
     }
   }
@@ -1545,7 +1552,7 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
 
         if (linked != null && views != null) {
           named = await _openingView(id: linked);
-          _applyState(named, query);
+          applyView(named, query);
         }
 
         _view = views != null ? named?.id : linked;
@@ -1607,7 +1614,7 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
       if (views != null) {
         final start = await _openingView();
 
-        _applyState(start, const {});
+        applyView(start, const {});
 
         if (start != null) {
           _expression = start.filters;

@@ -230,7 +230,8 @@ class CustomViews extends ChangeNotifier {
       _items.where((view) => view.id == list?.view).firstOrNull;
 
   /// Whether the list moved away from its view: its filters, its order, its
-  /// grouping, or what the view holds besides.
+  /// grouping, its columns when the view has some, or what the view holds
+  /// besides.
   bool get modified {
     final view = current;
     final list = this.list;
@@ -242,6 +243,8 @@ class CustomViews extends ChangeNotifier {
     return !sameExpression(view.filters, list.expression) ||
         _json(view.orderBy ?? list.defaultOrderBy) != _json(list.orderBy) ||
         list.groupByOf(view.groupBy) != list.groupBy ||
+        (view.displayFields != null &&
+            _json(view.displayFields) != _json(list.displayFields)) ||
         list.viewState.entries.any(
           (one) => _json(view[one.key]) != _json(one.value.get()),
         );
@@ -421,8 +424,8 @@ class CustomViews extends ChangeNotifier {
   }
 
   /// Shows [view] in the list: its filters, its order and its grouping (the
-  /// list's own when it has none), what it holds besides, and itself as the
-  /// current view. The search stays.
+  /// list's own when it has none), its columns, what it holds besides, and
+  /// itself as the current view. The search stays.
   void apply(CustomView view) {
     final list = this.list;
 
@@ -434,12 +437,9 @@ class CustomViews extends ChangeNotifier {
       ..expression = view.filters
       ..orderBy = view.orderBy ?? list.defaultOrderBy
       ..groupBy = list.groupByOf(view.groupBy)
-      ..view = view.id;
+      ..view = view.id
+      ..applyView(view, const {});
     _follow(view);
-
-    for (final MapEntry(key: name, value: one) in list.viewState.entries) {
-      one.set(view[name]);
-    }
   }
 
   Map<String, Object?> _state() {
@@ -451,6 +451,7 @@ class CustomViews extends ChangeNotifier {
       // The field itself, `none` for a flat list that groups by default.
       'group_by':
           list?.groupBy ?? (list?.defaultGroupBy == null ? null : 'none'),
+      'display_fields': ?list?.displayFields,
       for (final MapEntry(key: name, value: one)
           in list?.viewState.entries ??
               const <MapEntry<String, ViewStateField>>[])

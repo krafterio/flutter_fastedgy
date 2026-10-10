@@ -512,7 +512,7 @@ void main() {
       await moving;
       await settle();
       getService<Bus>().fire(echo);
-      await settle();
+      await until(() => groups.reads('/acme/things').length >= reads + 3);
 
       expect(groups.reads('/acme/things'), hasLength(reads + 3));
 

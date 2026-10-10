@@ -141,6 +141,13 @@ Future<FakeMetadataProvider> setUpList({
   return metadata;
 }
 
+/// Waits until [done] holds, two seconds at most.
+Future<void> until(bool Function() done) async {
+  for (var turn = 0; turn < 400 && !done(); turn++) {
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+  }
+}
+
 /// Lets the reads and the turns of the list settle.
 Future<void> settle() async {
   for (var turn = 0; turn < 10; turn++) {
