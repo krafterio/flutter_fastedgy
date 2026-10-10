@@ -13,6 +13,7 @@ library;
 export 'src/list/column_filter.dart';
 export 'src/list/data_iterator.dart';
 export 'src/list/data_table.dart';
+export 'src/list/list_activity.dart';
 export 'src/list/list_url.dart';
 export 'src/list/page_size.dart';
 export 'src/list/quick_filter.dart';
