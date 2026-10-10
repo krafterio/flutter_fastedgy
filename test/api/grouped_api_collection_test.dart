@@ -149,6 +149,7 @@ void main() {
     int rowLimit = 20,
     int groupLimit = 20,
     Duration refreshDelay = const Duration(milliseconds: 10),
+    Object? Function(ListGroup group)? groupFilter,
   }) async {
     final source = await resolveGroupSource(
       api,
@@ -163,6 +164,7 @@ void main() {
       filter: filter,
       rowLimit: rowLimit,
       refreshDelay: refreshDelay,
+      groupFilter: groupFilter,
     );
     addTearDown(collection.dispose);
 
@@ -404,6 +406,36 @@ void main() {
         'None',
       ]);
     });
+
+    test(
+      'reads a kept bucket again when its rule follows its record',
+      () async {
+        final collection = await grouped(
+          'status',
+          groupFilter: (group) =>
+              group.label == 'Done' ? ['done_at', 'is not empty'] : null,
+        );
+        await collection.load();
+        final before = requests.length;
+        statuses = [
+          {'id': 3, 'name': 'To do'},
+          {'id': 7, 'name': 'Done'},
+        ];
+
+        getService<Bus>().fire(
+          const ResourceChangedEvent(
+            '/{workspace}/flow_statuses',
+            type: ResourceChangeType.updated,
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 60));
+
+        final rows = rowRequests().where(requests.sublist(before).contains);
+
+        expect(rows, hasLength(1));
+        expect(rows.single.headers['X-Filter'], contains('"done_at"'));
+      },
+    );
 
     test('re-reads its buckets on a write the server announced', () async {
       final collection = await grouped('status');

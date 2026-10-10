@@ -4,6 +4,7 @@
  */
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
@@ -17,6 +18,8 @@ import 'base_model.dart';
 import 'data_availability.dart';
 import 'group_source.dart';
 import 'list_sort.dart';
+
+String _encode(Object? filter) => jsonEncode(filter, toEncodable: (_) => null);
 
 /// One bucket of a [GroupedApiCollection]: its header, and the rows it holds.
 class GroupedEntry<T extends BaseModel<T>> {
@@ -295,19 +298,27 @@ class GroupedApiCollection<T extends BaseModel<T>> extends ChangeNotifier
 
     final previous = {for (final entry in _entries) entry.group.key: entry};
     final next = <GroupedEntry<T>>[];
-    final fresh = <GroupedEntry<T>>[];
+    final toRead = <GroupedEntry<T>>[];
 
     for (final group in source.groups) {
       final kept = previous.remove(group.key);
 
       if (kept != null) {
-        next.add(GroupedEntry(group, kept.collection));
+        final entry = GroupedEntry(group, kept.collection);
+
+        next.add(entry);
+
+        // The rule [groupFilter] adds may follow the record of the bucket.
+        if (_encode(filterFor(kept.group)) != _encode(filterFor(group))) {
+          toRead.add(entry);
+        }
+
         continue;
       }
 
       final entry = GroupedEntry(group, _newChild());
       next.add(entry);
-      fresh.add(entry);
+      toRead.add(entry);
     }
 
     // The list is swapped before the dropped buckets are disposed: a
@@ -321,7 +332,7 @@ class GroupedApiCollection<T extends BaseModel<T>> extends ChangeNotifier
     }
 
     await Future.wait([
-      for (final entry in fresh)
+      for (final entry in toRead)
         entry.collection.refine(
           filter: filterFor(entry.group),
           orderBy: _orderBy,
@@ -432,7 +443,8 @@ class GroupedApiCollection<T extends BaseModel<T>> extends ChangeNotifier
   /// Re-reads the rows every bucket holds, without a loading state.
   Future<void> refresh() => _refreshEntries();
 
-  /// Reads the axis again, and the buckets that came onto it.
+  /// Reads the axis again, the buckets that came onto it and those whose rule
+  /// changed with their record.
   Future<void> reloadAxis() => _reloadAxis();
 
   /// Puts the buckets of the page in the order of [keys], before the server
