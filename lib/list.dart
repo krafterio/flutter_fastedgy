@@ -20,5 +20,6 @@ export 'src/list/list_activity.dart';
 export 'src/list/list_url.dart';
 export 'src/list/page_size.dart';
 export 'src/list/quick_filter.dart';
+export 'src/list/record_context.dart';
 export 'src/list/selection.dart';
 export 'src/list/sortable.dart';
