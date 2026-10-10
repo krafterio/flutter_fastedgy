@@ -5,7 +5,7 @@
 
 import 'dart:typed_data';
 
-import 'package:material_ui/material_ui.dart';
+import 'package:flutter/widgets.dart';
 
 import '../container/container.dart';
 import '../storage/storage_downloader.dart';
