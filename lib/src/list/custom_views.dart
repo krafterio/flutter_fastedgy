@@ -229,8 +229,8 @@ class CustomViews extends ChangeNotifier {
   CustomView? get current =>
       _items.where((view) => view.id == list?.view).firstOrNull;
 
-  /// Whether the list moved away from its view: its filters, its order, or
-  /// what the view holds besides.
+  /// Whether the list moved away from its view: its filters, its order, its
+  /// grouping, or what the view holds besides.
   bool get modified {
     final view = current;
     final list = this.list;
@@ -241,6 +241,7 @@ class CustomViews extends ChangeNotifier {
 
     return !sameExpression(view.filters, list.expression) ||
         _json(view.orderBy ?? list.defaultOrderBy) != _json(list.orderBy) ||
+        list.groupByOf(view.groupBy) != list.groupBy ||
         list.viewState.entries.any(
           (one) => _json(view[one.key]) != _json(one.value.get()),
         );
@@ -419,9 +420,9 @@ class CustomViews extends ChangeNotifier {
     }
   }
 
-  /// Shows [view] in the list: its filters, its order (the list's own when it
-  /// has none), what it holds besides, and itself as the current view. The
-  /// search stays.
+  /// Shows [view] in the list: its filters, its order and its grouping (the
+  /// list's own when it has none), what it holds besides, and itself as the
+  /// current view. The search stays.
   void apply(CustomView view) {
     final list = this.list;
 
@@ -432,6 +433,7 @@ class CustomViews extends ChangeNotifier {
     list
       ..expression = view.filters
       ..orderBy = view.orderBy ?? list.defaultOrderBy
+      ..groupBy = list.groupByOf(view.groupBy)
       ..view = view.id;
     _follow(view);
 
@@ -446,6 +448,9 @@ class CustomViews extends ChangeNotifier {
     return {
       'filters': list?.expression,
       'order_by': list?.orderBy,
+      // The field itself, `none` for a flat list that groups by default.
+      'group_by':
+          list?.groupBy ?? (list?.defaultGroupBy == null ? null : 'none'),
       for (final MapEntry(key: name, value: one)
           in list?.viewState.entries ??
               const <MapEntry<String, ViewStateField>>[])

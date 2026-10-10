@@ -11,12 +11,17 @@ import 'package:go_router/go_router.dart';
 
 import '../api/api_model.dart';
 import '../realtime/resource_watch.dart';
+import 'data_groups.dart';
 import 'data_iterator.dart';
 
 /// The list a record is opened from, to add to the query of the route of the
-/// record so that a reload keeps it: the filter the list sends and its order.
-Map<String, String> listContext(DataIterator<dynamic> list) {
-  final filter = list.combinedFilter;
+/// record so that a reload keeps it: the filter the list sends, the one of
+/// the [group] it is opened from, and its order.
+Map<String, String> listContext(
+  DataIterator<dynamic> list, {
+  DataGroup<dynamic>? group,
+}) {
+  final filter = group != null ? group.filter : list.combinedFilter;
   final orderBy = list.orderBy;
 
   return {

@@ -18,14 +18,19 @@ import '../api/api_model.dart';
 import '../api/api_query.dart';
 import '../api/base_model.dart';
 import '../api/data_availability.dart';
+import '../api/group_source.dart';
+import '../api/grouped_api_collection.dart';
 import '../bus/bus.dart';
 import '../container/container.dart';
 import '../fetcher/http_error.dart';
+import '../i18n/i18n.dart';
 import '../logging/logger.dart';
+import '../metadata/models.dart';
 import '../query/order_by.dart';
 import '../query/query_expression.dart' show sameExpression;
 import '../workspace/workspace_provider.dart' show WorkspaceSwitchedEvent;
 import 'custom_views.dart';
+import 'data_groups.dart';
 import 'list_url.dart';
 import 'page_size.dart';
 import 'quick_filter.dart';
@@ -119,7 +124,8 @@ int? _readId(String? raw) {
 /// A list read page by page from the server, the port of vue-fastedgy's
 /// `useDataIterator`: its filter in layers, its search, the expression of a
 /// query builder, its quick filters, its page size, its state in the URL, its
-/// selection, its manual order, its export and its import.
+/// selection, its manual order, its export and its import, and its rows
+/// grouped by the values of a field ([groupBy]).
 ///
 /// It composes an [ApiCollection], which keeps reading, following the
 /// realtime socket and guarding against answers out of order. Nothing is read
@@ -152,12 +158,21 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
     this._enabled,
     this.quickFilters = const [],
     this.views,
+    String? groupBy,
+    this.rowLimit = 20,
+    this.groupFields = const [],
+    this.groupFilter,
+    this.emptyGroup = EmptyGroup.last,
+    this.relationScopes = const {},
+    this.colorOf,
     bool autoRefreshOnChange = true,
-    Duration refreshDelay = const Duration(milliseconds: 250),
-    Object? watchFields,
-    bool Function(ResourceChangedEvent event)? where,
+    this._refreshDelay = const Duration(milliseconds: 250),
+    this._watchFields,
+    this._where,
   }) : _filter = filter,
-       _isSelectionEnabled = enableSelection {
+       _isSelectionEnabled = enableSelection,
+       defaultGroupBy = groupBy,
+       _autoRefresh = autoRefreshOnChange {
     // Before the collection, whose own watch reads again on the same event:
     // the list forgets its rows first, and the collection reads nothing.
     if (hasService<Bus>()) {
@@ -169,9 +184,9 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
     _collection = ApiCollection<T>(
       api,
       autoRefreshOnChange: autoRefreshOnChange,
-      refreshDelay: refreshDelay,
-      watchFields: watchFields,
-      where: where,
+      refreshDelay: _refreshDelay,
+      watchFields: _watchFields,
+      where: _where,
     )..addListener(_relay);
 
     final entry = _entry = url?.read() ?? const <String, String>{};
@@ -190,6 +205,7 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
     _search = entry['q'] ?? '';
     _appliedSearch = _search.trim();
     _orderBy = parseOrderBy(entry['order_by']) ?? defaultOrderBy;
+    _groupBy = groupByOf(entry['g']);
     _sortable = Sortable(api, sortable: sortable, datasetPrefix: datasetPrefix);
     _selection = Selection(
       visibleIds: () => [for (final item in items) item.id],
@@ -258,6 +274,35 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
   /// The custom views the list opens on.
   final DataIteratorViews? views;
 
+  /// The field the rows are grouped by when nothing else says it, null for a
+  /// flat list.
+  final String? defaultGroupBy;
+
+  /// The rows of a page of a group.
+  final int rowLimit;
+
+  /// More fields read on the records of an axis made of a relation.
+  final List<String> groupFields;
+
+  /// A rule added to the filter of one group, null for none.
+  final Object? Function(ListGroup group)? groupFilter;
+
+  /// Where the group of the rows with no value stands.
+  final EmptyGroup emptyGroup;
+
+  /// The rule narrowing the records an axis made of a relation shows, by
+  /// field.
+  final Map<String, Object?> relationScopes;
+
+  /// The color of the group of [value] on an axis of choices of [field], null
+  /// to leave it to the palette of the screen.
+  final String? Function(String field, Object? value)? colorOf;
+
+  final bool _autoRefresh;
+  final Duration _refreshDelay;
+  final Object? _watchFields;
+  final bool Function(ResourceChangedEvent event)? _where;
+
   /// What the URL said of the list when it was made.
   late final Map<String, String> _entry;
 
@@ -277,6 +322,14 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
   late String _appliedSearch;
   List<String>? _orderBy;
   bool _isSelectionEnabled;
+  String? _groupBy;
+  MetadataModel? _meta;
+
+  /// The groups read, for the field [_groupedBy]; the flat rows otherwise.
+  GroupedApiCollection<T>? _grouped;
+  String? _groupedBy;
+  Object? _groupError;
+  int _moving = 0;
 
   bool _loaded = false;
   bool _opened = false;
@@ -305,6 +358,7 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
   String _lastOrder = '';
   int _lastSize = 0;
   int _lastPage = 1;
+  String? _lastGroupBy;
 
   /// The value each key of the URL was last written with, or read with.
   Map<String, String?> _written = {};
@@ -315,31 +369,54 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
 
   // The rows.
 
-  List<T> get items => _collection.items;
+  /// The rows held, those of every group shown once grouped.
+  List<T> get items => _groupBy == null
+      ? _collection.items
+      : [for (final entry in _entries) ...entry.collection.items];
 
-  /// How many records the filter holds, every page included.
-  int get total => _collection.total;
+  /// How many records the filter holds, every page included; once grouped,
+  /// those of the groups shown.
+  int get total => _groupBy == null
+      ? _collection.total
+      : _entries.fold(0, (sum, entry) => sum + entry.collection.total);
 
-  bool get loading =>
-      _collection.isLoading || _collection.isLoadingMore || _resequencing;
+  bool get loading => _groupBy == null
+      ? _collection.isLoading || _collection.isLoadingMore || _resequencing
+      : (_grouped?.isLoading ?? false) ||
+            _resequencing ||
+            _entries.any(
+              (entry) =>
+                  entry.collection.isLoading || entry.collection.isLoadingMore,
+            );
 
   /// Whether a first answer came back, a failure included. A skeleton
   /// listens to it rather than to [loading]: a search does not blank the
   /// rows it narrows.
   bool get loaded => _loaded;
 
-  /// What the last read failed with; the rows stay.
-  Object? get error => _collection.error;
+  /// What the last read failed with, the rows staying; once grouped, what
+  /// the axis failed with, each group saying its own.
+  Object? get error => _groupBy == null
+      ? _collection.error
+      : _groupError ?? _grouped?.source.error;
 
   /// Whether the rows come from the server, the mirror of the device, or
   /// could not be read.
-  DataAvailability get availability => _collection.availability;
+  DataAvailability get availability => _groupBy == null
+      ? _collection.availability
+      : _grouped?.availability ??
+            (_groupError == null
+                ? DataAvailability.idle
+                : DataAvailability.failed);
 
   @override
   bool get active => _collection.active;
 
   @override
-  set active(bool value) => _collection.active = value;
+  set active(bool value) {
+    _collection.active = value;
+    _grouped?.active = value;
+  }
 
   // The pages.
 
@@ -367,8 +444,10 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
 
   int get totalPages => pageSize > 0 ? (total / pageSize).ceil() : 0;
 
-  /// Whether rows remain to be read after those held.
+  /// Whether rows remain to be read after those held; once grouped, each
+  /// group says it.
   bool get hasMore =>
+      _groupBy == null &&
       (_collection.firstPage - 1) * pageSize + items.length < total;
 
   // The filter.
@@ -503,6 +582,22 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
     return [...rules, ...extra];
   }
 
+  /// The filter of every row the list shows, each page included: the one it
+  /// sends, or, grouped, the one of each group shown.
+  Object? get rowsFilter {
+    final grouped = _grouped;
+
+    if (_groupBy == null || grouped == null) {
+      return combinedFilter;
+    }
+
+    final filters = [
+      for (final entry in grouped.entries) grouped.filterFor(entry.group),
+    ];
+
+    return filters.length == 1 ? filters.single : ['|', filters];
+  }
+
   // The fields.
 
   /// The fields a read carries: the id, those the screen reads, the field of
@@ -596,14 +691,19 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
       return;
     }
 
-    _reorder(ids);
+    final rows = _groupBy == null
+        ? _collection
+        : _holding(ids.firstOrNull)?.collection ?? _collection;
+
+    _reorder(rows, ids);
     _resequencing = true;
     notifyListeners();
 
     try {
       await _sortable.resequence(
         ids,
-        sequenceOffset: (_collection.firstPage - 1) * pageSize,
+        sequenceOffset:
+            (rows.firstPage - 1) * (_groupBy == null ? pageSize : rowLimit),
         groupField: groupField,
         groupValue: groupValue,
       );
@@ -620,9 +720,10 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
     }
   }
 
-  /// Puts the rows of [ids] in their order, in the places they held.
-  void _reorder(List<int> ids) {
-    final rows = items;
+  /// Puts the rows of [ids] in their order, in the places they held among
+  /// those of [collection].
+  void _reorder(ApiCollection<T> collection, List<int> ids) {
+    final rows = collection.items;
     final moved = [
       for (final id in ids) ?rows.where((row) => row.id == id).firstOrNull,
     ];
@@ -641,7 +742,235 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
       ordered[slot] = moved[index];
     }
 
-    _collection.reorder(ordered);
+    collection.reorder(ordered);
+  }
+
+  // The groups.
+
+  /// The field the rows are grouped by, null for a flat list; kept in the URL
+  /// as `g` when it is not [defaultGroupBy], `none` for a flat list then.
+  String? get groupBy => _groupBy;
+
+  set groupBy(String? value) {
+    _groupBy = value;
+    _changed();
+  }
+
+  /// The grouping a URL or a view says: [defaultGroupBy] when it says
+  /// nothing, none for `none`.
+  String? groupByOf(String? said) => said == null
+      ? defaultGroupBy
+      : said == 'none'
+      ? null
+      : said;
+
+  List<GroupedEntry<T>> get _entries =>
+      _groupBy == null ? const [] : _grouped?.entries ?? const [];
+
+  /// The groups, in the order of their axis.
+  List<DataGroup<T>> get groups => [
+    for (final entry in _entries)
+      DataGroup(
+        entry.group,
+        entry.collection,
+        _grouped!.filterFor(entry.group),
+      ),
+  ];
+
+  /// The page of the axis, when it is made of records.
+  int get groupPage => _grouped?.groupPage ?? 1;
+
+  int get groupTotalPages => _grouped?.groupTotalPages ?? 0;
+
+  Future<void> setGroupPage(int page) async {
+    await _grouped?.setGroupPage(page);
+  }
+
+  /// The fields the rows can be grouped by, once the metadata are read.
+  List<MetadataField> get groupableFields => [
+    for (final field in _meta?.fields.values ?? const <MetadataField>[])
+      if (isGroupable(field)) field,
+  ];
+
+  /// Whether a row can go to another group: the field of the groups is
+  /// written, neither read-only nor computed.
+  bool get canMoveToGroup {
+    final field = _meta?.fields[_groupBy];
+
+    return field != null && !field.readonly && field.type != 'computed';
+  }
+
+  /// Whether the groups can be put in another order: the axis is made of
+  /// records ordered by hand.
+  bool get canMoveGroups {
+    final source = _grouped?.source;
+
+    return source is RelationGroupSource && source.sequenceField != null;
+  }
+
+  GroupedEntry<T>? _holding(Object? id) =>
+      _entries.where((entry) => entry.collection.byId(id) != null).firstOrNull;
+
+  /// The group [item] belongs to by its value, null when it does not carry
+  /// the field of the groups.
+  GroupedEntry<T>? _groupOf(T item) {
+    final field = _groupBy;
+
+    if (field == null || !item.data.containsKey(field)) {
+      return null;
+    }
+
+    final raw = item.data[field];
+    final value = raw is Map ? raw['id'] : raw;
+
+    return _entries
+        .where(
+          (entry) => entry.group.isEmptyBucket
+              ? value == null
+              : entry.group.value == value,
+        )
+        .firstOrNull;
+  }
+
+  /// Moves [item] to [group], at [index] among its rows, at their end without
+  /// one: at once on the screen, its value and the totals of both groups
+  /// included, then the order of the group with its value in one request. A
+  /// field of the workspace, which that request does not write, is written on
+  /// the row first; without a manual order to keep, the value alone is
+  /// written. A refusal reads the groups again and is thrown.
+  Future<void> moveTo(T item, DataGroup<T> group, [int? index]) async {
+    final grouped = _grouped;
+    final field = _groupBy;
+    final target = _entries
+        .where((entry) => entry.group.key == group.key)
+        .firstOrNull;
+
+    if (grouped == null || field == null || target == null) {
+      throw StateError('The list shows no group ${group.key}');
+    }
+
+    final from = _holding(item.id);
+    final inPlace = from?.collection == target.collection;
+    final ordered = isSortable;
+    final extra = _meta?.fields[field]?.extra ?? false;
+
+    if (!inPlace && !canMoveToGroup) {
+      throw StateError('The field $field is not written');
+    }
+
+    if (inPlace && !ordered) {
+      return;
+    }
+
+    final value = target.group.isEmptyBucket ? null : target.group.value;
+    final moved = inPlace
+        ? item
+        : api.fromJson({...item.data, field: target.group.record ?? value});
+    final rows = [
+      for (final row in target.collection.items)
+        if (row.id != item.id) row,
+    ];
+
+    rows.insert(
+      index == null || index < 0 || index > rows.length ? rows.length : index,
+      moved,
+    );
+
+    if (!inPlace) {
+      from?.collection.removeLocal(item.id);
+      target.collection.upsertLocal(moved);
+    }
+
+    target.collection.reorder(rows);
+    _moving += 1;
+
+    try {
+      if (!inPlace && (extra || !ordered)) {
+        await api.update(item.id!, api.fromJson({field: value}));
+      }
+
+      if (ordered) {
+        final grouping = !inPlace && !extra;
+
+        await _sortable.resequence(
+          [...rows.map((row) => row.id).whereType<int>()],
+          sequenceOffset: (target.collection.firstPage - 1) * rowLimit,
+          groupField: grouping ? field : null,
+          groupValue: grouping ? value : null,
+        );
+      }
+    } catch (_) {
+      await grouped.refresh();
+      rethrow;
+    } finally {
+      _moving -= 1;
+    }
+  }
+
+  /// Moves [group] to [index] on the axis, the group with no value keeping
+  /// its place: at once on the screen, then the order of the axis is sent to
+  /// the model of its records. A refusal reads the axis again and is thrown.
+  Future<void> moveGroup(DataGroup<T> group, int index) async {
+    final grouped = _grouped;
+    final source = grouped?.source;
+
+    if (grouped == null ||
+        source is! RelationGroupSource ||
+        source.sequenceField == null) {
+      throw StateError('The groups of the list are not ordered by hand');
+    }
+
+    if (group.isEmptyBucket) {
+      return;
+    }
+
+    final entries = grouped.entries;
+    final emptyFirst = entries.firstOrNull?.group.isEmptyBucket ?? false;
+    final keys = [
+      for (final entry in entries)
+        if (!entry.group.isEmptyBucket && entry.group.key != group.key)
+          entry.group.key,
+    ];
+    final at = (emptyFirst ? index - 1 : index).clamp(0, keys.length);
+
+    keys.insert(at, group.key);
+
+    final values = {for (final entry in entries) entry.group.key: entry.group};
+    final ids = [for (final key in keys) values[key]!.value];
+
+    source.reorder(ids);
+    grouped.reorderGroups([
+      if (emptyFirst) 'empty',
+      ...keys,
+      if (!emptyFirst && entries.any((entry) => entry.group.isEmptyBucket))
+        'empty',
+    ]);
+
+    try {
+      await _sortable.resequenceOf(
+        source.target,
+        [...ids.whereType<int>()],
+        field: source.sequenceField!,
+        sequenceOffset: (source.page - 1) * source.limit,
+      );
+    } catch (_) {
+      await grouped.reloadAxis();
+      rethrow;
+    }
+  }
+
+  /// Whether a change is read again by the groups: not while a row of theirs
+  /// moves, the echo of the move.
+  bool _readsChange(ResourceChangedEvent event) =>
+      _autoRefresh && _moving == 0 && (_where?.call(event) ?? true);
+
+  void _dropGroups() {
+    _grouped
+      ?..removeListener(_relay)
+      ..dispose();
+    _grouped = null;
+    _groupedBy = null;
+    _groupError = null;
   }
 
   // The selection.
@@ -661,10 +990,21 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
 
   bool get _canRead => _ready && _isEnabled && !_disposed;
 
-  /// Reads the metadata the list depends on: the manual order, and for a
-  /// table its columns. Read on opening and again in another workspace.
+  /// Reads the metadata the list depends on: the manual order, the fields
+  /// that group, and for a table its columns. Read on opening and again in
+  /// another workspace.
   @protected
-  Future<void> readMetadata() => _sortable.readMetadata();
+  Future<void> readMetadata() async {
+    await Future.wait([_sortable.readMetadata(), _readModel()]);
+  }
+
+  Future<void> _readModel() async {
+    try {
+      _meta = await api.metadata();
+    } catch (_) {
+      _meta = null;
+    }
+  }
 
   Future<void> _start() async {
     if (_disposed) {
@@ -703,6 +1043,7 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
       'f',
       'cv',
       'qf',
+      'g',
       for (final one in views.state.values) ?one.key,
     ];
     final linked = _entry.containsKey('f') ? null : _view;
@@ -734,6 +1075,10 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
 
       if (!query.containsKey('order_by')) {
         _orderBy = start.orderBy ?? defaultOrderBy;
+      }
+
+      if (!query.containsKey('g')) {
+        _groupBy = groupByOf(start.groupBy);
       }
 
       _applyState(start, query);
@@ -780,10 +1125,23 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
     }
 
     final run = ++_latest;
+    final field = _groupBy;
 
     _readFields = fields.join(',');
 
-    if (mode == _Read.more) {
+    // Another shape, flat or grouped by another field: the rows held go, and
+    // the flat ones no longer follow the changes meanwhile.
+    if (field != _groupedBy) {
+      _dropGroups();
+      _collection.reset();
+      _groupedBy = field;
+      _loaded = false;
+      notifyListeners();
+    }
+
+    if (field != null) {
+      await _readGroups(run, field, mode);
+    } else if (mode == _Read.more) {
       await _collection.loadMore();
     } else {
       await _collection.readPages(
@@ -810,6 +1168,69 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
     _loaded = true;
     _restore();
     notifyListeners();
+  }
+
+  /// Reads the groups by [field]: their axis and their rows the first time,
+  /// their rows again after.
+  Future<void> _readGroups(int run, String field, _Read mode) async {
+    final current = _grouped;
+
+    if (current != null) {
+      await (mode == _Read.held
+          ? current.refresh()
+          : current.refine(
+              filter: combinedFilter,
+              orderBy: _orderBy,
+              fields: fields,
+            ));
+
+      return;
+    }
+
+    final colorOf = this.colorOf;
+    final source = await resolveGroupSource(
+      api,
+      field,
+      limit: 50,
+      emptyLabel: t('No value'),
+      yesLabel: t('Yes'),
+      noLabel: t('No'),
+      includeEmpty: emptyGroup == EmptyGroup.none ? false : null,
+      emptyFirst: emptyGroup == EmptyGroup.first,
+      fields: groupFields,
+      filter: relationScopes[field],
+      colorOf: colorOf == null ? null : (value) => colorOf(field, value),
+    );
+
+    if (run != _latest || _disposed) {
+      source?.dispose();
+
+      return;
+    }
+
+    if (source == null) {
+      _groupError = t("This field can't be grouped.");
+
+      return;
+    }
+
+    final grouped = _grouped = GroupedApiCollection<T>(
+      api,
+      source,
+      fields: fields,
+      orderBy: _orderBy,
+      filter: combinedFilter,
+      rowLimit: rowLimit,
+      refreshDelay: _refreshDelay,
+      watchFields: _watchFields,
+      groupFilter: groupFilter,
+      where: _readsChange,
+    );
+
+    grouped
+      ..active = active
+      ..addListener(_relay);
+    await grouped.load();
   }
 
   /// Reads the next page and adds it to the rows, whether the list appends
@@ -849,16 +1270,46 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
     return byId(id);
   }
 
-  T? byId(Object? id) => _collection.byId(id);
+  T? byId(Object? id) => _groupBy == null
+      ? _collection.byId(id)
+      : _holding(id)?.collection.byId(id);
 
-  bool upsertLocal(T item, {bool prepend = false}) =>
-      _collection.upsertLocal(item, prepend: prepend);
+  /// Puts [item] in place of the row holding its id, or adds it; once
+  /// grouped, in the group of its value, which it leaves another for.
+  bool upsertLocal(T item, {bool prepend = false}) {
+    if (_groupBy == null) {
+      return _collection.upsertLocal(item, prepend: prepend);
+    }
 
-  bool removeLocal(Object? id) => _collection.removeLocal(id);
+    final from = _holding(item.id);
+    final into = _groupOf(item) ?? from;
 
-  void reorder(List<T> ordered) => _collection.reorder(ordered);
+    if (into == null) {
+      return false;
+    }
 
-  Future<T> readItem(Object id) => _collection.readItem(id);
+    if (from != null && from.collection != into.collection) {
+      from.collection.removeLocal(item.id);
+    }
+
+    return into.collection.upsertLocal(item, prepend: prepend);
+  }
+
+  bool removeLocal(Object? id) => _groupBy == null
+      ? _collection.removeLocal(id)
+      : _holding(id)?.collection.removeLocal(id) ?? false;
+
+  /// Puts the rows in the order of [ordered]; once grouped, those of the group
+  /// holding the first of them.
+  void reorder(List<T> ordered) =>
+      (_groupBy == null
+              ? _collection
+              : _holding(ordered.firstOrNull?.id)?.collection)
+          ?.reorder(ordered);
+
+  Future<T> readItem(Object id) => _groupBy == null
+      ? _collection.readItem(id)
+      : api.get(id, options: FieldsOptions(fields: fields));
 
   // What changed.
 
@@ -896,7 +1347,10 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
     final filterChanged = filter != _lastFilter;
     final order = _json(_orderBy);
     final reload =
-        filterChanged || order != _lastOrder || pageSize != _lastSize;
+        filterChanged ||
+        order != _lastOrder ||
+        pageSize != _lastSize ||
+        _groupBy != _lastGroupBy;
     final pageChanged = _currentPage != _lastPage;
 
     // A selection made under other rules is not this list's.
@@ -907,6 +1361,7 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
     _lastFilter = filter;
     _lastOrder = order;
     _lastSize = pageSize;
+    _lastGroupBy = _groupBy;
 
     if (_settling) {
       _lastPage = _currentPage;
@@ -940,6 +1395,7 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
     _lastOrder = _json(_orderBy);
     _lastSize = pageSize;
     _lastPage = _currentPage;
+    _lastGroupBy = _groupBy;
     _written = {for (final key in _shownAs.keys) key: _shownAs[key]!()};
   }
 
@@ -974,6 +1430,7 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
     'f': _writtenExpression,
     'cv': () => _view == null ? null : '$_view',
     'qf': () => writeQuickFilters(_quick, quickFilters),
+    'g': () => _groupBy == defaultGroupBy ? null : _groupBy ?? 'none',
   };
 
   /// The raw expression of a URL: `f`, or the `filter` older links carry
@@ -1088,6 +1545,7 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
           ? viewExpression
           : null;
       _orderBy = parseOrderBy(query['order_by']) ?? defaultOrderBy;
+      _groupBy = groupByOf(query['g']);
     } finally {
       _settling = false;
     }
@@ -1110,6 +1568,7 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
     _settling = true;
     ++_latest;
     _collection.reset();
+    _dropGroups();
 
     try {
       _selection.clear();
@@ -1124,6 +1583,7 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
       _viewExpression = _unread;
       _expression = null;
       _orderBy = defaultOrderBy;
+      _groupBy = defaultGroupBy;
       _restoreScroll = null;
       notifyListeners();
 
@@ -1139,6 +1599,7 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
           _viewExpression = start.filters;
           _view = start.id;
           _orderBy = start.orderBy ?? defaultOrderBy;
+          _groupBy = groupByOf(start.groupBy);
         }
       }
     } finally {
@@ -1158,6 +1619,7 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
       'f': _written['f'],
       'cv': _written['cv'],
       'order_by': _written['order_by'],
+      'g': _written['g'],
     });
     _scrollTo(0);
     notifyListeners();
@@ -1277,6 +1739,7 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
 
     _enabled?.removeListener(_onEnabled);
     scrollController?.removeListener(_onScroll);
+    _dropGroups();
     _collection
       ..removeListener(_relay)
       ..dispose();
@@ -1289,8 +1752,8 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
 }
 
 /// The filter of an action on the selection of [list]: the ids chosen, or,
-/// every record of the filter being chosen, the filter sent with the rows
-/// unchecked left out.
+/// every record shown being chosen, their filter with the rows unchecked
+/// left out.
 Object? selectionFilter(DataIterator<dynamic> list) {
   final selection = list.selection;
 
@@ -1302,7 +1765,7 @@ Object? selectionFilter(DataIterator<dynamic> list) {
     ];
   }
 
-  final filter = list.combinedFilter;
+  final filter = list.rowsFilter;
   final excluded = selection.excluded;
 
   if (excluded.isEmpty) {

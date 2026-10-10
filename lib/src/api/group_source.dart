@@ -6,6 +6,7 @@
 import '../container/container.dart';
 import '../metadata/display_fields.dart';
 import '../metadata/metadata_provider.dart';
+import '../metadata/models.dart';
 import 'api_collection.dart';
 import 'api_model.dart';
 import 'api_query.dart';
@@ -306,6 +307,7 @@ class RelationGroupSource extends GroupSource {
     this.colorField,
     this.fields = const [],
     this.filter,
+    this.sequenceField,
     dynamic orderBy,
   }) : _target = target,
        _collection = ApiCollection<GenericBaseModel>(
@@ -336,7 +338,14 @@ class RelationGroupSource extends GroupSource {
 
   /// The rule narrowing the records of the target, the scope of the relation.
   final Object? filter;
+
+  /// The field of the target keeping its manual order, null when it is not
+  /// ordered by hand.
+  final String? sequenceField;
   final ApiModel<GenericBaseModel> _target;
+
+  /// The model of the records of the axis.
+  ApiModel<GenericBaseModel> get target => _target;
   final ApiCollection<GenericBaseModel> _collection;
 
   @override
@@ -491,15 +500,9 @@ Future<GroupSource?> resolveGroupSource<T extends BaseModel<T>>(
     );
   }
 
-  if (info.type != 'many2one' &&
-      info.type != 'many2one_ref' &&
-      info.type != 'one2one') {
-    return null;
-  }
-
   final target = info.target;
 
-  if (target == null) {
+  if (!isGroupable(info) || target == null) {
     return null;
   }
 
@@ -523,6 +526,19 @@ Future<GroupSource?> resolveGroupSource<T extends BaseModel<T>>(
     colorField: meta?.fields.containsKey('color') ?? false ? 'color' : null,
     fields: fields,
     filter: filter,
+    sequenceField: meta != null && meta.sortable
+        ? (meta.sortableField?.isNotEmpty ?? false
+              ? meta.sortableField
+              : 'sequence')
+        : null,
     orderBy: orderBy,
   );
 }
+
+/// Whether a list groups by [field]: a field with choices, a boolean or a
+/// single relation, the axes [resolveGroupSource] knows.
+bool isGroupable(MetadataField field) =>
+    (field.choices?.isNotEmpty ?? false) ||
+    field.type == 'boolean' ||
+    (const {'many2one', 'many2one_ref', 'one2one'}.contains(field.type) &&
+        field.target != null);

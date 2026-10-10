@@ -142,6 +142,7 @@ void main() {
         'user': null,
         'filters': ['name', '=', 'a'],
         'order_by': null,
+        'group_by': null,
       });
       expect(list.view, shared.id);
       expect(custom.current?.name, 'Everyone');

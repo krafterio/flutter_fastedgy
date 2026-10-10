@@ -84,14 +84,34 @@ class Sortable {
       return;
     }
 
-    final model = await api.resolveModelName();
+    await resequenceOf(
+      api,
+      ids,
+      field: field,
+      sequenceOffset: sequenceOffset,
+      groupField: groupField,
+      groupValue: groupValue,
+    );
+  }
+
+  /// Saves the order of [ids] of the model of [of], kept in its [field], where
+  /// the `/dataset` routes of this list answer: the records of an axis.
+  Future<void> resequenceOf(
+    ApiModel of,
+    List<int> ids, {
+    required String field,
+    int sequenceOffset = 0,
+    String? groupField,
+    Object? groupValue,
+  }) async {
+    final model = await of.resolveModelName();
 
     if (model == null) {
-      throw StateError('The model of ${api.basePath} is unknown');
+      throw StateError('The model of ${of.basePath} is unknown');
     }
 
     await DatasetApi<GenericBaseModel>(
-      api.fetcher,
+      of.fetcher,
       basePath: _prefix,
     ).resequence(
       ResequenceRequest(
