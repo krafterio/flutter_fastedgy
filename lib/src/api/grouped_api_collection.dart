@@ -10,6 +10,7 @@ import 'package:flutter/scheduler.dart';
 
 import '../realtime/resource_watch.dart';
 import 'api_collection.dart';
+import 'api_holders.dart';
 import 'api_helpers.dart';
 import 'api_model.dart';
 import 'base_model.dart';
@@ -42,7 +43,8 @@ class GroupedEntry<T extends BaseModel<T>> {
 /// bus subscription, a delete costs nothing, and a burst of writes collapses
 /// into a single refresh.
 class GroupedApiCollection<T extends BaseModel<T>> extends ChangeNotifier
-    with DataAvailabilityState<T> {
+    with DataAvailabilityState<T>
+    implements ActiveHolder {
   GroupedApiCollection(
     this.api,
     this.source, {
@@ -122,8 +124,10 @@ class GroupedApiCollection<T extends BaseModel<T>> extends ChangeNotifier
 
   /// Whether its screen can be seen: off screen, what changes is owed as one
   /// read when it is shown again.
+  @override
   bool get active => _rows.active;
 
+  @override
   set active(bool value) {
     _rows.active = value;
     _axis?.active = value;

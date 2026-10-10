@@ -14,7 +14,7 @@ import 'list_sort.dart';
 
 class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
     with DataAvailabilityState<T>
-    implements ApiHolder {
+    implements ApiHolder, ActiveHolder {
   ApiCollection(
     this.api, {
     dynamic fields,
@@ -87,8 +87,10 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
 
   /// Whether its screen can be seen: off screen, what changes is owed as one
   /// read when it is shown again.
+  @override
   bool get active => _watch?.active ?? true;
 
+  @override
   set active(bool value) => _watch?.active = value;
 
   List<T> _items = [];

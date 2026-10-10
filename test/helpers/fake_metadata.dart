@@ -74,6 +74,8 @@ MetadataModel metaModel(
   String mode = 'none',
   bool searchable = true,
   String? searchField = 'search_value',
+  bool sortable = false,
+  String? sortableField,
 }) => MetadataModel(
   name: name,
   apiName: apiName ?? '${name}s',
@@ -82,7 +84,8 @@ MetadataModel metaModel(
   searchable: searchable,
   searchableFields: searchable ? const ['name'] : const [],
   searchField: searchable ? searchField : null,
-  sortable: false,
+  sortable: sortable,
+  sortableField: sortableField,
   synchronizable: mode != 'none',
   synchronizableMode: mode,
   fields: fields,

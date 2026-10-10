@@ -17,6 +17,14 @@ abstract interface class ApiHolder implements Listenable {
   Future<bool> reload();
 }
 
+/// A holder that can be told its screen is hidden: what changes meanwhile is
+/// read once it is shown again (see `ListActivity`).
+abstract interface class ActiveHolder {
+  bool get active;
+
+  set active(bool value);
+}
+
 /// Several holders read by one screen, seen as one: loading while any of them
 /// is, loaded once all of them are, failed on the first error.
 ///

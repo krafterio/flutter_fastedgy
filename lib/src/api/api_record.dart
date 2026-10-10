@@ -24,7 +24,7 @@ import 'data_availability.dart';
 /// [dispose]s it. Same wiring as [ApiCollection], minus the pagination.
 class ApiRecord<T extends BaseModel<T>> extends ChangeNotifier
     with DataAvailabilityState<T>
-    implements ApiHolder {
+    implements ApiHolder, ActiveHolder {
   ApiRecord(this.api, {dynamic fields}) : _configFields = fields {
     listenAvailability();
   }
@@ -38,8 +38,10 @@ class ApiRecord<T extends BaseModel<T>> extends ChangeNotifier
 
   /// Whether its screen can be seen: off screen, what changes is owed as one
   /// read when it is shown again.
+  @override
   bool get active => _active;
 
+  @override
   set active(bool value) {
     _active = value;
     _watch?.active = value;
