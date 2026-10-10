@@ -123,6 +123,7 @@ Map<String, MetadataModel> groupedListMetadata() => {
         },
       ),
       'due_date': metaField('due_date', type: 'date'),
+      'urgent': metaField('urgent', type: 'boolean'),
       'project': metaField('project', type: 'many2one', target: 'project'),
       'assignees': metaField('assignees', type: 'many2many', target: 'user'),
       'attachments': metaField(

@@ -55,11 +55,18 @@ class GroupedApiCollection<T extends BaseModel<T>> extends ChangeNotifier
     this.rowLimit = 20,
     this.refreshDelay = const Duration(milliseconds: 250),
     this._watchFields,
+    this.groupFilter,
+    bool Function(ResourceChangedEvent event)? where,
   }) : // An ordering known up front — restored from a URL — is what the buckets
        // are built with, rather than re-read right after their first page.
        _orderBy = sort.isEmpty ? orderBy : sort.toOrderBy(),
        _sort = sort {
-    _rows = watchResource(api, _onRowsChanged, refreshDelay: Duration.zero);
+    _rows = watchResource(
+      api,
+      _onRowsChanged,
+      refreshDelay: Duration.zero,
+      where: where,
+    );
 
     final axis = source.watchApi;
 
@@ -102,6 +109,9 @@ class GroupedApiCollection<T extends BaseModel<T>> extends ChangeNotifier
 
   /// How long a burst of mutations is collapsed before the buckets re-read.
   final Duration refreshDelay;
+
+  /// A rule added to the filter of one bucket only, null for none.
+  final Object? Function(ListGroup group)? groupFilter;
 
   dynamic _fields;
   dynamic _orderBy;
@@ -267,7 +277,7 @@ class GroupedApiCollection<T extends BaseModel<T>> extends ChangeNotifier
     await Future.wait([
       for (final entry in _entries)
         entry.collection.refine(
-          filter: _filterFor(entry.group),
+          filter: filterFor(entry.group),
           orderBy: _orderBy,
           fields: _fields,
         ),
@@ -313,7 +323,7 @@ class GroupedApiCollection<T extends BaseModel<T>> extends ChangeNotifier
     await Future.wait([
       for (final entry in fresh)
         entry.collection.refine(
-          filter: _filterFor(entry.group),
+          filter: filterFor(entry.group),
           orderBy: _orderBy,
           fields: _fields,
         ),
@@ -335,12 +345,18 @@ class GroupedApiCollection<T extends BaseModel<T>> extends ChangeNotifier
     return child;
   }
 
-  Object? _filterFor(ListGroup group) => _filter == null
-      ? group.predicate
-      : [
-          '&',
-          [_filter, group.predicate],
-        ];
+  /// The filter one bucket reads: the list's, the predicate of the bucket and
+  /// what [groupFilter] adds for it.
+  Object? filterFor(ListGroup group) {
+    final rules = [?_filter, group.predicate, ?groupFilter?.call(group)];
+
+    return rules.length == 1
+        ? rules.single
+        : [
+            '&',
+            [...rules],
+          ];
+  }
 
   /// Aggregates the verdicts of the axis and the buckets into the one a screen
   /// renders on.
@@ -411,6 +427,22 @@ class GroupedApiCollection<T extends BaseModel<T>> extends ChangeNotifier
 
     _axisRefresh?.cancel();
     _axisRefresh = Timer(refreshDelay, _reloadAxis);
+  }
+
+  /// Re-reads the rows every bucket holds, without a loading state.
+  Future<void> refresh() => _refreshEntries();
+
+  /// Reads the axis again, and the buckets that came onto it.
+  Future<void> reloadAxis() => _reloadAxis();
+
+  /// Puts the buckets of the page in the order of [keys], before the server
+  /// says it: a column moved on the screen. The buckets [keys] leave out keep
+  /// their place after the others.
+  void reorderGroups(List<String> keys) {
+    final byKey = {for (final entry in _entries) entry.group.key: entry};
+
+    _entries = [for (final key in keys) ?byKey.remove(key), ...byKey.values];
+    _scheduleNotify();
   }
 
   /// Re-reads every visible bucket, once, after a burst of writes settled.

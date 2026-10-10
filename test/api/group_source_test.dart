@@ -168,7 +168,7 @@ void main() {
       expect(requests.length, 1);
       expect(requests.single.path, '/{workspace}/flow_statuses');
       expect(requests.single.queryParameters['limit'], 10);
-      expect(requests.single.headers['X-Fields'], 'id,name');
+      expect(requests.single.headers['X-Fields'], 'id,name,color');
     });
 
     test('names each bucket after the target label field', () async {
