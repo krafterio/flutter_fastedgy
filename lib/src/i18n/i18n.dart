@@ -6,8 +6,6 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:cupertino_ui/cupertino_ui.dart'
-    show GlobalCupertinoLocalizations;
 import 'package:easy_localization/easy_localization.dart';
 import 'package:easy_logger/easy_logger.dart';
 import 'package:flutter/foundation.dart'
@@ -15,7 +13,6 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter/services.dart' show AssetManifest, rootBundle;
 import 'package:flutter/widgets.dart';
 import 'package:logging/logging.dart';
-import 'package:material_ui/material_ui.dart' show GlobalMaterialLocalizations;
 
 /// Loads the application's translations, and the packages' apart.
 ///
@@ -83,24 +80,25 @@ class FastEdgyAssetLoader extends AssetLoader {
   }
 }
 
-extension FastEdgyLocalizations on BuildContext {
-  /// The delegates an application's App widget must be given.
-  ///
-  /// `context.localizationDelegates` alone is not enough: it carries the
-  /// globals of `flutter_localizations`, which localize the Material and
-  /// Cupertino still shipped inside `package:flutter`. Since Flutter 3.47 the
-  /// widgets actually rendered come from `material_ui` and `cupertino_ui`,
-  /// whose localizations are distinct types, and a locale other than English
-  /// finds none of them.
+/// The delegates an application drawn on the widgets layer alone gives its App
+/// widget, as `package:flutter_fastedgy/core.dart` exports them: neither the
+/// Material nor the Cupertino localizations, which `material.dart` and
+/// `cupertino.dart` add for an application that draws them
+/// (`[...context.fastEdgyLocalizationDelegates, ...materialLocalizationDelegates]`).
+/// `package:flutter_fastedgy/flutter_fastedgy.dart` gives both, as it always has.
+extension FastEdgyWidgetsLocalizations on BuildContext {
   List<LocalizationsDelegate> get fastEdgyLocalizationDelegates => [
     ...localizationDelegates,
-    GlobalMaterialLocalizations.delegate,
-    GlobalCupertinoLocalizations.delegate,
-    const _ActiveLocaleDelegate(),
+    activeLocaleDelegate,
   ];
 }
 
 ValueListenable<Locale?> get activeLocale => _ActiveLocaleDelegate.locale;
+
+/// Keeps [activeLocale] and `Intl.defaultLocale` on the locale the app shows:
+/// the last of the delegates an App widget is given.
+const LocalizationsDelegate<Object> activeLocaleDelegate =
+    _ActiveLocaleDelegate();
 
 class _ActiveLocale {
   const _ActiveLocale();

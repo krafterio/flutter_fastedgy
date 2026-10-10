@@ -36,7 +36,8 @@ export 'src/logging/logging.dart';
 export 'package:logging/logging.dart' show Level, Logger, LogRecord;
 
 // I18n
-export 'src/i18n/i18n.dart';
+export 'src/i18n/i18n.dart' hide FastEdgyWidgetsLocalizations;
+export 'src/i18n/platform_localizations.dart';
 
 export 'package:flutter/widgets.dart' show Locale;
 export 'package:easy_localization/easy_localization.dart'
