@@ -9,7 +9,7 @@ import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart' show KeyEventResult;
-import 'package:flutter_fastedgy/flutter_fastedgy.dart' show t;
+import 'package:flutter_fastedgy/core.dart' show t;
 
 import 'rich_text_codec.dart';
 import 'rich_text_feature.dart';

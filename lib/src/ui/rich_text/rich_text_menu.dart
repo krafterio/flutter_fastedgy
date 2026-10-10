@@ -5,7 +5,7 @@
 
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/widgets.dart' show IconData, Widget;
-import 'package:flutter_fastedgy/flutter_fastedgy.dart' show t;
+import 'package:flutter_fastedgy/core.dart' show t;
 
 import 'rich_text_feature.dart';
 

@@ -7,7 +7,7 @@ import 'dart:async';
 
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/widgets.dart';
-import 'package:flutter_fastedgy/flutter_fastedgy.dart' show getLogger;
+import 'package:flutter_fastedgy/core.dart' show getLogger;
 
 import 'mention_address.dart';
 import 'mention_options.dart';

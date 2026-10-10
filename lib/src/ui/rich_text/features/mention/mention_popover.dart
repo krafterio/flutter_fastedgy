@@ -7,7 +7,7 @@ import 'dart:async' show unawaited;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
-import 'package:flutter_fastedgy/flutter_fastedgy.dart'
+import 'package:flutter_fastedgy/core.dart'
     show getLogger, getService, hasService, t;
 
 import '../../rich_text_controls.dart';

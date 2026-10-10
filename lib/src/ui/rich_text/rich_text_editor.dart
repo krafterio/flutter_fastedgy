@@ -9,7 +9,7 @@ import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/foundation.dart' show FlutterExceptionHandler;
 import 'package:flutter/gestures.dart' show kTouchSlop;
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter_fastedgy/flutter_fastedgy.dart' show t;
+import 'package:flutter_fastedgy/core.dart' show t;
 import 'package:provider/provider.dart';
 
 import '../icons.dart';

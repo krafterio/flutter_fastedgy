@@ -7,8 +7,7 @@ import '../../../rich_text/rich_text_feature.dart';
 
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter_fastedgy/flutter_fastedgy.dart'
-    show getService, hasService;
+import 'package:flutter_fastedgy/core.dart' show getService, hasService;
 
 import 'mention_controller.dart';
 import 'mention_markdown.dart';

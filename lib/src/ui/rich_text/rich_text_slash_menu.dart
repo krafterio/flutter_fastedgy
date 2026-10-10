@@ -7,7 +7,7 @@ import 'dart:async';
 
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter_fastedgy/flutter_fastedgy.dart' show t;
+import 'package:flutter_fastedgy/core.dart' show t;
 
 import 'features/mention/mention_menu.dart' show menuLabel;
 import 'rich_text_controls.dart';

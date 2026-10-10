@@ -9,7 +9,7 @@ import 'dart:math' show max;
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/gestures.dart' show kPrecisePointerHitSlop, kTouchSlop;
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter_fastedgy/flutter_fastedgy.dart';
+import 'package:flutter_fastedgy/core.dart';
 import 'package:provider/provider.dart';
 
 import '../../../icons.dart';

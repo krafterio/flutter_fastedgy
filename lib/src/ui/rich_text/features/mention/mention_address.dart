@@ -4,8 +4,7 @@
  */
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_fastedgy/flutter_fastedgy.dart'
-    show getService, hasService;
+import 'package:flutter_fastedgy/core.dart' show getService, hasService;
 
 /// Where a mention points.
 ///

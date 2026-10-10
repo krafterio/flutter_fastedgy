@@ -5,7 +5,7 @@
 
 // Flutter has an ImageCache of its own; the registered service is fastedgy's.
 import 'package:material_ui/material_ui.dart' hide ImageCache;
-import 'package:flutter_fastedgy/flutter_fastedgy.dart';
+import 'package:flutter_fastedgy/core.dart';
 
 import '../icons.dart';
 import '../rich_text/rich_text_controls.dart';

@@ -14,65 +14,15 @@
 /// - Provider-based state management
 /// - Internationalization support
 /// - Logging utilities
+///
+/// Everything core.dart gives, with the localizations of Material and
+/// Cupertino in `context.fastEdgyLocalizationDelegates` and the former name
+/// of ApiImageCache: it pulls Material and Cupertino in. An application that
+/// wants neither imports core.dart.
 library;
 
-// Core
-export 'src/initializer.dart';
-
-// App Info
-export 'src/app_info/app_info.dart';
-
-// Container (DI)
-export 'src/container/container.dart'
-    show container, initializeContainer, getService, hasService;
-
-// Event Bus
-export 'src/bus/bus.dart';
-export 'src/bus/events.dart';
-
-// Logging
-export 'src/logging/logging.dart';
-
-export 'package:logging/logging.dart' show Level, Logger, LogRecord;
-
-// I18n
-export 'src/i18n/i18n.dart' hide FastEdgyWidgetsLocalizations;
+export 'core.dart' hide FastEdgyWidgetsLocalizations;
+export 'cupertino.dart';
+export 'material.dart';
 export 'src/i18n/platform_localizations.dart';
-
-export 'package:flutter/widgets.dart' show Locale;
-export 'package:easy_localization/easy_localization.dart'
-    show StringTranslateExtension, BuildContextEasyLocalizationExtension;
-
-// Fetcher
-export 'src/fetcher/fetcher.dart';
-
-export 'package:dio/dio.dart' show Response, ResponseType;
-
-// Auth
-export 'src/auth/auth.dart';
-
-// API Models
-export 'src/api/api.dart';
-
-// Metadata
-export 'src/metadata/metadata.dart';
-
-// Sync state (readable without the offline module)
-export 'src/sync/sync_status.dart';
-
-// Offline
-export 'src/offline/offline.dart';
-
-// Realtime
-export 'src/realtime/origin.dart';
-export 'src/realtime/realtime_events.dart';
-export 'src/realtime/realtime_socket.dart';
-export 'src/realtime/resource_relay.dart';
-export 'src/realtime/resource_watch.dart';
-
-// Image
-export 'src/image/image.dart';
 export 'src/image/legacy_names.dart';
-
-// Storage
-export 'src/storage/storage.dart';

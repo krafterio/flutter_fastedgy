@@ -5,7 +5,7 @@
 
 import 'dart:io';
 
-import 'package:flutter_fastedgy/flutter_fastedgy.dart';
+import 'package:flutter_fastedgy/core.dart';
 import 'package:path/path.dart' show basename;
 
 import 'image_menu.dart';

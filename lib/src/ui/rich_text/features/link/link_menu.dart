@@ -7,7 +7,7 @@ import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart'
     show Clipboard, ClipboardData, LogicalKeyboardKey;
-import 'package:flutter_fastedgy/flutter_fastedgy.dart' show t, getLogger;
+import 'package:flutter_fastedgy/core.dart' show t, getLogger;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../rich_text_controls.dart';

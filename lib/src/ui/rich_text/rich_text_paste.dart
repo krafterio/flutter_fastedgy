@@ -10,7 +10,7 @@ import 'dart:typed_data' show Uint8List;
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/widgets.dart' show KeyEventResult;
-import 'package:flutter_fastedgy/flutter_fastedgy.dart' show getLogger, t;
+import 'package:flutter_fastedgy/core.dart' show getLogger, t;
 
 import 'rich_text_codec.dart';
 import 'rich_text_feature.dart';

@@ -8,7 +8,7 @@ import 'dart:async' show unawaited;
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart' show RenderAbstractViewport;
-import 'package:flutter_fastedgy/flutter_fastedgy.dart' show t;
+import 'package:flutter_fastedgy/core.dart' show t;
 
 import '../../rich_text_controls.dart';
 import '../../rich_text_popover.dart';

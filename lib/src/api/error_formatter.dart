@@ -3,7 +3,7 @@
  * MIT License (see LICENSE file).
  */
 
-import 'package:flutter_fastedgy/flutter_fastedgy.dart';
+import '../i18n/i18n.dart';
 
 /// Formatted error message with title and optional field errors
 class FormattedError {
