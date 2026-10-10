@@ -510,6 +510,7 @@ void main() {
 
       hold.complete();
       await moving;
+      await settle();
       getService<Bus>().fire(echo);
       await settle();
 

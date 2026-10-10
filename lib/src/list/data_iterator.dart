@@ -186,7 +186,7 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
       autoRefreshOnChange: autoRefreshOnChange,
       refreshDelay: _refreshDelay,
       watchFields: _watchFields,
-      where: _where,
+      where: _readsChange,
     )..addListener(_relay);
 
     final entry = _entry = url?.read() ?? const <String, String>{};
@@ -329,7 +329,9 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
   GroupedApiCollection<T>? _grouped;
   String? _groupedBy;
   Object? _groupError;
-  int _moving = 0;
+
+  /// The writes of the list running, whose echo it does not read.
+  int _writing = 0;
 
   bool _loaded = false;
   bool _opened = false;
@@ -882,28 +884,27 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
     }
 
     target.collection.reorder(rows);
-    _moving += 1;
 
     try {
-      if (!inPlace && (extra || !ordered)) {
-        await api.update(item.id!, api.fromJson({field: value}));
-      }
+      await writing(() async {
+        if (!inPlace && (extra || !ordered)) {
+          await api.update(item.id!, api.fromJson({field: value}));
+        }
 
-      if (ordered) {
-        final grouping = !inPlace && !extra;
+        if (ordered) {
+          final grouping = !inPlace && !extra;
 
-        await _sortable.resequence(
-          [...rows.map((row) => row.id).whereType<int>()],
-          sequenceOffset: (target.collection.firstPage - 1) * rowLimit,
-          groupField: grouping ? field : null,
-          groupValue: grouping ? value : null,
-        );
-      }
+          await _sortable.resequence(
+            [...rows.map((row) => row.id).whereType<int>()],
+            sequenceOffset: (target.collection.firstPage - 1) * rowLimit,
+            groupField: grouping ? field : null,
+            groupValue: grouping ? value : null,
+          );
+        }
+      });
     } catch (_) {
       await grouped.refresh();
       rethrow;
-    } finally {
-      _moving -= 1;
     }
   }
 
@@ -959,10 +960,24 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
     }
   }
 
-  /// Whether a change is read again by the groups: not while a row of theirs
-  /// moves, the echo of the move.
+  /// Runs [write], whose echo the list does not read: its rows already say
+  /// what it changes.
+  Future<R> writing<R>(Future<R> Function() write) async {
+    _writing += 1;
+
+    try {
+      return await write();
+    } finally {
+      // An api hands what a write announces to the bus on a timer, once the
+      // write returned to its caller: the changes are read again after it.
+      Timer.run(() => _writing -= 1);
+    }
+  }
+
+  /// Whether a change is read again: not the echo of a write of the list, a
+  /// move or an edit.
   bool _readsChange(ResourceChangedEvent event) =>
-      _autoRefresh && _moving == 0 && (_where?.call(event) ?? true);
+      _writing == 0 && (_where?.call(event) ?? true);
 
   void _dropGroups() {
     _grouped
@@ -1224,7 +1239,7 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
       refreshDelay: _refreshDelay,
       watchFields: _watchFields,
       groupFilter: groupFilter,
-      where: _readsChange,
+      where: (event) => _autoRefresh && _readsChange(event),
     );
 
     grouped
