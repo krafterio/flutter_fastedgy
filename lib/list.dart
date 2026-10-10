@@ -10,6 +10,7 @@
 /// beside its usual entry point.
 library;
 
+export 'src/list/column_filter.dart';
 export 'src/list/data_iterator.dart';
 export 'src/list/list_url.dart';
 export 'src/list/page_size.dart';
