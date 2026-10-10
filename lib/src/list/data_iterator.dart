@@ -25,6 +25,7 @@ import '../logging/logger.dart';
 import '../query/order_by.dart';
 import '../query/query_expression.dart' show sameExpression;
 import '../workspace/workspace_provider.dart' show WorkspaceSwitchedEvent;
+import 'custom_views.dart';
 import 'list_url.dart';
 import 'page_size.dart';
 import 'quick_filter.dart';
@@ -150,6 +151,7 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
     this.url,
     this._enabled,
     this.quickFilters = const [],
+    this.views,
     bool autoRefreshOnChange = true,
     Duration refreshDelay = const Duration(milliseconds: 250),
     Object? watchFields,
@@ -172,7 +174,7 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
       where: where,
     )..addListener(_relay);
 
-    final entry = url?.read() ?? const <String, String>{};
+    final entry = _entry = url?.read() ?? const <String, String>{};
     final page = int.tryParse(entry['p'] ?? '') ?? 1;
 
     _currentPage = page > 0 ? page : 1;
@@ -200,7 +202,7 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
 
     _rebaseline();
 
-    url?.addListener(_followUrl);
+    url?.addListener(_onUrl);
 
     if (filter is Listenable) {
       filter.addListener(_changed);
@@ -253,6 +255,12 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
   final ValueListenable<bool>? _enabled;
   final List<QuickFilter<Object?>> quickFilters;
 
+  /// The custom views the list opens on.
+  final DataIteratorViews? views;
+
+  /// What the URL said of the list when it was made.
+  late final Map<String, String> _entry;
+
   late final ApiCollection<T> _collection;
   late final PageSize _pageSize;
   late final Sortable _sortable;
@@ -271,6 +279,7 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
   bool _isSelectionEnabled;
 
   bool _loaded = false;
+  bool _opened = false;
   bool _ready = false;
   bool _resequencing = false;
   bool _disposed = false;
@@ -401,9 +410,38 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
   /// The custom view the list is on, kept in the URL as `cv`.
   int? get view => _view;
 
+  set view(int? value) {
+    _view = value;
+    _changed();
+  }
+
   /// The filters of the current view, null while they are not read.
   Object? get viewExpression =>
       identical(_viewExpression, _unread) ? null : _viewExpression;
+
+  /// Tells the list the filters of the view it is on, which it then keeps
+  /// out of the URL as long as its expression says the same.
+  set viewExpression(Object? value) {
+    _viewExpression = value;
+    _changed();
+  }
+
+  /// Forgets the filters of the view, which the list no longer knows.
+  void forgetViewExpression() {
+    _viewExpression = _unread;
+    _changed();
+  }
+
+  /// What the views hold besides the filters and the order.
+  Map<String, ViewStateField> get viewState => views?.state ?? const {};
+
+  /// Where the views of the list are read: where its api model answers,
+  /// unless the option says otherwise.
+  String get viewsPrefix => views?.prefix ?? apiPrefixOf(api);
+
+  /// Whether the list opened on the view it starts from, or has none to
+  /// open.
+  bool get opened => _opened;
 
   /// The value of each quick filter, kept in the URL as `qf` when away from
   /// its default.
@@ -633,7 +671,7 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
       return;
     }
 
-    await Future.wait([_pageSize.ready, readMetadata()]);
+    await Future.wait([_pageSize.ready, readMetadata(), _open()]);
 
     if (_disposed) {
       return;
@@ -642,6 +680,92 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
     _ready = true;
     _rebaseline();
     await _read();
+  }
+
+  /// Opens the list on a view before its first read: the one a link names
+  /// when it carries no filter of its own, else, for a URL saying nothing of
+  /// the list, the favorite of the user, else the one of everyone.
+  Future<void> _open() async {
+    final views = this.views;
+
+    if (views == null) {
+      _opened = true;
+
+      return;
+    }
+
+    final keys = [
+      'p',
+      's',
+      'order_by',
+      'q',
+      'sl',
+      'f',
+      'cv',
+      'qf',
+      for (final one in views.state.values) ?one.key,
+    ];
+    final linked = _entry.containsKey('f') ? null : _view;
+
+    if (linked == null && keys.any(_entry.containsKey)) {
+      _opened = true;
+
+      return;
+    }
+
+    final before = _view;
+    final start = await _openingView(id: linked);
+
+    // A view chosen while it was read is the one the list shows.
+    if (_disposed || _view != before) {
+      _opened = true;
+
+      return;
+    }
+
+    final query = url?.read() ?? const <String, String>{};
+
+    if (start == null) {
+      _view = null;
+    } else {
+      _expression = start.filters;
+      _viewExpression = start.filters;
+      _view = start.id;
+
+      if (!query.containsKey('order_by')) {
+        _orderBy = start.orderBy ?? defaultOrderBy;
+      }
+
+      _applyState(start, query);
+    }
+
+    _opened = true;
+  }
+
+  Future<CustomView?> _openingView({int? id}) async {
+    final model = await api.resolveModelName();
+
+    return model == null
+        ? null
+        : openingView(
+            model,
+            scope: views!.scope,
+            prefix: viewsPrefix,
+            id: id,
+            fetcher: api.fetcher,
+          );
+  }
+
+  /// Holds what [view] says besides its filters and its order, unless
+  /// [query] says it.
+  void _applyState(CustomView? view, Map<String, String> query) {
+    for (final MapEntry(key: name, value: one) in viewState.entries) {
+      final key = one.key;
+
+      if (key == null || !query.containsKey(key)) {
+        one.set(view?[name]);
+      }
+    }
   }
 
   void _onEnabled() {
@@ -917,48 +1041,64 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
   /// Holds what a URL changed from outside says (back, forward, a link
   /// followed to the same screen), as a list entered on it would, then reads
   /// once.
-  void _followUrl() {
+  Future<void> _followUrl() async {
     final query = url!.read();
 
-    if (_settling || !_movedFromOutside(query)) {
+    if (_settling || !_opened || !_movedFromOutside(query)) {
       return;
     }
 
     _sent.clear();
+    _settling = true;
 
-    final page = int.tryParse(query['p'] ?? '') ?? 1;
-    final size = int.tryParse(query['s'] ?? '');
+    try {
+      final page = int.tryParse(query['p'] ?? '') ?? 1;
+      final size = int.tryParse(query['s'] ?? '');
 
-    _currentPage = page > 0 ? page : 1;
+      _currentPage = page > 0 ? page : 1;
 
-    if (size != null && availablePageSizes.contains(size)) {
-      _pageSize.value = size;
+      if (size != null && availablePageSizes.contains(size)) {
+        _pageSize.value = size;
+      }
+
+      _searchTimer?.cancel();
+      _search = query['q'] ?? '';
+      _appliedSearch = _search.trim();
+      _quick = readQuickFilters(query['qf'], quickFilters);
+
+      final linked = _readId(query['cv']);
+
+      if (linked != _view) {
+        CustomView? named;
+
+        if (linked != null && views != null) {
+          named = await _openingView(id: linked);
+          _applyState(named, query);
+        }
+
+        _view = views != null ? named?.id : linked;
+        _viewExpression = named != null ? named.filters : _unread;
+      }
+
+      final raw = _filterIn(query);
+
+      _expression = raw != null
+          ? _readExpression(raw)
+          : _view != null
+          ? viewExpression
+          : null;
+      _orderBy = parseOrderBy(query['order_by']) ?? defaultOrderBy;
+    } finally {
+      _settling = false;
     }
 
-    _searchTimer?.cancel();
-    _search = query['q'] ?? '';
-    _appliedSearch = _search.trim();
-    _quick = readQuickFilters(query['qf'], quickFilters);
-
-    final linked = _readId(query['cv']);
-
-    if (linked != _view) {
-      _view = linked;
-      _viewExpression = _unread;
+    if (_disposed) {
+      return;
     }
-
-    final raw = _filterIn(query);
-
-    _expression = raw != null
-        ? _readExpression(raw)
-        : _view != null
-        ? viewExpression
-        : null;
-    _orderBy = parseOrderBy(query['order_by']) ?? defaultOrderBy;
 
     _rebaseline();
     notifyListeners();
-    unawaited(_read());
+    await _read();
   }
 
   /// Starts over in the workspace switched to, as a list opened there at
@@ -988,6 +1128,19 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
       notifyListeners();
 
       await readMetadata();
+
+      if (views != null) {
+        final start = await _openingView();
+
+        _applyState(start, const {});
+
+        if (start != null) {
+          _expression = start.filters;
+          _viewExpression = start.filters;
+          _view = start.id;
+          _orderBy = start.orderBy ?? defaultOrderBy;
+        }
+      }
     } finally {
       _settling = false;
     }
@@ -1010,6 +1163,8 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
     notifyListeners();
     await _read();
   }
+
+  void _onUrl() => unawaited(_followUrl());
 
   // The scroll.
 
@@ -1112,7 +1267,7 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
     _searchTimer?.cancel();
     _scrollTimer?.cancel();
     unawaited(_switches?.cancel());
-    url?.removeListener(_followUrl);
+    url?.removeListener(_onUrl);
 
     final filter = _filter;
 
