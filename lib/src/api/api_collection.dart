@@ -149,6 +149,10 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
   @override
   Object? get error => _error;
   int get page => _page;
+
+  /// First page of the rows held, [page] being the last.
+  int get firstPage => _firstPage;
+
   int get total => _total;
   int get totalPages => _totalPages;
   int? get limit => _limit;
@@ -321,6 +325,41 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
   @override
   Future<bool> reload() => _fetch(1, append: false);
 
+  /// Reads pages [from] to [to] in one request, in place of the rows held:
+  /// one page, every page up to one, or the pages held read again
+  /// ([firstPage] to [page]). A [query] replaces the current one, its size
+  /// setting the page size. Without a known page size, page [from] alone is
+  /// read.
+  Future<bool> readPages(int from, int to, {ListQuery? query}) {
+    if (query != null) {
+      _query = query;
+      _sort = ListSort.empty;
+      final size = query.size ?? query.limit;
+      if (size != null) _limit = size;
+    }
+
+    _loaded = true;
+
+    return _fetch(to, append: false, from: from);
+  }
+
+  /// Forgets the rows, as a collection never read: a read in flight lands
+  /// nowhere, and a change announced before the next read reads nothing.
+  void reset() {
+    _generation++;
+    _refresh?.cancel();
+    _items = [];
+    _total = 0;
+    _totalPages = 0;
+    _page = 1;
+    _firstPage = 1;
+    _loaded = false;
+    _isLoading = false;
+    _isLoadingMore = false;
+    _error = null;
+    _safeNotify();
+  }
+
   /// Applies a new item order in place (optimistic reorder) — no fetch, no
   /// loading state. Pair it with a server resequence; the follow-up refresh
   /// returns the same order, so the list does not flicker or jump back.
@@ -471,18 +510,21 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
     return _fetch(1, append: false);
   }
 
-  /// Reads one page. [through] asks for pages 1..page at once (see
-  /// [loadThroughPage]) and is ignored when the page size is unknown.
+  /// Reads one page, or the pages [from] to [page] at once: [through] reads
+  /// them from the first (see [loadThroughPage]). Several pages need the page
+  /// size, without which [from] alone is read.
   Future<bool> _fetch(
     int page, {
     required bool append,
     bool through = false,
+    int? from,
   }) async {
     final pageSize = _limit;
-    final spansPages = through && page > 1 && pageSize != null && pageSize > 0;
-    // Without a known page size there is no offset to compute, so a
-    // through-page read can only be the first page.
-    final target = spansPages || !through ? page : 1;
+    final first = from ?? (through ? 1 : page);
+    final spansPages = first < page && pageSize != null && pageSize > 0;
+    // Without a known page size there is no offset to compute, so a read of
+    // several pages can only be the first of them.
+    final target = spansPages || first == page ? page : first;
 
     if (append) {
       _isLoadingMore = true;
@@ -497,12 +539,12 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
     try {
       final result = await api.list(
         query: spansPages
-            ? _throughQuery(target, pageSize)
+            ? _rangeQuery(first, target, pageSize)
             : _pageQuery(target),
       );
       if (_disposed || generation != _generation) return false;
       _page = target;
-      if (!append) _firstPage = spansPages ? 1 : target;
+      if (!append) _firstPage = spansPages ? first : target;
       _total = result.total;
       if (spansPages) {
         _totalPages = (result.total / pageSize).ceil();
@@ -551,13 +593,13 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
     offset: _limit != null ? (page - 1) * _limit! : null,
   );
 
-  ListQuery _throughQuery(int page, int pageSize) => ListQuery(
+  ListQuery _rangeQuery(int first, int last, int pageSize) => ListQuery(
     fields: fields,
     orderBy: orderBy,
     filter: filter,
     params: params,
-    limit: pageSize * page,
-    offset: 0,
+    limit: pageSize * (last - first + 1),
+    offset: pageSize * (first - 1),
   );
 
   void _safeNotify() {
