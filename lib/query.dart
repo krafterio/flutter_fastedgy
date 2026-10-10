@@ -11,8 +11,10 @@
 /// and no Cupertino: an application imports it beside its usual entry point.
 library;
 
+export 'src/query/builder.dart';
 export 'src/query/catalog.dart';
 export 'src/query/dates.dart';
+export 'src/query/labels.dart';
 export 'src/query/order_by.dart';
 export 'src/query/query_expression.dart';
 export 'src/query/query_fields.dart';
