@@ -11,4 +11,5 @@
 /// and no Cupertino: an application imports it beside its usual entry point.
 library;
 
+export 'src/query/order_by.dart';
 export 'src/query/query_expression.dart';
