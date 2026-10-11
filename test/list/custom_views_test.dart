@@ -48,6 +48,19 @@ void main() {
         as Map,
   );
 
+  test('reads the favorite of an account as its view or as its id', () {
+    final read = CustomViewFavorite({
+      'id': 1,
+      'view': {'id': 4, 'name': 'Late'},
+    });
+    final written = CustomViewFavorite({'id': 2, 'view': 4});
+
+    expect(read.viewId, 4);
+    expect(read.view?.name, 'Late');
+    expect(written.viewId, 4);
+    expect(written.view, isNull);
+  });
+
   group('the custom views of a list', () {
     test(
       'reads the views of its list once, and the favorite of the user',

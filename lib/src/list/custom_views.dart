@@ -58,6 +58,23 @@ class CustomView extends BaseModel<CustomView> {
   Object? operator [](String name) => data[name];
 }
 
+/// The view a list opens on for one account, its own favorite: a row of
+/// `custom_view_favorite`, apart from the favorite of everyone a view carries
+/// ([CustomView.isDefault]).
+class CustomViewFavorite extends BaseModel<CustomViewFavorite> {
+  CustomViewFavorite(super.data);
+
+  /// The id of the view, read as an id or as the view itself.
+  Object? get viewId => _idOf(data['view']);
+
+  /// The view itself, when it was read with its fields (`view.name`…).
+  CustomView? get view {
+    final view = data['view'];
+
+    return view is Map<String, dynamic> ? CustomView(view) : null;
+  }
+}
+
 class _ViewApi extends ApiModel<CustomView> {
   _ViewApi(super.basePath, {super.fetcher}) : super(modelName: 'custom_view');
 
@@ -65,13 +82,13 @@ class _ViewApi extends ApiModel<CustomView> {
   CustomView fromJson(Map<String, dynamic> json) => CustomView(json);
 }
 
-class _FavoriteApi extends ApiModel<GenericBaseModel> {
+class _FavoriteApi extends ApiModel<CustomViewFavorite> {
   _FavoriteApi(super.basePath, {super.fetcher})
     : super(modelName: 'custom_view_favorite');
 
   @override
-  GenericBaseModel fromJson(Map<String, dynamic> json) =>
-      GenericBaseModel(json);
+  CustomViewFavorite fromJson(Map<String, dynamic> json) =>
+      CustomViewFavorite(json);
 }
 
 List<List<Object?>> _listOf(String model, String scope) => [
@@ -132,11 +149,7 @@ Future<CustomView?> openingView(
         ),
       ),
     ).wait;
-    final favorite = own.items.firstOrNull?.data['view'];
-
-    return favorite is Map<String, dynamic>
-        ? CustomView(favorite)
-        : shared.items.firstOrNull;
+    return own.items.firstOrNull?.view ?? shared.items.firstOrNull;
   } catch (_) {
     return null;
   }
@@ -321,9 +334,7 @@ class CustomViews extends ChangeNotifier {
       final first = (await own).items.firstOrNull;
 
       _items = (await views).items;
-      _favorite = first == null
-          ? null
-          : (id: first.id, view: _idOf(first.data['view']));
+      _favorite = first == null ? null : (id: first.id, view: first.viewId);
       _error = null;
       _loaded = true;
 
@@ -471,7 +482,7 @@ class CustomViews extends ChangeNotifier {
   Future<void> setFavorite(CustomView view, bool on) async {
     if (on) {
       final created = await _favorites.create(
-        GenericBaseModel({'view': view.id}),
+        CustomViewFavorite({'view': view.id}),
         options: const FieldsOptions(fields: 'id,view'),
       );
 
