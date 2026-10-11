@@ -4,6 +4,7 @@
  */
 
 import '../container/container.dart';
+import '../list/sortable.dart' show apiPrefixOf;
 import '../metadata/display_fields.dart';
 import '../metadata/metadata_provider.dart';
 import '../metadata/models.dart';
@@ -526,7 +527,7 @@ Future<GroupSource?> resolveGroupSource<T extends BaseModel<T>>(
   return RelationGroupSource(
     field: field,
     target: GenericApiModel(
-      api.basePath,
+      apiPrefixOf(api),
       modelName: target,
       fetcher: api.fetcher,
     ),

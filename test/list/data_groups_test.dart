@@ -17,6 +17,15 @@ import 'list_support.dart';
 
 Object? _value(Object? raw) => raw is Map ? raw['id'] : raw;
 
+/// The things through a model that names its whole path rather than its
+/// model, as an application's own api models may.
+class _PathThingApi extends ApiModel<Thing> {
+  _PathThingApi(Fetcher fetcher) : super('/acme/things', fetcher: fetcher);
+
+  @override
+  Thing fromJson(Map<String, dynamic> json) => Thing(json);
+}
+
 /// Whether [row] holds under [filter]: a rule, a group of them, or a list of
 /// them all applying.
 bool _matches(Map<String, dynamic> row, Object? filter) {
@@ -343,6 +352,20 @@ void main() {
         ['urgent', 'is false'],
       ]);
       expect(groups.reads('/acme/stages'), isEmpty);
+
+      list.dispose();
+    });
+
+    test('reads the records of a relation where the model answers, whatever path the list names', () async {
+      final list = DataIterator<Thing>(
+        _PathThingApi(server.fetcher),
+        groupBy: 'stage',
+      );
+
+      await settle();
+
+      expect(groups.reads('/acme/stages'), hasLength(1));
+      expect(labels(list).take(2), ['To do', 'Done']);
 
       list.dispose();
     });
