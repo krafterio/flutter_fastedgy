@@ -3,6 +3,7 @@
  * MIT License (see LICENSE file).
  */
 
+import 'package:flutter/widgets.dart' show IconData;
 import 'package:intl/intl.dart';
 
 import '../api/api_query.dart';
@@ -311,12 +312,41 @@ FilterRules _writeValues(String field, Set<Object?>? value) {
   ];
 }
 
-/// A value offered by a choice filter, null standing for no value.
+/// A value offered by a choice filter, null standing for no value: its
+/// [label] in the chips, what goes before it in the editor (an emoji or an
+/// icon), the group it sits under there, and the shorter [title] it shows in
+/// its group.
 class ColumnFilterOption {
-  const ColumnFilterOption(this.value, this.label);
+  const ColumnFilterOption(
+    this.value,
+    this.label, {
+    this.emoji,
+    this.icon,
+    this.group,
+    this.title,
+  });
 
   final Object? value;
   final String label;
+  final String? emoji;
+  final IconData? icon;
+  final String? group;
+  final String? title;
+
+  /// What the editor shows.
+  String get shown => title ?? label;
+
+  /// Whether the option at [index] opens a group: the first of its group,
+  /// once the options have groups.
+  static bool opensGroupAt(List<ColumnFilterOption> options, int index) {
+    if (!options.any((option) => option.group != null)) {
+      return false;
+    }
+
+    final group = options[index].group;
+
+    return index == 0 ? group != null : group != options[index - 1].group;
+  }
 }
 
 /// Values among [options], « no value » included when one of them is null:

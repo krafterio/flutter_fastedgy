@@ -99,6 +99,46 @@ void main() {
   });
 
   group('the filters of the package', () {
+    test('a choice shows its title in its group, and opens a group when the one before it is another', () {
+      const options = [
+        ColumnFilterOption(
+          1,
+          'Rent',
+          emoji: '🏠',
+          group: 'Home',
+          title: 'Rent of the flat',
+        ),
+        ColumnFilterOption(2, 'Power', group: 'Home'),
+        ColumnFilterOption(3, 'Bread', group: 'Food'),
+        ColumnFilterOption(null, 'None'),
+      ];
+
+      expect(options.first.shown, 'Rent of the flat');
+      expect(options[1].shown, 'Power');
+      expect(
+        [
+          for (var index = 0; index < options.length; index++)
+            ColumnFilterOption.opensGroupAt(options, index),
+        ],
+        [true, false, true, true],
+      );
+      expect(
+        ColumnFilterOption.opensGroupAt(const [
+          ColumnFilterOption(1, 'Open'),
+          ColumnFilterOption(2, 'Done'),
+        ], 0),
+        isFalse,
+      );
+      expect(
+        const ChoiceColumnFilter(
+          'expense',
+          'Expense',
+          options: options,
+        ).describe({1, null}),
+        'Rent, None',
+      );
+    });
+
     test('read back what they write', () {
       const text = TextColumnFilter('name', 'Name');
       const numbers = NumberRangeColumnFilter('price', 'Price');
