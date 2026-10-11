@@ -305,6 +305,7 @@ class RelationGroupSource extends GroupSource {
     this.emptyLabel = '',
     this.emptyFirst = false,
     this.colorField,
+    this.colorOf,
     this.fields = const [],
     this.filter,
     this.sequenceField,
@@ -332,6 +333,10 @@ class RelationGroupSource extends GroupSource {
 
   /// The field of the target holding the color of its bucket.
   final String? colorField;
+
+  /// The color of the bucket of a record, its [colorField] when this gives
+  /// none: a color kept as an index of a palette is turned into one here.
+  final String? Function(Map<String, dynamic> record)? colorOf;
 
   /// More fields read on the records of the target.
   final List<String> fields;
@@ -377,9 +382,11 @@ class RelationGroupSource extends GroupSource {
         predicate: [field, '=', record.id],
         // A color the model keeps otherwise (an index in a palette) is the
         // screen's to read from the record.
-        color: record.data[colorField] is String
-            ? record.data[colorField] as String
-            : null,
+        color:
+            colorOf?.call(record.data) ??
+            (record.data[colorField] is String
+                ? record.data[colorField] as String
+                : null),
         record: record.data,
       ),
     if (includeEmpty && !emptyFirst && _readable && !_collection.hasNextPage)
@@ -454,7 +461,7 @@ class RelationGroupSource extends GroupSource {
 ///
 /// The records of a relation are read with [fields] and narrowed by [filter],
 /// in the default order of their model unless told otherwise, and colored by
-/// their `color` field when they have one.
+/// [recordColorOf], else by their `color` field when it holds text.
 Future<GroupSource?> resolveGroupSource<T extends BaseModel<T>>(
   ApiModel<T> api,
   String field, {
@@ -471,6 +478,7 @@ Future<GroupSource?> resolveGroupSource<T extends BaseModel<T>>(
   Object? Function(String key)? valueOf,
   String Function(String key, String label)? labelOf,
   String? Function(Object? value)? colorOf,
+  String? Function(Map<String, dynamic> record)? recordColorOf,
 }) async {
   final info = (await api.metadata())?.fields[field];
 
@@ -528,6 +536,7 @@ Future<GroupSource?> resolveGroupSource<T extends BaseModel<T>>(
     emptyLabel: emptyLabel,
     emptyFirst: emptyFirst,
     colorField: meta?.fields.containsKey('color') ?? false ? 'color' : null,
+    colorOf: recordColorOf,
     fields: fields,
     filter: filter,
     sequenceField: meta != null && meta.sortable

@@ -373,6 +373,28 @@ void main() {
       list.dispose();
     });
 
+    test('colors the group of a record as the screen says, from a color kept as an index of a palette', () async {
+      groups.stages[1]['color'] = 3;
+      const palette = ['#000000', '#111111', '#222222', '#333333'];
+      final list = DataIterator<Thing>(
+        api,
+        groupBy: 'stage',
+        colorOf: (field, value, record) =>
+            field == 'stage' && record?['color'] is int
+            ? palette[record!['color'] as int]
+            : null,
+      );
+
+      await settle();
+
+      expect(
+        [for (final group in list.groups) group.color],
+        ['#ff0000', '#333333', null],
+      );
+
+      list.dispose();
+    });
+
     test('puts the group with no value first, or leaves it out, and has none for a required field', () async {
       final first = DataIterator<Thing>(
         api,

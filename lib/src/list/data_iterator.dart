@@ -294,9 +294,16 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
   /// field.
   final Map<String, Object?> relationScopes;
 
-  /// The color of the group of [value] on an axis of choices of [field], null
-  /// to leave it to the palette of the screen.
-  final String? Function(String field, Object? value)? colorOf;
+  /// The color of the group of [value] on the axis of [field], null to leave
+  /// it to the palette of the screen: of a choice, or of a [record] of a
+  /// relation, whose `color` serves otherwise (a color kept as an index of a
+  /// palette is turned into one here).
+  final String? Function(
+    String field,
+    Object? value,
+    Map<String, dynamic>? record,
+  )?
+  colorOf;
 
   final bool _autoRefresh;
   final Duration _refreshDelay;
@@ -1227,7 +1234,10 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
       emptyFirst: emptyGroup == EmptyGroup.first,
       fields: groupFields,
       filter: relationScopes[field],
-      colorOf: colorOf == null ? null : (value) => colorOf(field, value),
+      colorOf: colorOf == null ? null : (value) => colorOf(field, value, null),
+      recordColorOf: colorOf == null
+          ? null
+          : (record) => colorOf(field, record['id'], record),
     );
 
     if (run != _latest || _disposed) {
