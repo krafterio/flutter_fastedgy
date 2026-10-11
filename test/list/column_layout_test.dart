@@ -36,6 +36,7 @@ void main() {
         'code': metaField('code', type: 'char'),
         'sequence': metaField('sequence', type: 'integer'),
         'files': metaField('files', type: 'one2many', target: 'file'),
+        'tags': metaField('tags', type: 'json'),
       },
     );
     container.registerSingleton<UserProvider<_Me>>(
@@ -67,15 +68,17 @@ void main() {
     views: opening,
   );
 
-  ColumnLayout layoutOf({ColumnStore? store}) => ColumnLayout(
-    api,
-    declared: const ['name', 'status'],
-    prefix: '/acme',
-    store: store,
-    locked: const ['name'],
-    exclude: const ['code'],
-    delay: const Duration(milliseconds: 20),
-  );
+  ColumnLayout layoutOf({ColumnStore? store, Set<String>? types}) =>
+      ColumnLayout(
+        api,
+        declared: const ['name', 'status'],
+        prefix: '/acme',
+        store: store,
+        locked: const ['name'],
+        exclude: const ['code'],
+        types: types ?? columnTypes,
+        delay: const Duration(milliseconds: 20),
+      );
 
   group('the layout read', () {
     test('is the one of the user, else the one of everyone, else the columns declared', () async {
@@ -154,6 +157,21 @@ void main() {
         layout.dispose();
       },
     );
+
+    test('offers the fields of the types its list says', () async {
+      final layout = layoutOf(
+        types: {...columnTypes.where((type) => type != 'many2one'), 'json'},
+      );
+
+      await layout.load();
+
+      expect(
+        [for (final field in layout.available) field.name],
+        ['notes', 'tags'],
+      );
+
+      layout.dispose();
+    });
   });
 
   group('a change', () {

@@ -37,8 +37,9 @@ const _hidden = {
   'sequence',
 };
 
-/// The types a column shows.
-const _shown = {
+/// The types a column shows, unless a list says its own
+/// ([ColumnLayout.types]).
+const columnTypes = {
   'char',
   'text',
   'rich_text',
@@ -125,6 +126,7 @@ class ColumnLayout extends ChangeNotifier {
     this.store,
     this.locked = const [],
     this.exclude = const [],
+    this.types = columnTypes,
     this.delay = const Duration(milliseconds: 500),
   }) : _declared = [for (final name in declared) ColumnEntry(name)],
        _views = GenericApiModel(
@@ -146,6 +148,10 @@ class ColumnLayout extends ChangeNotifier {
 
   /// The fields never offered.
   final List<String> exclude;
+
+  /// The types of the fields offered: the tags of a `json` field added, the
+  /// multiple relations left out.
+  final Set<String> types;
 
   /// How long the changes of a moment wait before they are written.
   final Duration delay;
@@ -179,7 +185,7 @@ class ColumnLayout extends ChangeNotifier {
 
     return [
       for (final field in _meta?.fields.values ?? const <MetadataField>[])
-        if (_shown.contains(field.type) &&
+        if (types.contains(field.type) &&
             !_hidden.contains(field.name) &&
             !exclude.contains(field.name) &&
             !shown.contains(field.name))
