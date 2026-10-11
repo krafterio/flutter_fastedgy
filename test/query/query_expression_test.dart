@@ -245,8 +245,58 @@ void main() {
         query.update(rule.id, operator: 'between', ui: 'on');
 
         expect(rule.ui, 'on');
+
+        query.update(rule.id, field: 'updated_at');
+
+        expect(rule.field, 'updated_at');
+        expect(rule.ui, isNull);
       },
     );
+
+    test('adds a block on a relation, and the rules of its records', () {
+      final query = QueryExpression();
+      final block = query.addAny(query.tree.id, 'tags')!;
+      final tags = query.tree.children.single as QueryAnyBlock;
+
+      expect(tags.id, block);
+
+      final urgent = query.addRule(
+        tags.group.id,
+        field: 'name',
+        operator: '=',
+        value: 'urgent',
+      )!;
+
+      expect(query.expression, [
+        'tags',
+        'any',
+        ['name', '=', 'urgent'],
+      ]);
+
+      query.addAny(query.tree.id, 'owner', negated: true);
+      query.addRule(
+        (query.tree.children.last as QueryAnyBlock).group.id,
+        field: 'active',
+        operator: 'is false',
+      );
+
+      expect(query.expression, [
+        '&',
+        [
+          [
+            'tags',
+            'any',
+            ['name', '=', 'urgent'],
+          ],
+          [
+            'owner',
+            'not any',
+            ['active', 'is false'],
+          ],
+        ],
+      ]);
+      expect(query.addAny(urgent, 'x'), isNull);
+    });
 
     test('switches a block between at least one and none', () {
       final query = QueryExpression(['tags', 'any', null]);
