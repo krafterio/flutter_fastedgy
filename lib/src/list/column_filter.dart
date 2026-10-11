@@ -6,7 +6,6 @@
 import 'package:intl/intl.dart';
 
 import '../api/api_query.dart';
-import '../api/list_filter.dart';
 import '../i18n/i18n.dart';
 import '../metadata/models.dart';
 import '../query/catalog.dart';
@@ -34,7 +33,32 @@ List<Object?> _items(Object? expression) {
 }
 
 bool _isOn(Object? item, String field) =>
-    item is List && ListFilter.fieldOf(item) == field;
+    item is List && _fieldOf(item) == field;
+
+/// The field [rule] is about: its own, or the one every rule of a group is
+/// about; null for anything else.
+String? _fieldOf(List<dynamic> rule) {
+  if (rule.length < 2) {
+    return null;
+  }
+
+  final head = rule.first;
+  final second = rule[1];
+
+  if (head == '&' || head == '|') {
+    if (second is! List) {
+      return null;
+    }
+
+    final fields = {
+      for (final inner in second) inner is List ? _fieldOf(inner) : null,
+    };
+
+    return fields.length == 1 ? fields.single : null;
+  }
+
+  return head is String && head.isNotEmpty && second is String ? head : null;
+}
 
 /// The rules of [field] at the first level of [expression]: what a column
 /// filter reads.

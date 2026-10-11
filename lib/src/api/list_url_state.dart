@@ -23,6 +23,10 @@ import 'list_sort.dart';
 /// when the URL changes from the outside (router back/forward, deep link) —
 /// never for the screen's own [writeUrl], and never for unrelated dependency
 /// changes (keyboard, theme…).
+@Deprecated(
+  'Use DataIterator(url: ListUrl.router(context)), which keeps the keys of a '
+  'list in the url (package:flutter_fastedgy/list.dart)',
+)
 mixin ListUrlState<W extends StatefulWidget> on State<W> {
   static const String sortKey = 'order_by';
 

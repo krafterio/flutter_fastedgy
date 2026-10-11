@@ -6,6 +6,10 @@
 import 'dart:convert';
 
 /// Query Builder rules ANDed, as a list keeps them in its URL.
+@Deprecated(
+  'Use the expression of a DataIterator and its quick filters '
+  '(package:flutter_fastedgy/list.dart)',
+)
 class ListFilter {
   final List<List<dynamic>> rules;
 
