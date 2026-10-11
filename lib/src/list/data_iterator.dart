@@ -501,6 +501,10 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
   /// URL as `q`.
   String get search => _search;
 
+  /// The search the rows were read under: [search] once the typing paused,
+  /// trimmed.
+  String get appliedSearch => _appliedSearch;
+
   set search(String value) {
     if (value == _search) {
       return;

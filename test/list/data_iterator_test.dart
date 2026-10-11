@@ -68,6 +68,21 @@ void main() {
       list.dispose();
     });
 
+    test('tells the search it applies once the typing paused', () async {
+      final list = DataIterator<Thing>(api);
+
+      await settle();
+      list.search = '  lamp ';
+
+      expect(list.appliedSearch, isEmpty);
+
+      await Future<void>.delayed(const Duration(milliseconds: 310));
+
+      expect(list.appliedSearch, 'lamp');
+
+      list.dispose();
+    });
+
     test(
       'keeps the latest read when an earlier one answers after it',
       () async {
