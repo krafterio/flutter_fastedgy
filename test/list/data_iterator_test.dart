@@ -465,6 +465,29 @@ void main() {
       },
     );
 
+    test(
+      'reads a term without a direction as ascending, given or set',
+      () async {
+        final list = DataIterator<Thing>(api, defaultOrderBy: ['name']);
+
+        await settle();
+
+        expect(sent(server.lists.single)['order'], 'name');
+        expect(list.getSortDirection('name'), SortDirection.asc);
+
+        list.orderBy = ['code'];
+        await settle();
+
+        expect(sent(server.lists.last)['order'], 'code');
+        expect(list.getSortDirection('code'), SortDirection.asc);
+
+        list.toggleSort('code');
+        expect(list.orderBy, ['code:desc']);
+
+        list.dispose();
+      },
+    );
+
     test('does not sort when it is not orderable', () async {
       final list = DataIterator<Thing>(api, orderable: false);
 

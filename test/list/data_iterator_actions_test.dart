@@ -298,6 +298,27 @@ void main() {
       },
     );
 
+    test('reads the page it is on again in place, the third one', () async {
+      final list = DataIterator<Thing>(
+        api,
+        refreshDelay: const Duration(milliseconds: 20),
+      );
+
+      await settle();
+      list.currentPage = 3;
+      await settle();
+      announce(ResourceChangeType.updated, 101);
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      await settle();
+
+      expect(server.lists, hasLength(3));
+      expect(sent(server.lists.last)['offset'], 100);
+      expect(sent(server.lists.last)['limit'], 50);
+      expect(list.items.first.id, 101);
+
+      list.dispose();
+    });
+
     test('keeps the changes for when it is shown again', () async {
       final list = DataIterator<Thing>(
         api,
@@ -363,6 +384,8 @@ void main() {
 
       getService<Bus>().fire(const WorkspaceSwitchedEvent());
       await settle();
+      // The answer of the workspace left, held until now, would show 3 rows.
+      server.rows = 3;
       old.complete();
       await settle();
 
@@ -382,6 +405,7 @@ void main() {
       expect(list.selection.count, 0);
       expect(list.isSortable, isFalse);
       expect(list.items, hasLength(50));
+      expect(list.total, 120);
       expect(list.loaded, isTrue);
       expect(url.query, isEmpty);
 
