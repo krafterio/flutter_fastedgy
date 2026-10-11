@@ -11,6 +11,7 @@ import 'api_query.dart';
 import 'base_model.dart';
 import 'data_availability.dart';
 import 'list_sort.dart';
+import 'pagination_result.dart';
 
 class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
     with DataAvailabilityState<T>
@@ -469,9 +470,7 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
       if (_disposed || generation != _generation) return;
       _items = result.items;
       _total = result.total;
-      _totalPages = pageSize != null && pageSize > 0
-          ? (result.total / pageSize).ceil()
-          : result.totalPages;
+      _totalPages = _pagesOf(result, pageSize);
       _error = null;
       resolveRead(fromCache: result.fromCache);
       await resolveModelFacts();
@@ -499,6 +498,15 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
 
   Future<bool> previousPage() =>
       hasPreviousPage ? _fetch(_page - 1, append: false) : Future.value(false);
+
+  /// How many pages [result] makes, counted from its total and the page size,
+  /// the one asked for or the one it answers with, as the data iterator
+  /// counts; what it says otherwise.
+  static int _pagesOf(PaginationResult<dynamic> result, int? pageSize) {
+    final size = pageSize != null && pageSize > 0 ? pageSize : result.limit;
+
+    return size > 0 ? (result.total / size).ceil() : result.totalPages;
+  }
 
   Future<bool> loadMore() {
     if (_isLoadingMore || _isLoading || !hasNextPage) {
@@ -554,7 +562,7 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
       if (spansPages) {
         _totalPages = (result.total / pageSize).ceil();
       } else {
-        _totalPages = result.totalPages;
+        _totalPages = _pagesOf(result, pageSize);
         if (result.limit > 0) _limit = result.limit;
       }
       if (append) {

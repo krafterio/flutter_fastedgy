@@ -26,6 +26,7 @@ void main() {
   late List<MockRequest> requests;
   late _ThingApi api;
   Completer<void>? gate;
+  var countsPages = true;
 
   setUp(() {
     initializeContainer();
@@ -36,6 +37,7 @@ void main() {
 
     requests = [];
     gate = null;
+    countsPages = true;
 
     final fetcher = createMockFetcher(
       (request) async {
@@ -51,7 +53,7 @@ void main() {
           'total': 500,
           'limit': limit,
           'offset': request.queryParameters['offset'],
-          'total_pages': (500 / limit).ceil(),
+          if (countsPages) 'total_pages': (500 / limit).ceil(),
         });
       },
       enableAuth: false,
@@ -91,6 +93,20 @@ void main() {
       things.dispose();
     },
   );
+
+  test('counts its pages from the total when the answer does not', () async {
+    countsPages = false;
+
+    final things = ApiCollection<_Thing>(api, autoRefreshOnChange: false);
+
+    await things.load(query: const ListQuery(size: 50));
+
+    expect(things.hasNextPage, isTrue);
+    expect(await things.loadMore(), isTrue);
+    expect(window(requests.last), (offset: 50, limit: 50));
+
+    things.dispose();
+  });
 
   test('reads again the pages it holds, after a next page was added', () async {
     final things = ApiCollection<_Thing>(api, autoRefreshOnChange: false);
