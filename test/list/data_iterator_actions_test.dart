@@ -267,6 +267,37 @@ void main() {
       list.dispose();
     });
 
+    test(
+      'reads nothing while it is disabled, a reconnection included, then once',
+      () async {
+        final enabled = ValueNotifier(true);
+        final list = DataIterator<Thing>(
+          api,
+          enabled: enabled,
+          refreshDelay: const Duration(milliseconds: 20),
+        );
+
+        await settle();
+        expect(server.lists, hasLength(1));
+
+        enabled.value = false;
+        announce(ResourceChangeType.updated, 3);
+        getService<Bus>().fire(const ResourcesStaleEvent());
+        await Future<void>.delayed(const Duration(milliseconds: 60));
+        await settle();
+
+        expect(server.lists, hasLength(1));
+
+        enabled.value = true;
+        await Future<void>.delayed(const Duration(milliseconds: 60));
+        await settle();
+
+        expect(server.lists, hasLength(2));
+
+        list.dispose();
+      },
+    );
+
     test('keeps the changes for when it is shown again', () async {
       final list = DataIterator<Thing>(
         api,

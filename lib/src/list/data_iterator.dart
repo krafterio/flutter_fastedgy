@@ -189,6 +189,7 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
       watchFields: _watchFields,
       where: _readsChange,
     )..addListener(_relay);
+    _follow();
 
     final entry = _entry = url?.read() ?? const <String, String>{};
     final page = int.tryParse(entry['p'] ?? '') ?? 1;
@@ -423,13 +424,25 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
                 ? DataAvailability.idle
                 : DataAvailability.failed);
 
+  // Whether the screen shows the list, as it was told.
+  bool _shown = true;
+
   @override
-  bool get active => _collection.active;
+  bool get active => _shown;
 
   @override
   set active(bool value) {
-    _collection.active = value;
-    _grouped?.active = value;
+    _shown = value;
+    _follow();
+  }
+
+  /// Hears the changes while the list is shown and enabled; what comes
+  /// meanwhile otherwise is read once both hold again.
+  void _follow() {
+    final on = _shown && _isEnabled;
+
+    _collection.active = on;
+    _grouped?.active = on;
   }
 
   // The pages.
@@ -996,10 +1009,11 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
     }
   }
 
-  /// Whether a change is read again: not the echo of a write of the list, a
-  /// move or an edit.
+  /// Whether a change is read again: not while the list is disabled, which
+  /// reads anew once enabled, nor the echo of a write of the list, a move or an
+  /// edit.
   bool _readsChange(ResourceChangedEvent event) =>
-      _writing == 0 && (_where?.call(event) ?? true);
+      _isEnabled && _writing == 0 && (_where?.call(event) ?? true);
 
   void _dropGroups() {
     _grouped
@@ -1152,6 +1166,8 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
   }
 
   void _onEnabled() {
+    _follow();
+
     if (_isEnabled) {
       unawaited(_read());
     }
@@ -1271,7 +1287,7 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
     );
 
     grouped
-      ..active = active
+      ..active = _shown && _isEnabled
       ..addListener(_relay);
     await grouped.load();
   }
