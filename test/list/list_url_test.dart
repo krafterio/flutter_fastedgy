@@ -77,6 +77,27 @@ void main() {
     }
 
     testWidgets(
+      'keeps what it read, and writes nothing, on a location no route matches',
+      (tester) async {
+        await mount(tester);
+
+        router.go('/nowhere?q=void');
+        await tester.pumpAndSettle();
+
+        expect(url.read(), {'q': 'lamp'});
+
+        url.write({'q': 'desk'});
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(
+          router.routerDelegate.currentConfiguration.uri.toString(),
+          '/nowhere?q=void',
+        );
+      },
+    );
+
+    testWidgets(
       'reads the query of its route, and replaces the location to write it',
       (tester) async {
         await mount(tester);

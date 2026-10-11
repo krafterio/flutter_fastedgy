@@ -198,7 +198,11 @@ class _RouterUrl extends _KeysUrl {
   @override
   Object get _location => _router;
 
-  bool get _shown => _shows(_router.state);
+  /// Whether a route is shown, and it is the list's: on a location no route
+  /// matches, the router has no state to read.
+  bool get _shown =>
+      _router.routerDelegate.currentConfiguration.isNotEmpty &&
+      _shows(_router.state);
 
   @override
   Map<String, String>? get _query =>
