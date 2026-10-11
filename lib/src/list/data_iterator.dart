@@ -163,6 +163,7 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
     this.groupFields = const [],
     this.groupFilter,
     this.emptyGroup = EmptyGroup.last,
+    this.emptyLabel,
     this.relationScopes = const {},
     this.colorOf,
     bool autoRefreshOnChange = true,
@@ -289,6 +290,10 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
 
   /// Where the group of the rows with no value stands.
   final EmptyGroup emptyGroup;
+
+  /// The label of the group of the rows with no value, « No value »
+  /// otherwise (the notes in no category: « General »).
+  final String? emptyLabel;
 
   /// The rule narrowing the records an axis made of a relation shows, by
   /// field.
@@ -1227,7 +1232,7 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
       api,
       field,
       limit: 50,
-      emptyLabel: t('No value'),
+      emptyLabel: emptyLabel ?? t('No value'),
       yesLabel: t('Yes'),
       noLabel: t('No'),
       includeEmpty: emptyGroup == EmptyGroup.none ? false : null,

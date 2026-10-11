@@ -395,6 +395,20 @@ void main() {
       list.dispose();
     });
 
+    test('names the group with no value as the list says', () async {
+      final list = DataIterator<Thing>(
+        api,
+        groupBy: 'priority',
+        emptyLabel: 'General',
+      );
+
+      await settle();
+
+      expect(labels(list).last, 'General');
+
+      list.dispose();
+    });
+
     test('puts the group with no value first, or leaves it out, and has none for a required field', () async {
       final first = DataIterator<Thing>(
         api,
