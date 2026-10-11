@@ -141,7 +141,12 @@ class DataTableColumn {
         filter:
             filter ??
             (filterable
-                ? columnFilterOf(field, label: label, context: context)
+                ? columnFilterOf(
+                    field,
+                    label: label,
+                    context: context,
+                    path: key,
+                  )
                 : null),
         filterable: filterable,
         editable: editable,

@@ -371,26 +371,25 @@ class RelationColumnFilter extends ColumnFilter<Set<Object?>> {
 /// The filter of a column on [field], by the kind of the field: a text, the
 /// bounds of a number or of a date, values among its choices, records of a
 /// relation read through the value source of its model in [context]. Null
-/// for a kind no column filter reads.
+/// for a kind no column filter reads. The rules name [path], the field
+/// reached through relations (`owner.name`), the field itself otherwise.
 ColumnFilter<Object>? columnFilterOf(
   MetadataField field, {
   String? label,
   ValueSourceContext? context,
+  String? path,
 }) {
   final title = label ?? field.label;
   final target = field.target;
+  final name = path ?? field.name;
 
   return switch (kindOf(field)) {
-    FieldKind.text => TextColumnFilter(field.name, title),
-    FieldKind.number => NumberRangeColumnFilter(field.name, title),
-    FieldKind.date => DateRangeColumnFilter(field.name, title),
-    FieldKind.datetime => DateRangeColumnFilter(
-      field.name,
-      title,
-      datetime: true,
-    ),
+    FieldKind.text => TextColumnFilter(name, title),
+    FieldKind.number => NumberRangeColumnFilter(name, title),
+    FieldKind.date => DateRangeColumnFilter(name, title),
+    FieldKind.datetime => DateRangeColumnFilter(name, title, datetime: true),
     FieldKind.choice => ChoiceColumnFilter(
-      field.name,
+      name,
       title,
       options: [
         for (final MapEntry(:key, :value)
@@ -402,7 +401,7 @@ ColumnFilter<Object>? columnFilterOf(
     FieldKind.single || FieldKind.multiple
         when target != null && context != null =>
       RelationColumnFilter(
-        field.name,
+        name,
         title,
         source: resolveValueSource(target, context),
       ),

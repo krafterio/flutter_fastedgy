@@ -89,6 +89,22 @@ void main() {
     },
   );
 
+  test('filters a column along its path, on the field it shows', () async {
+    final table = DataTable<Thing>(
+      api,
+      columns: [const DataTableColumn('owner.name', filterable: true)],
+    );
+
+    await settle();
+
+    final filter = table.columns.single.filter;
+
+    expect(filter, isA<TextColumnFilter>());
+    expect(filter?.field, 'owner.name');
+
+    table.dispose();
+  });
+
   test('reads again for a column it has not read', () async {
     final table = DataTable<Thing>(
       api,
