@@ -658,22 +658,31 @@ void main() {
       },
     );
 
-    test('reads the filter of older links as its expression', () async {
-      final list = DataIterator<Thing>(
-        api,
-        url: MemoryListUrl(
+    test(
+      'reads the filter of older links as its expression, and moves it to f',
+      () async {
+        final url = MemoryListUrl(
           initial: {
             'filter': jsonEncode(['name', '=', 'a']),
           },
-        ),
-      );
+        );
+        final list = DataIterator<Thing>(api, url: url);
 
-      await settle();
+        await settle();
 
-      expect(list.expression, ['name', '=', 'a']);
+        expect(list.expression, ['name', '=', 'a']);
+        expect(url.read().containsKey('filter'), isFalse);
+        expect(jsonDecode(url.read()['f']!), ['name', '=', 'a']);
 
-      list.dispose();
-    });
+        list.expression = null;
+        await settle();
+
+        expect(url.read(), isNot(contains('filter')));
+        expect(url.read(), isNot(contains('f')));
+
+        list.dispose();
+      },
+    );
 
     test('keeps its keys after its prefix, two lists of one screen writing together', () async {
       final url = MemoryListUrl(initial: {'done_q': 'lamp', 'p': '2'});

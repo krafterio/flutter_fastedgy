@@ -219,6 +219,7 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
     _restoreScroll = scrollController != null && scroll > 0 ? scroll : null;
 
     _rebaseline();
+    _moveOlderFilter(entry);
 
     url?.addListener(_onUrl);
 
@@ -1500,6 +1501,22 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
       query['f'] ??
       (url == null || url!.prefix.isNotEmpty ? null : query['filter']);
 
+  /// Writes the `filter` of an older link as `f`, the key the list keeps:
+  /// left there, it would come back once `f` is cleared.
+  void _moveOlderFilter(Map<String, String> query) {
+    final older = query['filter'];
+
+    if (older == null ||
+        query.containsKey('f') ||
+        url == null ||
+        url!.prefix.isNotEmpty) {
+      return;
+    }
+
+    _written['f'] = older;
+    _writeQuery({'f': older, 'filter': null});
+  }
+
   /// Writes the keys whose value moved since they were last written.
   void _writeShown() {
     final patch = <String, String?>{};
@@ -1616,6 +1633,7 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
     }
 
     _rebaseline();
+    _moveOlderFilter(query);
     notifyListeners();
     await _read();
   }
