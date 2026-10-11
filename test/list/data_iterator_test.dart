@@ -47,6 +47,27 @@ void main() {
       },
     );
 
+    test('reads once a list enabled by the change it tells of', () async {
+      final enabled = ValueNotifier(false);
+      final list = DataIterator<Thing>(api, enabled: enabled);
+
+      // On once its search applies, as a screen that reads nothing
+      // before a term is typed.
+      list.addListener(() => enabled.value = list.combinedFilter != null);
+      await settle();
+
+      list.search = 'lamp';
+      await Future<void>.delayed(const Duration(milliseconds: 310));
+      await settle();
+
+      expect(server.lists, hasLength(1));
+      expect(sent(server.lists.single)['filter'], [
+        ['search_value', 'search_fuzzy', 'lamp'],
+      ]);
+
+      list.dispose();
+    });
+
     test(
       'keeps the latest read when an earlier one answers after it',
       () async {
