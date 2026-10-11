@@ -440,6 +440,23 @@ void main() {
       list.dispose();
     });
 
+    test('go back to the first page when they change', () async {
+      final url = MemoryListUrl(initial: {'p': '2'});
+      final list = DataIterator<Thing>(api, url: url, quickFilters: [closed]);
+
+      await settle();
+      expect(list.currentPage, 2);
+
+      list.setQuick('closed', true);
+      await settle();
+
+      expect(list.currentPage, 1);
+      expect(sent(server.lists.last)['offset'], 0);
+      expect(url.query, {'qf': '{"closed":true}'});
+
+      list.dispose();
+    });
+
     test('stay at their default when the url does not read', () {
       expect(readQuickFilters('{not', [closed]), {'closed': false});
       expect(readQuickFilters('[1]', [closed]), {'closed': false});

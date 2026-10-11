@@ -131,6 +131,23 @@ void main() {
       expect(jsonDecode(url.query['f']!), ['late', 'is false']);
       expect(canUpdateView(custom), isTrue);
 
+      list.expression = ['late', 'is true'];
+      await settle();
+      expect(custom.modified, isFalse);
+
+      list.orderBy = ['name:asc'];
+      await settle();
+      expect(custom.modified, isTrue);
+
+      list.orderBy = ['name:desc'];
+      await settle();
+      expect(custom.modified, isFalse);
+
+      await custom.rename(custom.current!, 'Later');
+
+      expect(lastWrite(), {'name': 'Later'});
+      expect(custom.current?.name, 'Later');
+
       list.dispose();
     });
 
