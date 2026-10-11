@@ -521,10 +521,10 @@ void main() {
 
   group('the scroll', () {
     testWidgets(
-      'restores the position of the url and keeps the new one there',
+      'restores the position of the url and keeps the new one there, after its prefix',
       (tester) async {
         final controller = ScrollController();
-        final url = MemoryListUrl(initial: {'sl': '300'});
+        final url = MemoryListUrl(initial: {'x_sl': '300'});
         late DataIterator<Thing> list;
 
         await tester.runAsync(() async {
@@ -532,7 +532,7 @@ void main() {
             api,
             append: true,
             scrollController: controller,
-            url: url,
+            url: url.withPrefix('x_'),
           );
           await settle();
         });
@@ -560,7 +560,7 @@ void main() {
         await tester.pump(const Duration(milliseconds: 400));
         await tester.runAsync(settle);
 
-        expect(url.query['sl'], '120');
+        expect(url.query, {'x_sl': '120'});
 
         list.dispose();
       },

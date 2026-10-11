@@ -348,6 +348,44 @@ void main() {
       described.dispose();
     });
 
+    test(
+      'opens on the view its prefixed key names, and on none for a view gone',
+      () async {
+        final named = views.add({
+          'name': 'Named',
+          'filters': ['name', '=', 'b'],
+        });
+
+        views.add({
+          'name': 'Everyone',
+          'is_default': true,
+          'filters': ['name', '=', 'z'],
+        });
+
+        final url = MemoryListUrl(initial: {'x_cv': '${named['id']}'});
+        final prefixed = DataIterator<Thing>(
+          api,
+          url: url.withPrefix('x_'),
+          views: const DataIteratorViews(),
+        );
+        final gone = DataIterator<Thing>(
+          api,
+          url: MemoryListUrl(initial: {'cv': '999'}),
+          views: const DataIteratorViews(),
+        );
+
+        await settle();
+
+        expect(prefixed.view, named['id']);
+        expect(prefixed.expression, ['name', '=', 'b']);
+        expect(gone.view, isNull);
+        expect(gone.expression, isNull);
+
+        prefixed.dispose();
+        gone.dispose();
+      },
+    );
+
     test('opens a link on the view it names, read again, or without a view when it is not one of this list', () async {
       final named = views.add({
         'name': 'Named',

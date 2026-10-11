@@ -522,6 +522,77 @@ void main() {
     );
 
     test(
+      'writes the page size it is set to, the default one included',
+      () async {
+        final url = MemoryListUrl();
+        final list = DataIterator<Thing>(api, url: url);
+
+        await settle();
+        list.pageSize = 25;
+        await settle();
+
+        expect(url.query, {'s': '25'});
+        expect(server.lists.last.queryParameters['limit'], 25);
+
+        list.pageSize = 50;
+        await settle();
+
+        expect(url.query, {'s': '50'});
+
+        list.dispose();
+      },
+    );
+
+    test('reads and writes each of its keys after its prefix', () async {
+      final mine = QuickFilter<bool>(
+        name: 'mine',
+        filter: (on) => on == true ? ['owner', '=', 1] : null,
+      );
+      final url = MemoryListUrl(
+        initial: {
+          'x_p': '2',
+          'x_s': '25',
+          'x_order_by': 'name:desc',
+          'x_q': 'lamp',
+          'x_f': jsonEncode(['name', '=', 'a']),
+          'x_qf': jsonEncode({'mine': true}),
+          'p': '9',
+        },
+      );
+      final list = DataIterator<Thing>(
+        api,
+        url: url.withPrefix('x_'),
+        quickFilters: [mine],
+      );
+
+      await settle();
+
+      expect(list.currentPage, 2);
+      expect(list.pageSize, 25);
+      expect(list.orderBy, ['name:desc']);
+      expect(list.search, 'lamp');
+      expect(list.expression, ['name', '=', 'a']);
+      expect(list.quick['mine'], isTrue);
+
+      list
+        ..pageSize = 100
+        ..orderBy = ['name:asc']
+        ..expression = ['name', '=', 'b']
+        ..setQuick('mine', null);
+      await settle();
+
+      expect(url.query, {
+        'x_s': '100',
+        'x_order_by': 'name:asc',
+        'x_q': 'lamp',
+        'x_f': jsonEncode(['name', '=', 'b']),
+        'p': '9',
+      });
+
+      list.dispose();
+    });
+
+    test(
       'ignores an expression, a view or a page of the url that do not read',
       () async {
         final list = DataIterator<Thing>(
