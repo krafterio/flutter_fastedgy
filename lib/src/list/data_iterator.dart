@@ -553,16 +553,20 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
     return rules.length > 1 ? ['|', rules] : rules.single;
   }
 
-  /// What narrows the list beyond the filter of the screen.
-  List<Object?> get _extraRules => [
+  /// What narrows the list beyond the filter of the screen; without the quick
+  /// filters that keep the manual order when [ordered].
+  List<Object?> _narrowing({bool ordered = false}) => [
     for (final rule in [
       _customFilter,
       _expression,
-      for (final one in quickFilters) one.ruleOf(_quick[one.name]),
+      for (final one in quickFilters)
+        if (!ordered || !one.keepsOrder) one.ruleOf(_quick[one.name]),
       if (_appliedSearch.isNotEmpty) _searchRule(_appliedSearch),
     ])
       if (!_isEmptyFilter(rule)) rule,
   ];
+
+  List<Object?> get _extraRules => _narrowing();
 
   /// The filter the reads send: the one of the screen, then the filter of
   /// the controls, the expression, the quick filters and the search, as one
@@ -678,8 +682,10 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
   // The manual order.
 
   /// Whether the rows can be ordered by hand: the model is sortable and
-  /// nothing narrows the list but the filter of the screen.
-  bool get isSortable => _sortable.isSortable && _extraRules.isEmpty;
+  /// nothing narrows the list but the filter of the screen and the quick
+  /// filters that keep the order.
+  bool get isSortable =>
+      _sortable.isSortable && _narrowing(ordered: true).isEmpty;
 
   /// Saves the order of [ids], moved to the group [groupValue] of
   /// [groupField] when given: the rows take it at once, the order is sent

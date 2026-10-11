@@ -15,6 +15,7 @@ class QuickFilter<V> {
     required this.name,
     required Object? Function(V? value) filter,
     this.defaultValue,
+    this.keepsOrder = false,
     Widget Function(BuildContext context, V? value, ValueChanged<V?> onChanged)?
     builder,
   }) : _rule = ((value) => filter(value as V?)),
@@ -28,6 +29,11 @@ class QuickFilter<V> {
 
   /// Its value while the URL says nothing of it.
   final V? defaultValue;
+
+  /// Whether the rows it leaves keep their manual order, ordered among
+  /// themselves (a list of « my tasks » the user orders): the list stays
+  /// sortable while it applies.
+  final bool keepsOrder;
 
   final Object? Function(Object? value) _rule;
   final Widget Function(BuildContext, Object?, ValueChanged<Object?>)? _control;

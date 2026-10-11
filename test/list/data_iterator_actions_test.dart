@@ -126,6 +126,34 @@ void main() {
       },
     );
 
+    test('keeps on under a quick filter that keeps the order', () async {
+      final list = DataIterator<Thing>(
+        api,
+        quickFilters: [
+          QuickFilter<String>(
+            name: 'scope',
+            defaultValue: 'mine',
+            keepsOrder: true,
+            filter: (value) => value == 'mine' ? ['owner', '=', 5] : null,
+          ),
+          QuickFilter<bool>(
+            name: 'late',
+            filter: (value) => value == true ? ['late', '=', true] : null,
+          ),
+        ],
+      );
+
+      await settle();
+      expect(list.isSortable, isTrue);
+
+      list.setQuick('late', true);
+      await settle();
+
+      expect(list.isSortable, isFalse);
+
+      list.dispose();
+    });
+
     test('reads the rows again and throws what the server refused', () async {
       final list = DataIterator<Thing>(api);
 
