@@ -536,6 +536,29 @@ void main() {
     );
 
     test(
+      'a change read anew before its refresh costs no second request',
+      () async {
+        seed(3, serverTotal: 3);
+        final collection = collectionOf(limit: 20);
+        await collection.load();
+        final before = requests.length;
+
+        getService<Bus>().fire(
+          const ResourceChangedEvent(
+            '/things',
+            type: ResourceChangeType.updated,
+            id: 2,
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+        await collection.reload();
+        await Future<void>.delayed(const Duration(milliseconds: 40));
+
+        expect(requests.length, before + 1);
+      },
+    );
+
+    test(
       'a row deleted outside the loaded range reads the range again',
       () async {
         seed(1, serverTotal: 3);

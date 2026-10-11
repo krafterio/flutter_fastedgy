@@ -532,6 +532,9 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
       _isLoadingMore = true;
     } else {
       _isLoading = true;
+      // The rows read anew make a quiet refresh waiting to run pointless.
+      _refresh?.cancel();
+      _refresh = null;
     }
 
     final generation = append ? _generation : ++_generation;
