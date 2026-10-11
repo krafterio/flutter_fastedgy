@@ -260,7 +260,8 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
   /// The fulltext field the search is matched on.
   final String searchField;
 
-  /// The fields the search is looked for in instead, any of them matching.
+  /// The fields the search is looked for in instead, any of them matching:
+  /// the fulltext field ([searchField]) fuzzily, the others containing it.
   final List<String>? searchFields;
 
   /// What scrolls the list, whose position is kept in the URL (`sl`) and
@@ -572,7 +573,8 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
     }
 
     final rules = [
-      for (final field in fields) [field, 'icontains', text],
+      for (final field in fields)
+        [field, field == searchField ? 'search_fuzzy' : 'icontains', text],
     ];
 
     return rules.length > 1 ? ['|', rules] : rules.single;

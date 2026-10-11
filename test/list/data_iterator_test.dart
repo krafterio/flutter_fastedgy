@@ -225,6 +225,30 @@ void main() {
     });
 
     test(
+      'keeps the fulltext field fuzzy among the fields it searches',
+      () async {
+        expect(
+          await filterOf(
+            () => DataIterator<Thing>(
+              api,
+              searchFields: ['search_value', 'ingredients.name'],
+            ),
+            (list) => list.search = 'tarte',
+          ),
+          [
+            [
+              '|',
+              [
+                ['search_value', 'search_fuzzy', 'tarte'],
+                ['ingredients.name', 'icontains', 'tarte'],
+              ],
+            ],
+          ],
+        );
+      },
+    );
+
+    test(
       'keeps a single rule of the screen as one item, and drops what is empty',
       () async {
         expect(
