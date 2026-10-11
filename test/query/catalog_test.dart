@@ -83,6 +83,68 @@ void main() {
       );
     });
 
+    test('offers each kind its operators, in the order of the catalog', () {
+      const every = [
+        'icontains', 'not icontains', '=', '!=', 'starts with', 'ends with', //
+        'in', 'not in', 'is empty', 'is not empty', '<', '<=', '>', '>=',
+        'between', 'is true', 'is false', 'any', 'not any', 'like',
+      ];
+      const empty = ['is empty', 'is not empty'];
+      const offers = {
+        'char': [
+          'icontains',
+          'not icontains',
+          '=',
+          '!=',
+          'starts with',
+          'ends with',
+          'in',
+          'not in',
+          ...empty,
+        ],
+        'integer': [
+          '=',
+          '!=',
+          '<',
+          '<=',
+          '>',
+          '>=',
+          'between',
+          'in',
+          'not in',
+          ...empty,
+        ],
+        'date': ['=', '!=', '<', '<=', '>', '>=', 'between', ...empty],
+        'datetime': ['on', '<', '<=', '>', '>=', 'between', ...empty],
+        'time': ['=', '<', '<=', '>', '>=', 'between', ...empty],
+        'boolean': ['is true', 'is false'],
+        'choice': ['=', '!=', 'in', 'not in', ...empty],
+        'many2one': [
+          '=',
+          '!=',
+          'in',
+          'not in',
+          ...empty,
+          'any',
+          'not any',
+          '<',
+          '<=',
+          '>',
+          '>=',
+          'between',
+        ],
+        'many2many': ['in', 'not in', ...empty, 'any', 'not any'],
+        'reference': ['=', '!=', 'in', 'not in', ...empty],
+        'json': empty,
+      };
+
+      for (final MapEntry(key: type, value: ids) in offers.entries) {
+        final field = metaField('field', type: type, filterOperators: every);
+
+        expect(_ids(operatorOptions(null, field)), ids, reason: type);
+      }
+    });
+
     test('reads a range over one local day as « on », or what its ui says', () {
       final options = operatorOptions(queryMetadatas, fields['created_at']);
       const day = '2026-10-08';
