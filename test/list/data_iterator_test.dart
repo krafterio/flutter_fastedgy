@@ -673,6 +673,22 @@ void main() {
       },
     );
 
+    test('takes an empty key of the url for no key at all', () async {
+      final list = DataIterator<Thing>(
+        api,
+        url: MemoryListUrl(initial: {'q': ''}),
+        append: true,
+      );
+
+      await settle();
+      await list.loadMore();
+      await settle();
+
+      expect(server.lists, hasLength(2));
+
+      list.dispose();
+    });
+
     test(
       'reads the filter of older links as its expression, and moves it to f',
       () async {

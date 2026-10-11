@@ -1563,7 +1563,9 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
     var moved = false;
 
     for (final MapEntry(:key, value: current) in _shownAs.entries) {
-      final value = key == 'f' ? _filterIn(query) : query[key];
+      final raw = key == 'f' ? _filterIn(query) : query[key];
+      // An empty key says nothing, as the list writes none.
+      final value = raw == null || raw.isEmpty ? null : raw;
       final pending = _sent[key] ?? const [];
       final own = pending.indexOf(value);
 
