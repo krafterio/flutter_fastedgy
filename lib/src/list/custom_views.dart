@@ -12,9 +12,11 @@ import '../api/api_model.dart';
 import '../api/api_query.dart';
 import '../api/base_model.dart';
 import '../auth/user_provider.dart';
+import '../bus/bus.dart';
 import '../container/container.dart';
 import '../fetcher/client.dart';
 import '../query/query_expression.dart' show sameExpression;
+import '../workspace/workspace_provider.dart' show WorkspaceSwitchedEvent;
 import 'data_iterator.dart';
 
 const _viewFields =
@@ -177,7 +179,9 @@ class DataIteratorViews {
 
 /// The custom views of a list, the port of `useCustomViews`: read once its
 /// menu opens, applied to [list], saved from what it shows. What the server
-/// refuses is thrown to the caller, the screen showing it.
+/// refuses is thrown to the caller, the screen showing it. In another
+/// workspace, the views read are forgotten, and those of the new one read
+/// again when they had been.
 class CustomViews extends ChangeNotifier {
   CustomViews(
     this.model, {
@@ -193,7 +197,13 @@ class CustomViews extends ChangeNotifier {
        _favorites = _FavoriteApi(
          prefix ?? list?.viewsPrefix ?? '',
          fetcher: fetcher ?? list?.api.fetcher,
-       );
+       ) {
+    if (hasService<Bus>()) {
+      _switches = getService<Bus>().on<WorkspaceSwitchedEvent>().listen(
+        (_) => _forget(),
+      );
+    }
+  }
 
   /// The metadata name of the model listed.
   final String model;
@@ -212,6 +222,11 @@ class CustomViews extends ChangeNotifier {
   bool _loaded = false;
   Object? _error;
   Future<void>? _reading;
+  StreamSubscription<WorkspaceSwitchedEvent>? _switches;
+
+  // Bumped by a workspace switch: a read answering for the one before lands
+  // nowhere.
+  int _generation = 0;
 
   /// The views of the list, in their order.
   List<CustomView> get items => _items;
@@ -256,11 +271,28 @@ class CustomViews extends ChangeNotifier {
       return Future.value();
     }
 
-    return _reading ??= refresh().whenComplete(() => _reading = null);
+    final running = _reading;
+
+    if (running != null) {
+      return running;
+    }
+
+    late final Future<void> reading;
+
+    // A read forgotten by a workspace switch leaves the one after it alone.
+    reading = refresh().whenComplete(() {
+      if (identical(_reading, reading)) {
+        _reading = null;
+      }
+    });
+
+    return _reading = reading;
   }
 
   /// Reads the views again.
   Future<void> refresh() async {
+    final generation = _generation;
+
     _loading = true;
     notifyListeners();
 
@@ -282,6 +314,10 @@ class CustomViews extends ChangeNotifier {
 
       await Future.wait([views, own], eagerError: true);
 
+      if (generation != _generation) {
+        return;
+      }
+
       final first = (await own).items.firstOrNull;
 
       _items = (await views).items;
@@ -297,13 +333,44 @@ class CustomViews extends ChangeNotifier {
         _follow(on);
       }
     } catch (failure) {
+      if (generation != _generation) {
+        return;
+      }
+
       _error = failure;
 
       rethrow;
     } finally {
-      _loading = false;
-      notifyListeners();
+      if (generation == _generation) {
+        _loading = false;
+        notifyListeners();
+      }
     }
+  }
+
+  /// Another workspace: the views held are the one before's, and those of
+  /// the new one are read when these had been.
+  void _forget() {
+    final read = _loaded;
+
+    _generation++;
+    _items = const [];
+    _favorite = null;
+    _error = null;
+    _loaded = false;
+    _loading = false;
+    _reading = null;
+    notifyListeners();
+
+    if (read) {
+      unawaited(ensure().catchError((_) {}));
+    }
+  }
+
+  @override
+  void dispose() {
+    unawaited(_switches?.cancel());
+    super.dispose();
   }
 
   /// Keeps what the list shows as a new view, which becomes the current one.

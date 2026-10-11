@@ -456,6 +456,34 @@ void main() {
       },
     );
 
+    test(
+      'reads the views of the workspace switched to, once they were read',
+      () async {
+        final before = views.add({'name': 'Before'});
+
+        views.favorites.add({'id': 1, 'view': before['id']});
+
+        final list = DataIterator<Thing>(api);
+        final custom = CustomViews('thing', list: list);
+
+        await custom.ensure();
+        expect(custom.items.map((view) => view.name), ['Before']);
+
+        views.views.clear();
+        views.favorites.clear();
+        views.add({'name': 'After'});
+        getService<Bus>().fire(const WorkspaceSwitchedEvent());
+        await settle();
+
+        expect(custom.items.map((view) => view.name), ['After']);
+        expect(custom.favorite, isNull);
+        expect(custom.loaded, isTrue);
+
+        list.dispose();
+        custom.dispose();
+      },
+    );
+
     test('opens again on the view of the workspace switched to', () async {
       final url = MemoryListUrl(initial: {'q': 'x'});
       final list = DataIterator<Thing>(
