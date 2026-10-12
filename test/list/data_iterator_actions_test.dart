@@ -176,7 +176,7 @@ void main() {
       await settle();
 
       expect(list.isSortable, isTrue);
-      expect(list.fields, ['id', 'sequence']);
+      expect(list.fields, ['id', '+', 'sequence']);
 
       list.dispose();
     });
@@ -394,7 +394,7 @@ void main() {
         'offset': 0,
         'limit': 50,
         'filter': null,
-        'fields': 'id',
+        'fields': 'id,+',
         'order': 'id:asc',
       });
       expect(list.currentPage, 1);

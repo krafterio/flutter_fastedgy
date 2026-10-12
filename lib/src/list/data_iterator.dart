@@ -650,9 +650,10 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
     }.toList();
   }
 
-  /// The fields the screen reads: those it resolves, else those it gives.
+  /// The fields the screen reads: those it resolves, else those it gives,
+  /// else every field of the model.
   @protected
-  List<String> get readFields => _fieldsResolver?.call() ?? _fields ?? const [];
+  List<String> get readFields => _fieldsResolver?.call() ?? _fields ?? const ['+'];
 
   /// Tells the list its fields may have changed: a field it has not read yet
   /// reads the rows again.

@@ -124,6 +124,16 @@ void main() {
       list.dispose();
     });
 
+    test('reads every field of the model when the screen gives none', () async {
+      final list = DataIterator<Thing>(api);
+
+      await settle();
+
+      expect(sent(server.lists.single)['fields'], 'id,+');
+
+      list.dispose();
+    });
+
     test('reads again for a field it has not read, not for the fields it just read', () async {
       var fields = ['name'];
       final list = _Fields(api, () => fields);
@@ -322,7 +332,7 @@ void main() {
         'filter': [
           ['name', '=', 'a'],
         ],
-        'fields': 'id',
+        'fields': 'id,+',
         'order': 'name:desc',
       });
 
@@ -360,7 +370,7 @@ void main() {
         'offset': 100,
         'limit': 50,
         'filter': null,
-        'fields': 'id',
+        'fields': 'id,+',
         'order': null,
       });
 
@@ -566,7 +576,7 @@ void main() {
             ['name', '=', 'a'],
             ['search_value', 'search_fuzzy', 'lamp'],
           ],
-          'fields': 'id',
+          'fields': 'id,+',
           'order': 'name:desc',
         });
 
@@ -754,7 +764,7 @@ void main() {
         'filter': [
           ['search_value', 'search_fuzzy', 'lamp'],
         ],
-        'fields': 'id',
+        'fields': 'id,+',
         'order': 'name:asc',
       });
 
