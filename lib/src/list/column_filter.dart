@@ -3,7 +3,7 @@
  * MIT License (see LICENSE file).
  */
 
-import 'package:flutter/widgets.dart' show IconData;
+import 'package:flutter/widgets.dart' show Color, IconData;
 import 'package:intl/intl.dart';
 
 import '../api/api_query.dart';
@@ -322,6 +322,7 @@ class ColumnFilterOption {
     this.label, {
     this.emoji,
     this.icon,
+    this.color,
     this.group,
     this.title,
   });
@@ -330,6 +331,7 @@ class ColumnFilterOption {
   final String label;
   final String? emoji;
   final IconData? icon;
+  final Color? color;
   final String? group;
   final String? title;
 
@@ -432,6 +434,7 @@ ColumnFilter<Object>? columnFilterOf(
   String? label,
   ValueSourceContext? context,
   String? path,
+  ColumnFilterOption Function(ColumnFilterOption option)? choiceOption,
 }) {
   final title = label ?? field.label;
   final target = field.target;
@@ -448,7 +451,8 @@ ColumnFilter<Object>? columnFilterOf(
       options: [
         for (final MapEntry(:key, :value)
             in (field.choices ?? const <String, String>{}).entries)
-          ColumnFilterOption(key, value),
+          choiceOption?.call(ColumnFilterOption(key, value)) ??
+              ColumnFilterOption(key, value),
         if (!field.required) ColumnFilterOption(null, t('Empty')),
       ],
     ),

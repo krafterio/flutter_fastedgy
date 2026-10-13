@@ -3,6 +3,7 @@
  * MIT License (see LICENSE file).
  */
 
+import 'package:flutter/widgets.dart' show Color, IconData;
 import 'package:flutter_fastedgy/flutter_fastedgy.dart';
 import 'package:flutter_fastedgy/list.dart';
 import 'package:flutter_fastedgy/query.dart';
@@ -256,6 +257,27 @@ void main() {
         ['open'],
       );
       expect(columnFilterOf(metaField('owner', type: 'many2one')), isNull);
+    });
+
+    test('take the look a column gives the options of a choice, their values and labels kept', () {
+      const icon = IconData(0xe000);
+      const color = Color(0xFF00AA00);
+      final options = (columnFilterOf(
+        metaField('status', type: 'choice', choices: {'open': 'Open'}),
+        choiceOption: (option) => ColumnFilterOption(
+          option.value,
+          option.label,
+          icon: icon,
+          color: color,
+        ),
+      ) as ChoiceColumnFilter).options;
+
+      expect(options.first.value, 'open');
+      expect(options.first.label, 'Open');
+      expect(options.first.icon, icon);
+      expect(options.first.color, color);
+      expect(options.last.value, isNull);
+      expect(options.last.icon, isNull);
     });
   });
 

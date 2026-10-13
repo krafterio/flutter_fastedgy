@@ -31,6 +31,7 @@ class DataTableColumn {
     this.currency,
     this.filter,
     this.filterable = false,
+    this.choiceOption,
     this.editable = false,
   }) : meta = null;
 
@@ -46,6 +47,7 @@ class DataTableColumn {
     required this.currency,
     required this.filter,
     required this.filterable,
+    required this.choiceOption,
     required this.editable,
     required this.meta,
   });
@@ -80,6 +82,9 @@ class DataTableColumn {
   /// field once the metadata are read.
   final ColumnFilter<Object>? filter;
   final bool filterable;
+
+  /// Adds an icon or a color to an option of a choice filter, its value and label staying the metadata's.
+  final ColumnFilterOption Function(ColumnFilterOption option)? choiceOption;
 
   /// Its cells are edited in place, with the editor of the kind of their
   /// field, unless the field is read-only or computed.
@@ -121,6 +126,7 @@ class DataTableColumn {
           currency: currency,
           filter: filter,
           filterable: filterable,
+          choiceOption: choiceOption,
           editable: editable,
           meta: meta,
         );
@@ -146,9 +152,11 @@ class DataTableColumn {
                     label: label,
                     context: context,
                     path: key,
+                    choiceOption: choiceOption,
                   )
                 : null),
         filterable: filterable,
+        choiceOption: choiceOption,
         editable: editable,
         meta: field,
       );
