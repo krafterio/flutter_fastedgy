@@ -221,7 +221,7 @@ class _RouterUrl extends _KeysUrl {
       return;
     }
 
-    unawaited(
+    void replace() => unawaited(
       _router.replace(
         Uri(
           path: uri.path,
@@ -229,6 +229,10 @@ class _RouterUrl extends _KeysUrl {
         ).toString(),
       ),
     );
+
+    // A list's state is no step of the browser history.
+    final context = _router.routerDelegate.navigatorKey.currentContext;
+    context == null ? replace() : Router.neglect(context, replace);
   }
 
   @override

@@ -3,6 +3,7 @@
  * MIT License (see LICENSE file).
  */
 
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_fastedgy/list.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -96,6 +97,37 @@ void main() {
         );
       },
     );
+
+    testWidgets('writes without a step of the browser history', (tester) async {
+      final updates = <Object?>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.navigation,
+        (call) async {
+          if (call.method == 'routeInformationUpdated') {
+            updates.add((call.arguments as Map)['replace']);
+          }
+
+          return null;
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.navigation,
+          null,
+        ),
+      );
+      GoRouter.optionURLReflectsImperativeAPIs = true;
+      addTearDown(() => GoRouter.optionURLReflectsImperativeAPIs = false);
+      await mount(tester);
+      updates.clear();
+
+      url.write({'q': 'desk'});
+      await tester.pumpAndSettle();
+
+      expect(router.state.uri.queryParameters, {'q': 'desk'});
+      expect(updates, isNotEmpty);
+      expect(updates, everyElement(isTrue));
+    });
 
     testWidgets(
       'reads the query of its route, and replaces the location to write it',
