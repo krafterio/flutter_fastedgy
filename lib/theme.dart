@@ -20,6 +20,7 @@ export 'src/ui/theme/scaling.dart' show AdaptiveScaling, Density;
 export 'src/ui/theme/theme.dart' show FastEdgyTheme;
 export 'src/ui/theme/theme_data.dart' show FastEdgyThemeData;
 export 'src/ui/theme/typography.dart' show TypographyRoles;
+export 'src/ui/color_emoji.dart';
 export 'src/ui/icons.dart';
 export 'src/ui/interaction.dart';
 export 'src/ui/responsive.dart';
