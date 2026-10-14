@@ -1035,9 +1035,21 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
     try {
       yield await _listRemote(query: query, params: params);
     } catch (error) {
-      if (cached.total == 0 || !_canFallback(error)) {
+      if (!_canFallback(error)) {
         rethrow;
       }
+
+      if (cached.total > 0) {
+        return;
+      }
+
+      final fallback = await _offlineListFallback(query);
+
+      if (fallback == null) {
+        rethrow;
+      }
+
+      yield fallback;
     }
   }
 
@@ -1076,9 +1088,13 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
     final ctx = await _replicaContext();
 
     if (ctx != null) {
-      // A filtered query may legitimately match nothing: only rethrow when the
-      // scope was never mirrored at all.
-      if (await ctx.replica.store.countScope(ctx.model.name, ctx.scope) == 0) {
+      // A filtered query may legitimately match nothing, and so may a model
+      // its last completed sync found empty: only rethrow when the scope was
+      // never mirrored at all.
+      final store = ctx.replica.store;
+
+      if (await store.countScope(ctx.model.name, ctx.scope) == 0 &&
+          await store.cursor(ctx.model.name, ctx.scope) == null) {
         return null;
       }
 

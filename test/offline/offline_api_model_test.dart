@@ -1195,6 +1195,24 @@ void replicatedModeTests() {
     await expectLater(api.list(), throwsA(isA<NetworkError>()));
   });
 
+  test('a scope synced empty answers empty offline', () async {
+    adapter.routes['GET /dataset/sync-state'] = (_) => {
+      'items': [
+        {'model': 'item', 'mode': 'full', 'count': 0, 'updated_at': null},
+      ],
+    };
+    adapter.routes['GET /acme/items'] = _paginated([]);
+    await api.sync();
+
+    adapter.offline = true;
+    final listed = await api.list();
+    final streamed = await api.listCacheThenNetwork().toList();
+
+    expect(listed.items, isEmpty);
+    expect(listed.total, 0);
+    expect(streamed.single.items, isEmpty);
+  });
+
   test('list deep-merges records without pruning the scope', () async {
     adapter.routes['GET /acme/items'] = _paginated([
       {'id': 1, 'name': 'One', 'tag': 'keep', 'qty': 3},
