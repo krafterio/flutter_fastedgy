@@ -45,6 +45,27 @@ void main() {
     expect(seen, [false]);
   });
 
+  test('passes a change back to the value its source saw before a change dropped in the background', () async {
+    final source = StreamController<bool>.broadcast();
+    final resumes = StreamController<void>();
+    final seen = <bool>[];
+    final subscription = watchConnectivity(
+      changes: source.stream.distinct(),
+      resumes: resumes.stream,
+      check: () async => true,
+    ).listen(seen.add);
+    addTearDown(subscription.cancel);
+
+    source.add(false);
+    await pumpEventQueue();
+    resumes.add(null);
+    await pumpEventQueue();
+    source.add(false);
+    await pumpEventQueue();
+
+    expect(seen, [false, true, false]);
+  });
+
   test('a failed read on resume keeps the last known state', () async {
     final resumes = StreamController<void>();
     final seen = <bool>[];

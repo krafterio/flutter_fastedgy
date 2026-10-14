@@ -14,14 +14,23 @@ Stream<bool> watchConnectivity({
   StreamSubscription<bool>? changeSubscription;
   StreamSubscription<bool>? resumeSubscription;
 
+  void follow() {
+    unawaited(changeSubscription?.cancel());
+    changeSubscription = changes.listen(
+      controller.add,
+      onError: controller.addError,
+    );
+  }
+
   controller = StreamController<bool>(
     onListen: () {
-      changeSubscription = changes.listen(
-        controller.add,
-        onError: controller.addError,
-      );
+      follow();
       resumeSubscription = resumes
-          .asyncMap((_) => check())
+          .asyncMap((_) {
+            follow();
+
+            return check();
+          })
           .listen(controller.add, onError: (Object _) {});
     },
     onCancel: () async {
