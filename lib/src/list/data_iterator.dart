@@ -28,6 +28,7 @@ import '../logging/logger.dart';
 import '../metadata/models.dart';
 import '../query/order_by.dart';
 import '../query/query_expression.dart' show sameExpression;
+import '../sync/sync_status.dart';
 import '../workspace/workspace_provider.dart' show WorkspaceSwitchedEvent;
 import 'custom_views.dart';
 import 'data_groups.dart';
@@ -714,11 +715,13 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
 
   // The manual order.
 
-  /// Whether the rows can be ordered by hand: the model is sortable and
-  /// nothing narrows the list but the filter of the screen and the quick
-  /// filters that keep the order.
+  /// Whether the rows can be ordered by hand: the model is sortable, nothing
+  /// narrows the list but the filter of the screen and the quick filters that
+  /// keep the order, and the server answers, an order being never buffered.
   bool get isSortable =>
-      _sortable.isSortable && _narrowing(ordered: true).isEmpty;
+      _sortable.isSortable &&
+      _narrowing(ordered: true).isEmpty &&
+      SyncStatus.currentlyReachable;
 
   /// Saves the order of [ids], moved to the group [groupValue] of
   /// [groupField] when given: the rows take it at once, the order is sent
@@ -729,7 +732,7 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
     String? groupField,
     Object? groupValue,
   }) async {
-    if (_sortable.isSortable && !isSortable) {
+    if (_sortable.isSortable && _narrowing(ordered: true).isNotEmpty) {
       _log.warning('Resequencing waits for the list to be narrowed by nothing');
       await refresh();
 

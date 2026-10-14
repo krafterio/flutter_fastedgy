@@ -126,6 +126,36 @@ void main() {
       },
     );
 
+    test(
+      'stops while the server is out of reach, an order being never buffered',
+      () async {
+        final status = SyncStatus(getService<Bus>());
+        container.registerSingleton<SyncStatus>(status);
+        addTearDown(() => container.unregister<SyncStatus>());
+
+        final list = DataIterator<Thing>(api);
+        var notified = 0;
+        list.addListener(() => notified++);
+
+        await settle();
+        expect(list.isSortable, isTrue);
+        notified = 0;
+
+        status.setServerAnswering(false);
+        await settle();
+
+        expect(list.isSortable, isFalse);
+        expect(notified, greaterThan(0));
+
+        status.setServerAnswering(true);
+        await settle();
+
+        expect(list.isSortable, isTrue);
+
+        list.dispose();
+      },
+    );
+
     test('keeps on under a quick filter that keeps the order', () async {
       final list = DataIterator<Thing>(
         api,
