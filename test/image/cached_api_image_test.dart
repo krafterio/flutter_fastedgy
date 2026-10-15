@@ -159,6 +159,32 @@ void main() {
       expect(find.byType(Image), findsOneWidget);
     });
 
+    testWidgets('an image sized by its container fills it', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                width: 200,
+                height: 100,
+                child: CachedApiImage(
+                  path: 'banners/a.png',
+                  mode: ImageMode.cover,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      for (var round = 0; round < 30; round++) {
+        await tester.pump(const Duration(milliseconds: 10));
+      }
+
+      expect(tester.getSize(find.byType(Image)), const Size(200, 100));
+    });
+
     testWidgets('serves the mirrored bytes when the server is unreachable', (
       tester,
     ) async {

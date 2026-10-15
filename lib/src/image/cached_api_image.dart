@@ -502,7 +502,18 @@ class _CachedApiImageState extends State<CachedApiImage> {
     );
   }
 
+  /// Fades the image in. The fade's stack passes the constraints through: a
+  /// loose stack would let an image without dimensions fall back to its own
+  /// proportions instead of filling the box its container gives it.
   Widget _faded(Widget child) {
-    return AnimatedSwitcher(duration: widget.fadeInDuration, child: child);
+    return AnimatedSwitcher(
+      duration: widget.fadeInDuration,
+      layoutBuilder: (current, previous) => Stack(
+        fit: StackFit.passthrough,
+        alignment: Alignment.center,
+        children: [...previous, ?current],
+      ),
+      child: child,
+    );
   }
 }
