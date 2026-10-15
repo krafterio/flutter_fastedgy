@@ -117,6 +117,35 @@ void main() {
     return topOf(tester, 'Titre');
   }
 
+  testWidgets('lays its text blocks at the rhythm the theme names', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      FastEdgyTheme(
+        data: FastEdgyThemeData.fallback.copyWith(
+          components: {
+            RichTextTheme: RichTextTheme.fallback.copyWith(
+              textBlockPadding: const EdgeInsets.symmetric(vertical: 10),
+            ),
+          },
+        ),
+        child: RichTextViewer(
+          editorState: stateOf([
+            paragraphNode(delta: Delta()..insert('Premier')),
+            paragraphNode(delta: Delta()..insert('Second')),
+          ]),
+          features: defaultRichTextFeatures,
+        ),
+      ),
+    );
+
+    final first = tester.getRect(find.text('Premier', findRichText: true));
+    final second = tester.getRect(find.text('Second', findRichText: true));
+
+    expect(second.top - first.bottom, 20);
+  });
+
   testWidgets('a heading holds the air the theme names above it', (
     tester,
   ) async {

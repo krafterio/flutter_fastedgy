@@ -120,6 +120,7 @@ class _RichTextViewerState extends State<RichTextViewer> {
       ..renderer = BlockComponentRenderer(
         builders: richTextBlocks(
           features: widget.features,
+          textBlockPadding: theme.textBlockPadding,
           listItemPadding: theme.listItemPadding,
           headingText: theme.headingAt,
           headingMargin: theme.headingMarginAt,
