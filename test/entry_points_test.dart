@@ -27,6 +27,7 @@ const _free = [
   'list.dart',
   'query.dart',
   'responsive.dart',
+  'router.dart',
   'testing.dart',
   'workspace.dart',
 ];
