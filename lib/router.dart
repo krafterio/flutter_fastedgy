@@ -5,4 +5,5 @@
 
 library;
 
+export 'src/router/breadcrumbs.dart';
 export 'src/router/history_back.dart';
