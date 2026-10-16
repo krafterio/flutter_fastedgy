@@ -260,6 +260,34 @@ void main() {
     });
   });
 
+  group('model field upload from bytes', () {
+    test(
+      'posts the bytes as the file of the field, typed by their name',
+      () async {
+        adapter.handler = (_) => {'path': 'workspaces/logo.png'};
+
+        final result = await uploader.uploadModelFieldFromBytes(
+          model: 'workspaces',
+          modelId: 12,
+          field: 'logo_url',
+          bytes: Uint8List.fromList([1, 2, 3]),
+          fileName: 'logo.png',
+        );
+        final file = adapter.bodies.last.files.single;
+
+        expect(result.path, 'workspaces/logo.png');
+        expect(
+          adapter.calls.last,
+          'POST /storage/upload/workspaces/12/logo_url',
+        );
+        expect(file.key, 'file');
+        expect(file.value.filename, 'logo.png');
+        expect(file.value.contentType?.mimeType, 'image/png');
+        expect(await outbox.all(), isEmpty);
+      },
+    );
+  });
+
   group('buffered attachment upload', () {
     test('an offline upload is buffered instead of failing', () async {
       adapter.offline = true;

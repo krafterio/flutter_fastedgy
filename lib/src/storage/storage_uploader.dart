@@ -179,6 +179,66 @@ class StorageUploader {
       mimeType = _getMimeType(file.path);
     }
 
+    return _uploadModelFieldBytes(
+      model,
+      modelId,
+      field,
+      fileBytes,
+      fileName,
+      mimeType,
+      onProgress,
+      cache,
+    );
+  }
+
+  /// Upload to a model field a file already in memory, where no [File] is at hand (the web, a picked image): the
+  /// counterpart of [uploadAttachmentsFromBytes]. The type is read from [fileName] unless [mimeType] says it.
+  ///
+  /// Example:
+  /// ```dart
+  /// final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+  /// final result = await uploader.uploadModelFieldFromBytes(
+  ///   model: 'workspaces',
+  ///   modelId: 12,
+  ///   field: 'logo_url',
+  ///   bytes: await picked!.readAsBytes(),
+  ///   fileName: picked.name,
+  /// );
+  /// ```
+  Future<StorageUploadResult> uploadModelFieldFromBytes({
+    required String model,
+    required int modelId,
+    required String field,
+    required Uint8List bytes,
+    required String fileName,
+    String? mimeType,
+    void Function(int sent, int total)? onProgress,
+    OutboxCacheContext? cache,
+  }) {
+    _logger.fine('Uploading bytes to $model/$modelId/$field');
+
+    return _uploadModelFieldBytes(
+      model,
+      modelId,
+      field,
+      bytes,
+      fileName,
+      mimeType ?? _getMimeTypeFromFilename(fileName),
+      onProgress,
+      cache,
+    );
+  }
+
+  Future<StorageUploadResult> _uploadModelFieldBytes(
+    String model,
+    int modelId,
+    String field,
+    Uint8List fileBytes,
+    String fileName,
+    String? mimeType,
+    void Function(int sent, int total)? onProgress,
+    OutboxCacheContext? cache,
+  ) async {
     // Create multipart file
     final multipartFile = MultipartFile.fromBytes(
       fileBytes,
