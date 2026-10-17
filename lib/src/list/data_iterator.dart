@@ -601,6 +601,14 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
 
   List<Object?> get _extraRules => _narrowing();
 
+  /// The filter of the screen alone, always applied, whatever the controls
+  /// set over it: what a count of the list's views starts from.
+  Object? get restrictiveFilter {
+    final restrictive = _restrictive;
+
+    return _isEmptyFilter(restrictive) ? null : restrictive;
+  }
+
   /// The filter the reads send: the one of the screen, then the filter of
   /// the controls, the expression, the quick filters and the search, as one
   /// flat list of rules all applying.

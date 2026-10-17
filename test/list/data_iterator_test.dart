@@ -196,6 +196,20 @@ void main() {
       );
     });
 
+    test('keeps the filter of the screen apart from what the controls set over it', () {
+      final followed = ValueNotifier<Object?>(['kind', '=', 1]);
+      final list = DataIterator<Thing>(api, filter: followed)..filter = ['owner', '=', 7];
+
+      addTearDown(list.dispose);
+      addTearDown(followed.dispose);
+
+      expect(list.restrictiveFilter, ['kind', '=', 1]);
+
+      followed.value = const <Object?>[];
+
+      expect(list.restrictiveFilter, isNull);
+    });
+
     test('adds the filter of the controls, the expression, the quick filters and the search, in this order', () async {
       final late = QuickFilter<bool>(
         name: 'late',
