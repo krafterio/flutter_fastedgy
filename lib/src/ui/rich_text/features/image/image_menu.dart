@@ -5,6 +5,7 @@
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:material_ui/material_ui.dart';
@@ -31,6 +32,26 @@ typedef ImageStore = Future<int?> Function(File file);
 /// of permissions an application already owns. Null simply drops the "from this
 /// device" half of the card — an address still inserts a picture.
 typedef ImageFilePicker = Future<File?> Function();
+
+/// A picture picked on this device, as its bytes: what a platform with no
+/// files to hand over, the web, gives.
+class PickedImage {
+  final Uint8List bytes;
+  final String name;
+
+  /// What it is, read from [name] when the picker does not say.
+  final String? mimeType;
+
+  const PickedImage({required this.bytes, required this.name, this.mimeType});
+}
+
+/// Where a picture comes from on this device, read as its bytes: the
+/// counterpart of [ImageFilePicker] that also works on the web.
+typedef ImageBytesPicker = Future<PickedImage?> Function();
+
+/// Stores a picture picked as its bytes and answers with the attachment it
+/// became: the counterpart of [ImageStore]. Null leaves it in the text.
+typedef ImageBytesStore = Future<int?> Function(PickedImage image);
 
 /// Puts an image at [selection].
 ///
@@ -67,6 +88,8 @@ void showImageEditor(
   Selection selection, {
   ImageStore? store,
   ImageFilePicker? pickFile,
+  ImageBytesStore? storeImage,
+  ImageBytesPicker? pickImage,
 }) {
   Future<void> insert(String url) => insertImage(editorState, selection, url);
 
@@ -77,6 +100,8 @@ void showImageEditor(
     builder: (context, dismiss) => _ImageMenu(
       store: store,
       pickFile: pickFile,
+      storeImage: storeImage,
+      pickImage: pickImage,
       onInsert: (url) async {
         await insert(url);
         dismiss();
@@ -84,6 +109,15 @@ void showImageEditor(
       onDismiss: dismiss,
     ),
   );
+}
+
+/// Reads [image] as the data URI that carries it until it is stored.
+String inlineImageOfBytes(PickedImage image) {
+  final extension = image.name.split('.').last.toLowerCase();
+  final mime =
+      image.mimeType ?? 'image/${extension == 'jpg' ? 'jpeg' : extension}';
+
+  return 'data:$mime;base64,${base64Encode(image.bytes)}';
 }
 
 /// Reads [file] back as the data URI that carries it until it is stored.
@@ -106,15 +140,22 @@ enum _Tab { file, url }
 class _ImageMenu extends StatefulWidget {
   final ImageStore? store;
   final ImageFilePicker? pickFile;
+  final ImageBytesStore? storeImage;
+  final ImageBytesPicker? pickImage;
   final Future<void> Function(String url) onInsert;
   final VoidCallback onDismiss;
 
   const _ImageMenu({
     required this.store,
     required this.pickFile,
+    required this.storeImage,
+    required this.pickImage,
     required this.onInsert,
     required this.onDismiss,
   });
+
+  /// Whether a picture can come from this device: as its bytes, or as a file.
+  bool get picks => pickImage != null || pickFile != null;
 
   @override
   State<_ImageMenu> createState() => _ImageMenuState();
@@ -133,6 +174,10 @@ class _ImageMenuState extends State<_ImageMenu> {
   }
 
   Future<void> _pick() async {
+    if (widget.pickImage case final pickImage?) {
+      return _pickBytes(pickImage);
+    }
+
     final file = await widget.pickFile?.call();
 
     if (file == null) {
@@ -163,6 +208,25 @@ class _ImageMenuState extends State<_ImageMenu> {
     await widget.onInsert(url);
   }
 
+  /// [_pick] for a picture read as its bytes.
+  Future<void> _pickBytes(ImageBytesPicker pickImage) async {
+    final image = await pickImage();
+
+    if (image == null) {
+      return;
+    }
+
+    if (mounted) {
+      setState(() => _busy = true);
+    }
+
+    final id = await widget.storeImage?.call(image);
+
+    await widget.onInsert(
+      id != null ? attachmentImageUrl(id) : inlineImageOfBytes(image),
+    );
+  }
+
   bool get _urlReady => Uri.tryParse(_url.text.trim())?.hasScheme ?? false;
 
   @override
@@ -171,14 +235,11 @@ class _ImageMenuState extends State<_ImageMenu> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (widget.pickFile != null) ...[
+        if (widget.picks) ...[
           _Tabs(current: _tab, onChanged: (tab) => setState(() => _tab = tab)),
           const SizedBox(height: 12),
         ],
-        if (widget.pickFile != null && _tab == _Tab.file)
-          _picker()
-        else
-          _address(),
+        if (widget.picks && _tab == _Tab.file) _picker() else _address(),
       ],
     );
   }

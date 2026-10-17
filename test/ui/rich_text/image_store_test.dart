@@ -4,6 +4,7 @@
  */
 
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_fastedgy/ui.dart';
 import 'package:flutter_fastedgy/flutter_fastedgy.dart' show Attachment;
@@ -47,6 +48,22 @@ void main() {
 
       // Reached without touching the network: a null id answers before any upload.
       expect(await store(File('/nowhere/pixel.png')), isNull);
+    },
+  );
+
+  test(
+    'with no record yet, a picture picked as its bytes is not uploaded either',
+    () async {
+      final store = inlineImageBytesStore(
+        model: 'record',
+        recordId: () => null,
+        field: 'description',
+      );
+
+      expect(
+        await store(PickedImage(bytes: Uint8List(0), name: 'pixel.png')),
+        isNull,
+      );
     },
   );
 

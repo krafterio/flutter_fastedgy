@@ -55,3 +55,40 @@ ImageStore inlineImageStore({
     }
   };
 }
+
+/// [inlineImageStore] for a picture picked as its bytes ([ImageBytesStore]),
+/// which is how the web hands one over.
+ImageBytesStore inlineImageBytesStore({
+  required String model,
+  required int? Function() recordId,
+  required String field,
+}) {
+  return (PickedImage image) async {
+    final id = recordId();
+
+    if (id == null) {
+      return null;
+    }
+
+    try {
+      final uploaded = await getService<StorageUploader>()
+          .uploadAttachmentsFromBytes(
+            {image.name: image.bytes},
+            filenames: {image.name: image.name},
+            meta: (Attachment(
+              {},
+            ).attachToRecord(model, id)..inlineOn(field)).toJson(),
+          );
+
+      return uploaded.singleOrNull?.id;
+    } catch (error, stackTrace) {
+      _log.warning(
+        'Failed to store an image of $model.$field',
+        error,
+        stackTrace,
+      );
+
+      return null;
+    }
+  };
+}

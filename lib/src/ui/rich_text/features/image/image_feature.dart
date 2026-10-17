@@ -35,6 +35,11 @@ class ImageFeature extends RichTextFeature {
   /// an address alone, which is what an application with no file plugin gets.
   final ImageFilePicker? pickFile;
 
+  /// [pickFile] and [store] for a picture read as its bytes, which the web can
+  /// pick where it has no file to give. Taken over [pickFile] when given.
+  final ImageBytesPicker? pickImage;
+  final ImageBytesStore? storeImage;
+
   /// The glyph on the "/" menu entry — an argument for the reason every menu
   /// glyph is one: the editor builds that menu in an overlay of its own.
   final IconData menuIcon;
@@ -42,6 +47,8 @@ class ImageFeature extends RichTextFeature {
   const ImageFeature({
     this.store,
     this.pickFile,
+    this.pickImage,
+    this.storeImage,
     this.menuIcon = Icons.image_outlined,
   });
 
@@ -97,6 +104,8 @@ class ImageFeature extends RichTextFeature {
           selection,
           store: store,
           pickFile: pickFile,
+          storeImage: storeImage,
+          pickImage: pickImage,
         );
       },
     ),
@@ -125,6 +134,8 @@ class ImageFeature extends RichTextFeature {
           selection,
           store: store,
           pickFile: pickFile,
+          storeImage: storeImage,
+          pickImage: pickImage,
         );
       },
     ),
