@@ -39,7 +39,12 @@ void main() {
 
       final id = int.parse(match[1]!);
 
-      return MockResponse.json({'previous': id - 1, 'next': id + 1});
+      return MockResponse.json({
+        'previous': id - 1,
+        'next': id + 1,
+        'position': id,
+        'total': 20,
+      });
     };
     api = ThingApi(server.fetcher);
   });
@@ -112,6 +117,7 @@ void main() {
 
         expect(record.inList, isTrue);
         expect((record.previous, record.next), (6, 8));
+        expect((record.position, record.total), (7, 20));
         expect(record.status, SiblingsStatus.success);
         expect(siblings().single.queryParameters['order_by'], 'name:asc');
         expect(jsonDecode(siblings().single.headers['X-Filter'] as String), [

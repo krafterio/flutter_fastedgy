@@ -40,7 +40,7 @@ void main() {
 
             return MockResponse.json(
               request.path.endsWith('/7/siblings')
-                  ? {'previous': 6, 'next': null}
+                  ? {'previous': 6, 'next': null, 'position': 4, 'total': 9}
                   : null,
             );
           },
@@ -56,7 +56,7 @@ void main() {
           filter: ['name', 'icontains', 'lamp'],
           orderBy: ['name:asc'],
         ),
-        (previous: 6, next: null),
+        (previous: 6, next: null, position: 4, total: 9),
       );
       expect(requests.single.path, '/acme/things/7/siblings');
       expect(requests.single.queryParameters['order_by'], 'name:asc');
@@ -66,7 +66,12 @@ void main() {
         'lamp',
       ]);
 
-      expect(await api.siblings(8), (previous: null, next: null));
+      expect(await api.siblings(8), (
+        previous: null,
+        next: null,
+        position: null,
+        total: null,
+      ));
       expect(requests.last.headers.containsKey('X-Filter'), isFalse);
     },
   );

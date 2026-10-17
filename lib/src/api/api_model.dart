@@ -253,9 +253,11 @@ abstract class ApiModel<T extends BaseModel<T>> {
       (await _resolveEngine()).get(id, options: options, params: params);
 
   /// The ids before and after the record [id] in the list [filter] and
-  /// [orderBy] read, null at either end: `GET {path}/{id}/siblings`, which a
-  /// model opens with `siblings=True`.
-  Future<({Object? previous, Object? next})> siblings(
+  /// [orderBy] read, null at either end, and where it stands in that list,
+  /// its position from 1 among the total, null outside it:
+  /// `GET {path}/{id}/siblings`, which a model opens with `siblings=True`.
+  Future<({Object? previous, Object? next, int? position, int? total})>
+  siblings(
     Object id, {
     Object? filter,
     Object? orderBy,
@@ -270,8 +272,13 @@ abstract class ApiModel<T extends BaseModel<T>> {
     final data = response.data;
 
     return data is Map
-        ? (previous: data['previous'] as Object?, next: data['next'] as Object?)
-        : (previous: null, next: null);
+        ? (
+            previous: data['previous'] as Object?,
+            next: data['next'] as Object?,
+            position: (data['position'] as num?)?.toInt(),
+            total: (data['total'] as num?)?.toInt(),
+          )
+        : (previous: null, next: null, position: null, total: null);
   }
 
   /// Same read as [get], keeping whether the local mirror answered instead of

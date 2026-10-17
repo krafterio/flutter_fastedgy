@@ -83,6 +83,8 @@ class RecordContext extends ChangeNotifier {
   String? _ctx;
   Object? _previous;
   Object? _next;
+  int? _position;
+  int? _total;
   SiblingsStatus _status = SiblingsStatus.idle;
   Object? _error;
   int _generation = 0;
@@ -92,6 +94,12 @@ class RecordContext extends ChangeNotifier {
   Object? get previous => _previous;
 
   Object? get next => _next;
+
+  /// Where the record stands in its list: its position from 1, among [total],
+  /// both null outside it.
+  int? get position => _position;
+
+  int? get total => _total;
 
   SiblingsStatus get status => _status;
 
@@ -180,6 +188,8 @@ class RecordContext extends ChangeNotifier {
     if (id == null || list == null) {
       _previous = null;
       _next = null;
+      _position = null;
+      _total = null;
       _status = SiblingsStatus.idle;
       _notify();
 
@@ -205,6 +215,8 @@ class RecordContext extends ChangeNotifier {
 
       _previous = siblings.previous;
       _next = siblings.next;
+      _position = siblings.position;
+      _total = siblings.total;
       _error = null;
       _status = SiblingsStatus.success;
     } catch (failure) {
@@ -214,6 +226,8 @@ class RecordContext extends ChangeNotifier {
 
       _previous = null;
       _next = null;
+      _position = null;
+      _total = null;
       _error = failure;
       _status = SiblingsStatus.error;
     }
