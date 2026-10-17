@@ -335,6 +335,66 @@ void main() {
       list.dispose();
     });
 
+    test('is read once with the menu of the views: the list opens on the favorite the menu read', () async {
+      final mine = views.add({
+        'name': 'Mine',
+        'filters': ['owner', '=', 5],
+      });
+
+      views.add({
+        'name': 'Everyone',
+        'is_default': true,
+        'filters': ['name', '=', 'a'],
+      });
+      views.favorites.add({'id': 1, 'view': mine['id']});
+
+      final list = DataIterator<Thing>(
+        api,
+        url: MemoryListUrl(),
+        views: const DataIteratorViews(),
+      );
+      final custom = CustomViews('thing', list: list);
+
+      await custom.ensure();
+      await settle();
+
+      expect(list.view, mine['id']);
+      expect(sent(server.lists.single)['filter'], [
+        ['owner', '=', 5],
+      ]);
+      expect(
+        viewReads(),
+        hasLength(2),
+        reason: 'the views and the favorite, once for both',
+      );
+
+      custom.dispose();
+      list.dispose();
+    });
+
+    test(
+      'with the menu, falls back on the one of everyone, read once too',
+      () async {
+        views.add({
+          'name': 'Everyone',
+          'is_default': true,
+          'order_by': ['name:asc'],
+        });
+
+        final list = DataIterator<Thing>(api, views: const DataIteratorViews());
+        final custom = CustomViews('thing', list: list);
+
+        await custom.ensure();
+        await settle();
+
+        expect(list.orderBy, ['name:asc']);
+        expect(viewReads(), hasLength(2));
+
+        custom.dispose();
+        list.dispose();
+      },
+    );
+
     test('falls back on the one of everyone, and reads none when the url already says what the list shows', () async {
       views.add({
         'name': 'Everyone',

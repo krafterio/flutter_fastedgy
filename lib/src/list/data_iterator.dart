@@ -279,6 +279,10 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
   /// The custom views the list opens on.
   final DataIteratorViews? views;
 
+  /// The menu of the views of the list, once a [CustomViews] is built on it:
+  /// the list opens on the view it reads, rather than reading its own.
+  CustomViews? customViews;
+
   /// The field the rows are grouped by when nothing else says it, null for a
   /// flat list.
   final String? defaultGroupBy;
@@ -662,7 +666,8 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
   /// The fields the screen reads: those it resolves, else those it gives,
   /// else every field of the model.
   @protected
-  List<String> get readFields => _fieldsResolver?.call() ?? _fields ?? const ['+'];
+  List<String> get readFields =>
+      _fieldsResolver?.call() ?? _fields ?? const ['+'];
 
   /// Tells the list its fields may have changed: a field it has not read yet
   /// reads the rows again.
@@ -1160,15 +1165,38 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
   Future<CustomView?> _openingView({int? id}) async {
     final model = await api.resolveModelName();
 
-    return model == null
-        ? null
-        : openingView(
-            model,
-            scope: views!.scope,
-            prefix: viewsPrefix,
-            id: id,
-            fetcher: api.fetcher,
-          );
+    if (model == null) {
+      return null;
+    }
+
+    final menu = customViews;
+
+    if (id == null &&
+        menu != null &&
+        menu.model == model &&
+        menu.scope == views!.scope) {
+      try {
+        await menu.ensure();
+      } catch (_) {
+        return null;
+      }
+
+      final favorite = menu.favorite;
+      final own = menu.items.where((view) => view.id == favorite).firstOrNull;
+
+      // A favorite beyond the views the menu read is read on its own.
+      if (favorite == null || own != null) {
+        return own ?? menu.items.where((view) => view.isDefault).firstOrNull;
+      }
+    }
+
+    return openingView(
+      model,
+      scope: views!.scope,
+      prefix: viewsPrefix,
+      id: id,
+      fetcher: api.fetcher,
+    );
   }
 
   /// Shows what [view] says besides its filters, its order and its grouping,

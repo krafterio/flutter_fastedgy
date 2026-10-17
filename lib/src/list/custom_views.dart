@@ -211,6 +211,9 @@ class CustomViews extends ChangeNotifier {
          prefix ?? list?.viewsPrefix ?? '',
          fetcher: fetcher ?? list?.api.fetcher,
        ) {
+    // The list opens on what this menu reads: one read for both.
+    list?.customViews ??= this;
+
     if (hasService<Bus>()) {
       _switches = getService<Bus>().on<WorkspaceSwitchedEvent>().listen(
         (_) => _forget(),
@@ -381,6 +384,11 @@ class CustomViews extends ChangeNotifier {
   @override
   void dispose() {
     unawaited(_switches?.cancel());
+
+    if (identical(list?.customViews, this)) {
+      list?.customViews = null;
+    }
+
     super.dispose();
   }
 
