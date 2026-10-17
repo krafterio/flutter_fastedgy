@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 
@@ -8,6 +10,7 @@ import 'api_model.dart';
 import 'api_query.dart';
 import 'base_model.dart';
 import 'data_availability.dart';
+import 'local_writes.dart';
 
 /// Reactive holder for a SINGLE record — the single-record counterpart of
 /// [ApiCollection].
@@ -22,11 +25,15 @@ import 'data_availability.dart';
 /// the AI agent. A detail/edit screen creates one in `initState`, [load]s its id,
 /// listens to it (re-sync its UI on change, close when [isDeleted]) and
 /// [dispose]s it. Same wiring as [ApiCollection], minus the pagination.
+///
+/// Its writes, [update] and [delete], show before the server answers, on every
+/// holder of the record ([LocalWrites]); the echo of its own write is not read.
 class ApiRecord<T extends BaseModel<T>> extends ChangeNotifier
-    with DataAvailabilityState<T>
+    with DataAvailabilityState<T>, LocalWrites<T>
     implements ApiHolder, ActiveHolder {
   ApiRecord(this.api, {dynamic fields}) : _configFields = fields {
     listenAvailability();
+    followPatches();
   }
 
   @override
@@ -49,6 +56,7 @@ class ApiRecord<T extends BaseModel<T>> extends ChangeNotifier
 
   Object? _id;
   T? _value;
+  int _writing = 0;
   bool _isLoading = false;
   bool _loaded = false;
   bool _deleted = false;
@@ -82,6 +90,72 @@ class ApiRecord<T extends BaseModel<T>> extends ChangeNotifier
 
   FieldsOptions? get _options =>
       _configFields != null ? FieldsOptions(fields: _configFields) : null;
+
+  @override
+  dynamic get writeFields => _configFields;
+
+  @override
+  T? byId(Object? id) => id != null && '$id' == '$_id' ? _value : null;
+
+  /// Puts [item] in place of the record when it is the one bound.
+  @override
+  bool upsertLocal(T item, {bool prepend = false}) {
+    if (byId(item.id) != null) {
+      _value = item;
+      _safeNotify();
+    }
+
+    return false;
+  }
+
+  /// The record stays until the server says it is gone: its screen leaves on
+  /// [isDeleted].
+  @override
+  VoidCallback? takeLocal(Object? id) => null;
+
+  @override
+  Future<R> writing<R>(Future<R> Function() write) async {
+    _writing += 1;
+
+    try {
+      return await write();
+    } finally {
+      // An api hands what a write announces to the bus on a timer, once the
+      // write returned to its caller: the changes are read again after it.
+      Timer.run(() => _writing -= 1);
+    }
+  }
+
+  /// The record bound, or its id alone while its first read runs.
+  T get _bound {
+    final id = _id;
+
+    if (id == null) {
+      throw StateError('No record is bound');
+    }
+
+    return _value ?? api.fromJson({'id': id is int ? id : int.parse('$id')});
+  }
+
+  /// Shows [values] in the record at once, then writes them (see
+  /// [LocalWrites.updateItem]); a refusal puts back what it held and is
+  /// thrown.
+  Future<T> update(Map<String, Object?> values) => updateItem(_bound, values);
+
+  /// Shows [values] in the record at once while [write] sends them (see
+  /// [LocalWrites.updateItemWith]): an action of the model, a route of its
+  /// own. A refusal puts back what it held and is thrown.
+  Future<R> updateWith<R>(
+    Map<String, Object?> values,
+    Future<R> Function(Map<String, Object?> sent) write,
+  ) => updateItemWith(_bound, values, write);
+
+  /// Deletes the record, taken out at once from every list holding it, then
+  /// marks it [isDeleted]; a refusal puts it back in them and is thrown.
+  Future<void> delete() async {
+    await deleteItem(_bound);
+    _markDeleted();
+  }
 
   /// Fetch [id] (loader shown). [fields] overrides the constructor field selection.
   /// Keeps the previous [value] until the new one arrives (no null flash on reload).
@@ -154,7 +228,7 @@ class ApiRecord<T extends BaseModel<T>> extends ChangeNotifier
   Future<bool> reload() => _id != null ? load(_id!) : Future.value(false);
 
   Future<void> _onResourceChanged(ResourceChangedEvent event) async {
-    if (!_loaded || _disposed || _id == null) return;
+    if (!_loaded || _disposed || _id == null || _writing > 0) return;
     // An event naming no record may be about this one: a read tells.
     if (event.type == ResourceChangeType.deleted && event.id != null) {
       _markDeleted();
@@ -214,6 +288,7 @@ class ApiRecord<T extends BaseModel<T>> extends ChangeNotifier
   void dispose() {
     _disposed = true;
     _watch?.cancel();
+    stopFollowingPatches();
     disposeAvailability();
     super.dispose();
   }

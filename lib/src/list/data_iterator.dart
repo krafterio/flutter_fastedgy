@@ -20,6 +20,7 @@ import '../api/base_model.dart';
 import '../api/data_availability.dart';
 import '../api/group_source.dart';
 import '../api/grouped_api_collection.dart';
+import '../api/local_writes.dart';
 import '../bus/bus.dart';
 import '../container/container.dart';
 import '../fetcher/http_error.dart';
@@ -135,6 +136,7 @@ int? _readId(String? raw) {
 /// right page. The changes of one turn are read once, and a workspace switch
 /// starts the list over as if it were opened there.
 class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
+    with LocalWrites<T>
     implements ActiveHolder {
   DataIterator(
     this.api, {
@@ -230,10 +232,12 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
 
     _enabled?.addListener(_onEnabled);
     scrollController?.addListener(_onScroll);
+    followPatches();
 
     scheduleMicrotask(_start);
   }
 
+  @override
   final ApiModel<T> api;
 
   final List<String>? _fields;
@@ -1021,6 +1025,7 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
 
   /// Runs [write], whose echo the list does not read: its rows already say
   /// what it changes.
+  @override
   Future<R> writing<R>(Future<R> Function() write) async {
     _writing += 1;
 
@@ -1376,12 +1381,14 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
     return byId(id);
   }
 
+  @override
   T? byId(Object? id) => _groupBy == null
       ? _collection.byId(id)
       : _holding(id)?.collection.byId(id);
 
   /// Puts [item] in place of the row holding its id, or adds it; once
   /// grouped, in the group of its value, which it leaves another for.
+  @override
   bool upsertLocal(T item, {bool prepend = false}) {
     if (_groupBy == null) {
       return _collection.upsertLocal(item, prepend: prepend);
@@ -1404,6 +1411,17 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
   bool removeLocal(Object? id) => _groupBy == null
       ? _collection.removeLocal(id)
       : _holding(id)?.collection.removeLocal(id) ?? false;
+
+  /// Takes the row [id] out of the rows holding it, giving what puts it back at
+  /// its place.
+  @override
+  VoidCallback? takeLocal(Object? id) =>
+      (_groupBy == null ? _collection : _holding(id)?.collection)?.takeLocal(
+        id,
+      );
+
+  @override
+  dynamic get writeFields => fields;
 
   /// Puts the rows in the order of [ordered]; once grouped, those of the group
   /// holding the first of them.
@@ -1854,6 +1872,7 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
     _searchTimer?.cancel();
     _scrollTimer?.cancel();
     unawaited(_switches?.cancel());
+    stopFollowingPatches();
     url?.removeListener(_onUrl);
 
     final filter = _filter;

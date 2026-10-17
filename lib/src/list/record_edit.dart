@@ -3,18 +3,13 @@
  * MIT License (see LICENSE file).
  */
 
-import 'dart:convert';
-
 import 'package:flutter/foundation.dart';
 
 import '../api/api_query.dart';
 import '../api/base_model.dart';
 import '../api/error_formatter.dart';
+import '../api/record_values.dart';
 import '../fetcher/http_error.dart';
-import '../metadata/models.dart';
-import '../query/catalog.dart';
-import '../query/dates.dart';
-import '../query/query_fields.dart';
 import 'data_iterator.dart';
 
 /// Writes [value] of [field] of [item] in place of the route of its model:
@@ -25,47 +20,6 @@ typedef RecordWrite<T> = Future<T?> Function(
   String field,
   Object? value,
 );
-
-/// [value] as a row holds it: a record as its fields, a date as its day, an
-/// instant in UTC.
-Object? _shown(MetadataField? field, Object? value) => switch (value) {
-  BaseModel<dynamic>() => value.data,
-  List<Object?>() => [for (final one in value) _shown(field, one)],
-  DateTime() when field?.type == 'date' => dayOf(value.toIso8601String()),
-  DateTime() => value.toUtc().toIso8601String(),
-  _ => value,
-};
-
-/// What a row holds of [field] as the server takes it: a relation as its id,
-/// or their ids.
-Object? _sent(MetadataField? field, Object? shown) {
-  Object? idOf(Object? one) => one is Map ? one['id'] : one;
-
-  return switch (relationKindOf(field)) {
-    FieldKind.single => idOf(shown),
-    FieldKind.multiple => [
-      for (final one in shown as List? ?? const []) idOf(one),
-    ],
-    _ => shown,
-  };
-}
-
-String _json(Object? value) => jsonEncode(value, toEncodable: (_) => null);
-
-/// A payload holding [values] as they are: built from them, a model reads a
-/// text that looks like an instant as a local date.
-T _payload<T extends BaseModel<T>>(
-  DataIterator<T> list,
-  Map<String, Object?> values,
-) {
-  final payload = list.api.fromJson(const {});
-
-  for (final MapEntry(:key, :value) in values.entries) {
-    payload.setField(key, value);
-  }
-
-  return payload;
-}
 
 /// The cells of a list edited in place, the port of `useRecordEdit`: a value
 /// shows at once, then is written, the answer taking the place of the row,
@@ -105,11 +59,11 @@ class RecordEdit<T extends BaseModel<T>> extends ChangeNotifier {
   Future<T?> edit(T item, String field, Object? value) async {
     final api = list.api;
     final meta = (await api.metadata())?.fields[field];
-    final shown = _shown(meta, value);
-    final sent = _sent(meta, shown);
+    final shown = shownValue(meta, value);
+    final sent = sentValue(meta, shown);
     final id = item.id;
 
-    if (_json(sent) == _json(_sent(meta, _shown(meta, item.data[field])))) {
+    if (sameValue(sent, sentValue(meta, shownValue(meta, item.data[field])))) {
       return item;
     }
 
@@ -128,7 +82,7 @@ class RecordEdit<T extends BaseModel<T>> extends ChangeNotifier {
             ? write(item, field, sent)
             : api.update(
                 id!,
-                _payload<T>(list, {field: sent}),
+                payloadOf<T>(api, {field: sent}),
                 options: FieldsOptions(fields: list.fields),
               ),
       );
@@ -169,9 +123,9 @@ class RecordEdit<T extends BaseModel<T>> extends ChangeNotifier {
     try {
       final created = await list.writing(
         () => api.create(
-          _payload<T>(list, {
+          payloadOf<T>(api, {
             for (final MapEntry(:key, :value) in values.entries)
-              key: _sent(fields?[key], _shown(fields?[key], value)),
+              key: sentValue(fields?[key], shownValue(fields?[key], value)),
           }),
           options: FieldsOptions(fields: list.fields),
         ),

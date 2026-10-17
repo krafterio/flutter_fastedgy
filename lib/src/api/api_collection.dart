@@ -10,11 +10,17 @@ import 'api_model.dart';
 import 'api_query.dart';
 import 'base_model.dart';
 import 'data_availability.dart';
+import 'local_writes.dart';
 import 'list_sort.dart';
 import 'pagination_result.dart';
 
+/// The rows of a model, read a page at a time and followed as they change.
+///
+/// Its writes, [updateItem], [deleteItem] and [createItem], show before the
+/// server answers, on every holder of the record ([LocalWrites]); the echo of
+/// its own write is not read.
 class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
-    with DataAvailabilityState<T>
+    with DataAvailabilityState<T>, LocalWrites<T>
     implements ApiHolder, ActiveHolder {
   ApiCollection(
     this.api, {
@@ -36,6 +42,7 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
         where: where,
         refreshDelay: Duration.zero,
       );
+      followPatches();
     }
 
     listenAvailability();
@@ -85,6 +92,7 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
 
   ResourceWatch? _watch;
   Timer? _refresh;
+  int _writing = 0;
 
   /// Whether its screen can be seen: off screen, what changes is owed as one
   /// read when it is shown again.
@@ -176,6 +184,7 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
   dynamic get filter => _query?.filter;
   Map<String, String>? get params => _query?.params;
 
+  @override
   T? byId(Object? id) {
     for (final e in _items) {
       if (e.id == id) return e;
@@ -397,6 +406,7 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
   /// when [prepend] is set and at the end otherwise, without a request: what a
   /// row that arrived whole costs, a message pushed by another device for one.
   /// Returns whether the row is new to the collection.
+  @override
   bool upsertLocal(T item, {bool prepend = false}) {
     final index = _items.indexWhere((e) => e.id == item.id);
 
@@ -419,6 +429,51 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
     return true;
   }
 
+  /// Takes the row [id] out, giving what puts it back at its place.
+  @override
+  VoidCallback? takeLocal(Object? id) {
+    final index = _items.indexWhere((e) => e.id == id);
+
+    if (index == -1) {
+      return null;
+    }
+
+    final item = _items[index];
+
+    removeLocal(id);
+
+    return () {
+      if (_disposed || byId(id) != null) {
+        return;
+      }
+
+      _items = [..._items]..insert(index.clamp(0, _items.length), item);
+      _total += 1;
+
+      if (_limit != null && _limit! > 0) {
+        _totalPages = (_total / _limit!).ceil();
+      }
+
+      _safeNotify();
+    };
+  }
+
+  @override
+  dynamic get writeFields => fields;
+
+  @override
+  Future<R> writing<R>(Future<R> Function() write) async {
+    _writing += 1;
+
+    try {
+      return await write();
+    } finally {
+      // An api hands what a write announces to the bus on a timer, once the
+      // write returned to its caller: the changes are read again after it.
+      Timer.run(() => _writing -= 1);
+    }
+  }
+
   /// Reads the row [id] with the fields of this collection, without putting it
   /// in place: a row announced by its id alone (a push from another device)
   /// then goes through [upsertLocal], or through an animated insertion.
@@ -433,7 +488,7 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
   Future<void> refreshQuietly() => _refreshLoadedRange();
 
   Future<void> _onResourceChanged(ResourceChangedEvent event) async {
-    if (!_loaded || _disposed) return;
+    if (!_loaded || _disposed || _writing > 0) return;
     // A delete naming no record, a truncated one, has no row to remove. One
     // outside the loaded range still moves the total, a count read on a single
     // row for one, so a partial collection reads its range again.
@@ -631,6 +686,7 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
   void dispose() {
     _disposed = true;
     _watch?.cancel();
+    stopFollowingPatches();
     _refresh?.cancel();
     disposeAvailability();
     super.dispose();
