@@ -357,6 +357,9 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
   /// The writes of the list running, whose echo it does not read.
   int _writing = 0;
 
+  /// Whether a change was heard while the list wrote: read once after it.
+  bool _owedRead = false;
+
   bool _loaded = false;
   bool _opened = false;
   bool _ready = false;
@@ -1023,8 +1026,10 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
     }
   }
 
-  /// Runs [write], whose echo the list does not read: its rows already say
-  /// what it changes.
+  /// Runs [write], whose echo the list reads once it is over, a single time
+  /// however many writes ran meanwhile: its rows already say what it changes,
+  /// the read brings what the server decided besides (a row leaving the
+  /// filter, its place in the order).
   @override
   Future<R> writing<R>(Future<R> Function() write) async {
     _writing += 1;
@@ -1034,15 +1039,33 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
     } finally {
       // An api hands what a write announces to the bus on a timer, once the
       // write returned to its caller: the changes are read again after it.
-      Timer.run(() => _writing -= 1);
+      Timer.run(() {
+        _writing -= 1;
+
+        if (_writing == 0 && _owedRead && !_disposed) {
+          _owedRead = false;
+          unawaited(refresh());
+        }
+      });
     }
   }
 
   /// Whether a change is read again: not while the list is disabled, which
-  /// reads anew once enabled, nor the echo of a write of the list, a move or an
-  /// edit.
-  bool _readsChange(ResourceChangedEvent event) =>
-      _isEnabled && _writing == 0 && (_where?.call(event) ?? true);
+  /// reads anew once enabled, nor while the list writes, which owes it one
+  /// read once its writes are over.
+  bool _readsChange(ResourceChangedEvent event) {
+    if (!_isEnabled || _where?.call(event) == false) {
+      return false;
+    }
+
+    if (_writing > 0) {
+      _owedRead = true;
+
+      return false;
+    }
+
+    return true;
+  }
 
   void _dropGroups() {
     _grouped

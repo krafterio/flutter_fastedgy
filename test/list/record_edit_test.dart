@@ -230,7 +230,7 @@ void main() {
   });
 
   test(
-    'writes nothing for a value the row holds, and reads no echo of its writes',
+    'writes nothing for a value the row holds, and reads its rows once its write is over',
     () async {
       final list = DataIterator<Thing>(
         api,
@@ -250,7 +250,8 @@ void main() {
       await settle();
 
       expect(writes(), hasLength(1));
-      expect(reads(), read);
+      expect(reads(), read + 1);
+      expect(list.byId(1)?.data['name'], 'Lantern');
 
       list.dispose();
       cells.dispose();
@@ -263,6 +264,10 @@ void main() {
 
     await settle();
 
+    final hold = Completer<void>();
+
+    holds.add(hold);
+
     final editing = cells.edit(list.byId(1)!, 'stage', {
       'id': 2,
       'name': 'Done',
@@ -273,6 +278,7 @@ void main() {
     expect([for (final row in list.groups[1].items) row.id], [2, 1]);
     expect(list.groups.first.items, isEmpty);
 
+    hold.complete();
     await editing;
 
     list.dispose();

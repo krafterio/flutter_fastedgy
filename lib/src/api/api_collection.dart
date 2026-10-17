@@ -94,6 +94,9 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
   Timer? _refresh;
   int _writing = 0;
 
+  /// Whether a change was heard while the collection wrote: read once after.
+  bool _owed = false;
+
   /// Whether its screen can be seen: off screen, what changes is owed as one
   /// read when it is shown again.
   @override
@@ -461,6 +464,8 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
   @override
   dynamic get writeFields => fields;
 
+  /// Runs [write], whose echo the rows read once it is over, a single time
+  /// however many writes ran meanwhile.
   @override
   Future<R> writing<R>(Future<R> Function() write) async {
     _writing += 1;
@@ -470,7 +475,14 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
     } finally {
       // An api hands what a write announces to the bus on a timer, once the
       // write returned to its caller: the changes are read again after it.
-      Timer.run(() => _writing -= 1);
+      Timer.run(() {
+        _writing -= 1;
+
+        if (_writing == 0 && _owed && !_disposed) {
+          _owed = false;
+          _scheduleRefresh();
+        }
+      });
     }
   }
 
@@ -488,7 +500,13 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
   Future<void> refreshQuietly() => _refreshLoadedRange();
 
   Future<void> _onResourceChanged(ResourceChangedEvent event) async {
-    if (!_loaded || _disposed || _writing > 0) return;
+    if (!_loaded || _disposed) return;
+
+    if (_writing > 0) {
+      _owed = true;
+
+      return;
+    }
     // A delete naming no record, a truncated one, has no row to remove. One
     // outside the loaded range still moves the total, a count read on a single
     // row for one, so a partial collection reads its range again.
@@ -503,6 +521,10 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
       return;
     }
 
+    _scheduleRefresh();
+  }
+
+  void _scheduleRefresh() {
     _refresh?.cancel();
     _refresh = Timer(refreshDelay, () => unawaited(_refreshLoadedRange()));
   }

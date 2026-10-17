@@ -57,6 +57,9 @@ class ApiRecord<T extends BaseModel<T>> extends ChangeNotifier
   Object? _id;
   T? _value;
   int _writing = 0;
+
+  /// Whether a change was heard while the record was written: read once after.
+  bool _owed = false;
   bool _isLoading = false;
   bool _loaded = false;
   bool _deleted = false;
@@ -113,6 +116,8 @@ class ApiRecord<T extends BaseModel<T>> extends ChangeNotifier
   @override
   VoidCallback? takeLocal(Object? id) => null;
 
+  /// Runs [write], whose echo the record reads once it is over, silently and a
+  /// single time however many writes ran meanwhile.
   @override
   Future<R> writing<R>(Future<R> Function() write) async {
     _writing += 1;
@@ -122,7 +127,17 @@ class ApiRecord<T extends BaseModel<T>> extends ChangeNotifier
     } finally {
       // An api hands what a write announces to the bus on a timer, once the
       // write returned to its caller: the changes are read again after it.
-      Timer.run(() => _writing -= 1);
+      Timer.run(() {
+        _writing -= 1;
+
+        if (_writing == 0 && _owed && !_disposed) {
+          _owed = false;
+
+          if (!_deleted) {
+            unawaited(_refresh());
+          }
+        }
+      });
     }
   }
 
@@ -228,7 +243,13 @@ class ApiRecord<T extends BaseModel<T>> extends ChangeNotifier
   Future<bool> reload() => _id != null ? load(_id!) : Future.value(false);
 
   Future<void> _onResourceChanged(ResourceChangedEvent event) async {
-    if (!_loaded || _disposed || _id == null || _writing > 0) return;
+    if (!_loaded || _disposed || _id == null) return;
+
+    if (_writing > 0) {
+      _owed = true;
+
+      return;
+    }
     // An event naming no record may be about this one: a read tells.
     if (event.type == ResourceChangeType.deleted && event.id != null) {
       _markDeleted();

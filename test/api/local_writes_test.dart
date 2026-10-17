@@ -157,17 +157,21 @@ void main() {
       expect(thing.value?.getString('name'), 'Krafter');
     });
 
-    test('does not read the echo of its own write', () async {
+    test('reads its record once its own write is over, the value shown kept until then', () async {
       final thing = await record();
       final reads = requests.where((request) => request.method == 'GET').length;
 
-      await thing.update({'city': 'Grenoble'});
+      hold();
+      final write = thing.update({'city': 'Grenoble'});
       await settle();
 
-      expect(
-        requests.where((request) => request.method == 'GET').length,
-        reads,
-      );
+      expect(requests.where((request) => request.method == 'GET').length, reads);
+
+      release();
+      await write;
+      await settle();
+
+      expect(requests.where((request) => request.method == 'GET').length, reads + 1);
       expect(thing.value?.getString('city'), 'Grenoble');
     });
 
@@ -273,6 +277,18 @@ void main() {
         expect(list.byId(7)?.getString('city'), 'Annecy');
       },
     );
+
+    test('reads its rows once its own write is over: the server may have moved them', () async {
+      final list = await collection();
+      int reads() => requests.where((request) => request.method == 'GET').length;
+      final before = reads();
+
+      await list.updateItem(list.byId(7)!, {'city': 'Annecy'});
+      await list.updateItem(list.byId(8)!, {'city': 'Nice'});
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+
+      expect(reads(), before + 1);
+    });
 
     test('a record created joins the rows once the server answers', () async {
       final list = await collection();
