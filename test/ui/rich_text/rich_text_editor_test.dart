@@ -283,6 +283,52 @@ void main() {
     });
   });
 
+  group('a document emptied of its last block', () {
+    testWidgets(
+      'gets back the paragraph it opens on, and an undo the block it lost',
+      (tester) async {
+        final state = EditorState(
+          document: Document.blank()
+            ..insert([0], [imageNode(url: 'attachment:1')]),
+        );
+        addTearDown(state.dispose);
+        await pump(
+          tester,
+          RichTextEditor(
+            features: defaultRichTextFeatures,
+            editorState: state,
+            scrollable: true,
+          ),
+        );
+
+        state.selection = Selection.single(
+          path: [0],
+          startOffset: 0,
+          endOffset: 1,
+        );
+        // As a delete key leaves it: the caret where the block stood.
+        await state.apply(
+          state.transaction
+            ..deleteNode(state.document.root.children.first)
+            ..afterSelection = Selection.collapsed(Position(path: [0])),
+        );
+        await tester.pumpAndSettle();
+
+        expect(state.document.root.children.map((node) => node.type), [
+          ParagraphBlockKeys.type,
+        ], reason: 'somewhere left to write');
+
+        state.undoManager.undo();
+        await tester.pumpAndSettle();
+
+        expect(
+          state.document.root.children.map((node) => node.type),
+          contains(ImageBlockKeys.type),
+        );
+      },
+    );
+  });
+
   group('a field that sends on Enter', () {
     /// Puts the caret at the end of the only block, the way typing into the
     /// field would leave it.

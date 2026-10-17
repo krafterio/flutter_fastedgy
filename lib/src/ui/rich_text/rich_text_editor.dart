@@ -377,6 +377,7 @@ class RichTextEditorState extends State<RichTextEditor> {
 
     _edits = widget.editorState.transactionStream.listen((_) {
       _forgetUntouched();
+      _keepABlock();
 
       if (widget.resetWhenEmpty) {
         _resetIfEmpty();
@@ -467,6 +468,36 @@ class RichTextEditorState extends State<RichTextEditor> {
   }
 
   /// Whether the document is back to what an untouched field holds.
+  /// Gives a document emptied of its last block, a picture deleted, back the
+  /// blank paragraph it opens on: with no block at all there is nowhere left
+  /// to write, nor a placeholder to tap.
+  ///
+  /// After the frame, as [_resetIfEmpty], and kept out of the history: an undo
+  /// brings back what was deleted rather than taking this paragraph away.
+  void _keepABlock() {
+    if (!widget.editable ||
+        widget.editorState.document.root.children.isNotEmpty) {
+      return;
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final editorState = widget.editorState;
+
+      if (!mounted || editorState.document.root.children.isNotEmpty) {
+        return;
+      }
+
+      unawaited(
+        editorState.apply(
+          editorState.transaction
+            ..insertNode([0], paragraphNode())
+            ..afterSelection = Selection.collapsed(Position(path: [0])),
+          options: const ApplyOptions(recordUndo: false),
+        ),
+      );
+    });
+  }
+
   bool get _isBlankParagraph {
     final blocks = widget.editorState.document.root.children;
 
