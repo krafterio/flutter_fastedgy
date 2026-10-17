@@ -18,6 +18,7 @@ import 'package:flutter_fastedgy/flutter_fastedgy.dart'
         getService,
         hasService;
 import 'package:flutter_fastedgy/flutter_fastedgy.dart' show t;
+import 'package:flutter/rendering.dart' show RenderFittedBox;
 import 'package:flutter_test/flutter_test.dart';
 
 import '../../helpers/ui_setup.dart';
@@ -927,6 +928,41 @@ void main() {
       ]);
       expect(blocks.first.delta?.toPlainText(), 'Un texte');
     });
+  });
+
+  testWidgets('an attachment draws on a layer of its own under its scale', (
+    tester,
+  ) async {
+    // The picture fades in on a layer that comes and goes. Left to tell the
+    // box scaling it, the web sometimes did not: the box scaled its canvas, the
+    // picture drew on its own layer at full size, over the blocks under it.
+    final state = EditorState(
+      document: Document.blank()
+        ..insert(
+          [0],
+          [imageNode(url: 'attachment:42', width: 200, height: 120)],
+        ),
+    );
+    addTearDown(state.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RichTextViewer(
+            editorState: state,
+            features: defaultRichTextFeatures,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final box = tester.renderObject<RenderFittedBox>(find.byType(FittedBox));
+
+    expect(box.child!.isRepaintBoundary, isTrue);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 30));
   });
 
   group('while an attachment is on its way', () {

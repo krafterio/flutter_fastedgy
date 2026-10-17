@@ -609,22 +609,29 @@ class _AttachmentImage extends StatelessWidget {
     return FittedBox(
       fit: BoxFit.contain,
       alignment: Alignment.topLeft,
-      // A width and nothing else: the height follows the picture's own shape,
-      // and no resize mode is sent since there is no box to fit it into. Given
-      // all the height it asks for, the box then takes that same shape.
-      child: CachedApiImage(
-        path: attachmentDownloadPath(id),
-        width: width,
-        // A shape rather than a spinner, and the application's own: a box that
-        // settles into what its placeholder promised does not jump. Without a
-        // size here the loading state asks for an unbounded height, which a
-        // column cannot lay out.
-        lazy: false,
-        loadingBuilder: (context) => RichTextControls.of(context).placeholder(
-          context,
-          RichTextPlaceholderSpec(width: width, height: height),
+      // A layer of its own under the scale. The picture fades in on a layer
+      // that comes and goes, and the web did not always tell this box: it then
+      // scaled its canvas while the picture drew on that layer at full size,
+      // over the blocks under it.
+      child: RepaintBoundary(
+        // A width and nothing else: the height follows the picture's own
+        // shape, and no resize mode is sent since there is no box to fit it
+        // into. Given all the height it asks for, the box then takes that same
+        // shape.
+        child: CachedApiImage(
+          path: attachmentDownloadPath(id),
+          width: width,
+          // A shape rather than a spinner, and the application's own: a box
+          // that settles into what its placeholder promised does not jump.
+          // Without a size here the loading state asks for an unbounded
+          // height, which a column cannot lay out.
+          lazy: false,
+          loadingBuilder: (context) => RichTextControls.of(context).placeholder(
+            context,
+            RichTextPlaceholderSpec(width: width, height: height),
+          ),
+          errorBuilder: (context, error, stackTrace) => onError(),
         ),
-        errorBuilder: (context, error, stackTrace) => onError(),
       ),
     );
   }
