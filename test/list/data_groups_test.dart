@@ -356,6 +356,42 @@ void main() {
       list.dispose();
     });
 
+    test('a record of the axis written on the screen renames its group at once, and deleted, gives its rows to the group of no value', () async {
+      final list = DataIterator<Thing>(api, groupBy: 'stage');
+      final bus = getService<Bus>();
+
+      await settle();
+
+      bus.fire(
+        const ResourcePatchedEvent(
+          '/acme',
+          id: 1,
+          model: 'stage',
+          values: {'name': 'Next'},
+        ),
+      );
+      await settle();
+
+      expect(labels(list), ['Next', 'Done', 'No value']);
+      expect(groups.reads('/acme/stages'), hasLength(1));
+
+      bus.fire(
+        const ResourcePatchedEvent(
+          '/acme',
+          id: 1,
+          model: 'stage',
+          deleted: true,
+        ),
+      );
+      await settle();
+
+      expect(labels(list), ['Done', 'No value']);
+      expect(idsOf(groupOf(list, 'empty')), [4, 1, 2]);
+      expect(groupOf(list, 'empty').items.last.data['stage'], isNull);
+
+      list.dispose();
+    });
+
     test('reads the records of a relation where the model answers, whatever path the list names', () async {
       final list = DataIterator<Thing>(
         _PathThingApi(server.fetcher),

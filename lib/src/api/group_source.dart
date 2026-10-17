@@ -394,6 +394,17 @@ class RelationGroupSource extends GroupSource {
       _empty,
   ];
 
+  /// The record [id] of the axis, null when it holds none.
+  GenericBaseModel? recordOf(Object? id) => _collection.byId(id);
+
+  /// Puts [record] in place of the record of the axis holding its id, before
+  /// the server says it: a column renamed on the screen.
+  void upsertLocal(GenericBaseModel record) => _collection.upsertLocal(record);
+
+  /// Takes the record [id] out of the axis, before the server says it: a
+  /// column deleted on the screen.
+  void removeLocal(Object? id) => _collection.removeLocal(id);
+
   /// Puts the records of the axis in the order of [ids], before the server
   /// says it: a column moved on the screen.
   void reorder(List<Object?> ids) {

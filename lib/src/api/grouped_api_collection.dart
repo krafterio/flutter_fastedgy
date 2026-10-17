@@ -9,6 +9,8 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 
+import '../bus/bus.dart';
+import '../container/container.dart';
 import '../realtime/resource_watch.dart';
 import 'api_collection.dart';
 import 'api_holders.dart';
@@ -18,6 +20,7 @@ import 'base_model.dart';
 import 'data_availability.dart';
 import 'group_source.dart';
 import 'list_sort.dart';
+import 'local_writes.dart';
 
 String _encode(Object? filter) => jsonEncode(filter, toEncodable: (_) => null);
 
@@ -77,6 +80,12 @@ class GroupedApiCollection<T extends BaseModel<T>> extends ChangeNotifier
       _axis = watchResource(axis, _onAxisChanged, refreshDelay: Duration.zero);
     }
 
+    if (source is RelationGroupSource && hasService<Bus>()) {
+      _axisPatches = getService<Bus>().on<ResourcePatchedEvent>().listen(
+        _onAxisPatched,
+      );
+    }
+
     listenAvailability();
   }
 
@@ -132,6 +141,7 @@ class GroupedApiCollection<T extends BaseModel<T>> extends ChangeNotifier
   Timer? _axisRefresh;
   late final ResourceWatch _rows;
   ResourceWatch? _axis;
+  StreamSubscription<ResourcePatchedEvent>? _axisPatches;
 
   List<GroupedEntry<T>> get entries => _entries;
 
@@ -440,6 +450,59 @@ class GroupedApiCollection<T extends BaseModel<T>> extends ChangeNotifier
     _axisRefresh = Timer(refreshDelay, _reloadAxis);
   }
 
+  /// A record of the axis written on the screen, shown before the server
+  /// answers: its bucket takes its new label, or goes, its rows moved to the
+  /// bucket of no value.
+  void _onAxisPatched(ResourcePatchedEvent event) {
+    final source = this.source;
+
+    if (!_loaded ||
+        _disposed ||
+        source is! RelationGroupSource ||
+        !event.isAbout(source.target)) {
+      return;
+    }
+
+    final record = source.recordOf(event.id);
+
+    if (record == null) {
+      return;
+    }
+
+    if (event.deleted) {
+      _emptyBucketOf(event.id, source.field);
+      source.removeLocal(event.id);
+    } else {
+      source.upsertLocal(
+        source.target.fromJson({...record.data, ...event.values}),
+      );
+    }
+
+    final sync = _syncEntries();
+
+    _scheduleNotify();
+    unawaited(sync);
+  }
+
+  /// Moves the rows of the bucket of [value] to the bucket of no value, their
+  /// [field] emptied.
+  void _emptyBucketOf(Object? value, String field) {
+    final from = _entries
+        .where((entry) => '${entry.group.value}' == '$value')
+        .firstOrNull;
+    final empty = _entries
+        .where((entry) => entry.group.isEmptyBucket)
+        .firstOrNull;
+
+    if (from == null || empty == null) {
+      return;
+    }
+
+    for (final row in from.collection.items) {
+      empty.collection.upsertLocal(api.fromJson({...row.data, field: null}));
+    }
+  }
+
   /// Re-reads the rows every bucket holds, without a loading state.
   Future<void> refresh() => _refreshEntries();
 
@@ -566,6 +629,7 @@ class GroupedApiCollection<T extends BaseModel<T>> extends ChangeNotifier
     _axisRefresh?.cancel();
     _rows.cancel();
     _axis?.cancel();
+    unawaited(_axisPatches?.cancel());
     disposeAvailability();
 
     for (final entry in _entries) {
