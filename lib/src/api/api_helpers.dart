@@ -95,6 +95,29 @@ class ApiHelpers {
     return orderBy.toString();
   }
 
+  /// The fields [orderBy] sorts by, their direction and relation path left
+  /// out: `['sequence:asc', '-project.name']` sorts by `sequence` and
+  /// `project`.
+  static Set<String> orderFieldsOf(dynamic orderBy) => {
+    for (final item in encodeOrderBy(orderBy).split(','))
+      if (item.trim().isNotEmpty)
+        item.trim().replaceFirst(RegExp('^[-+]'), '').split(':').first.split('.').first,
+  };
+
+  /// [filter] with [rule] applying as well: one flat list of rules all
+  /// applying, as a list's filters are combined.
+  static Object withRule(dynamic filter, List<Object?> rule) {
+    if (filter == null || (filter is List && filter.isEmpty)) {
+      return rule;
+    }
+
+    if (filter is List && filter.every((one) => one is List)) {
+      return [...filter, rule];
+    }
+
+    return [filter, rule];
+  }
+
   static String _formatOrderByItem(dynamic item) {
     if (item is String) return item;
     if (item is List && item.length == 2) {

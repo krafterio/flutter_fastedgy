@@ -94,8 +94,12 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
   Timer? _refresh;
   int _writing = 0;
 
-  /// Whether a change was heard while the collection wrote: read once after.
-  bool _owed = false;
+  /// The changes heard while the collection wrote: read once it is over.
+  final _owed = <ResourceChangedEvent>[];
+
+  /// The rows a burst of updates asks to read again, alone.
+  final _rowsToRead = <Object?>{};
+  Timer? _rowsRefresh;
 
   /// Whether its screen can be seen: off screen, what changes is owed as one
   /// read when it is shown again.
@@ -478,9 +482,11 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
       Timer.run(() {
         _writing -= 1;
 
-        if (_writing == 0 && _owed && !_disposed) {
-          _owed = false;
-          _scheduleRefresh();
+        if (_writing == 0 && _owed.isNotEmpty && !_disposed) {
+          final owed = [..._owed];
+
+          _owed.clear();
+          owed.forEach(hear);
         }
       });
     }
@@ -499,11 +505,15 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
   /// mutation elsewhere, connectivity coming back).
   Future<void> refreshQuietly() => _refreshLoadedRange();
 
+  /// Hears [event] as the watch of the collection does: what a holder of
+  /// these rows, which watches for them, hands on.
+  void hear(ResourceChangedEvent event) => unawaited(_onResourceChanged(event));
+
   Future<void> _onResourceChanged(ResourceChangedEvent event) async {
     if (!_loaded || _disposed) return;
 
     if (_writing > 0) {
-      _owed = true;
+      _owed.add(event);
 
       return;
     }
@@ -521,12 +531,81 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
       return;
     }
 
+    if (_readsRowAlone(event)) {
+      _rowsToRead.add(event.id);
+      _rowsRefresh?.cancel();
+      _rowsRefresh = Timer(refreshDelay, () => unawaited(_refreshRows()));
+
+      return;
+    }
+
     _scheduleRefresh();
   }
 
+  /// Whether [event] changes a row held without moving it among the others:
+  /// an update naming it whose columns leave the order alone. Anything else, a
+  /// row appearing, columns nobody named, reads the whole range again.
+  bool _readsRowAlone(ResourceChangedEvent event) {
+    final moved = event.fields;
+
+    if (event.type != ResourceChangeType.updated ||
+        event.id == null ||
+        moved == null ||
+        moved.isEmpty ||
+        byId(event.id) == null) {
+      return false;
+    }
+
+    final ordered = ApiHelpers.orderFieldsOf(orderBy);
+
+    return !moved.any((field) => ordered.contains(field.split('.').first));
+  }
+
   void _scheduleRefresh() {
+    _rowsRefresh?.cancel();
+    _rowsToRead.clear();
     _refresh?.cancel();
     _refresh = Timer(refreshDelay, () => unawaited(_refreshLoadedRange()));
+  }
+
+  /// Reads again the rows a burst of updates named, alone, under the filter of
+  /// the collection: a row it no longer holds leaves.
+  Future<void> _refreshRows() async {
+    final ids = [..._rowsToRead];
+
+    _rowsToRead.clear();
+
+    if (_disposed || ids.isEmpty) return;
+
+    final generation = _generation;
+
+    try {
+      final result = await api.list(
+        query: ListQuery(
+          fields: fields,
+          filter: ApiHelpers.withRule(filter, ['id', 'in', ids]),
+          params: params,
+          limit: ids.length,
+        ),
+      );
+
+      if (_disposed || generation != _generation) return;
+
+      final read = {for (final row in result.items) '${row.id}': row};
+
+      for (final id in ids) {
+        final row = read['$id'];
+
+        if (row == null) {
+          removeLocal(id);
+        } else {
+          upsertLocal(row);
+        }
+      }
+    } catch (_) {
+      // A row that failed to read keeps what it showed: the next change reads
+      // it again.
+    }
   }
 
   Future<void> _refreshLoadedRange() async {
@@ -710,6 +789,7 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
     _watch?.cancel();
     stopFollowingPatches();
     _refresh?.cancel();
+    _rowsRefresh?.cancel();
     disposeAvailability();
     super.dispose();
   }

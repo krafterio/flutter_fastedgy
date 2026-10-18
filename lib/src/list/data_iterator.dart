@@ -357,8 +357,9 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
   /// The writes of the list running, whose echo it does not read.
   int _writing = 0;
 
-  /// Whether a change was heard while the list wrote: read once after it.
-  bool _owedRead = false;
+  /// The changes heard while the list wrote, each once however many of its
+  /// holders heard it: read once the writes are over.
+  final _owed = <ResourceChangedEvent>{};
 
   bool _loaded = false;
   bool _opened = false;
@@ -1042,9 +1043,14 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
       Timer.run(() {
         _writing -= 1;
 
-        if (_writing == 0 && _owedRead && !_disposed) {
-          _owedRead = false;
-          unawaited(refresh());
+        if (_writing == 0 && _owed.isNotEmpty && !_disposed) {
+          final owed = [..._owed];
+
+          _owed.clear();
+
+          for (final event in owed) {
+            _groupBy == null ? _collection.hear(event) : _grouped?.hear(event);
+          }
         }
       });
     }
@@ -1059,7 +1065,7 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
     }
 
     if (_writing > 0) {
-      _owedRead = true;
+      _owed.add(event);
 
       return false;
     }

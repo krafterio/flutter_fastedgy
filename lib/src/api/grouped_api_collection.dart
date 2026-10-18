@@ -437,9 +437,35 @@ class GroupedApiCollection<T extends BaseModel<T>> extends ChangeNotifier
       return;
     }
 
+    // An update leaving the field of the buckets alone keeps its row where it
+    // is: the bucket holding it reads that row again, alone.
+    final moved = event.fields;
+    final field = source.field;
+
+    if (event.type == ResourceChangeType.updated &&
+        event.id != null &&
+        moved != null &&
+        moved.isNotEmpty &&
+        field != null &&
+        !moved.any((one) => one.split('.').first == field)) {
+      final holder = _entries
+          .where((entry) => entry.collection.byId(event.id) != null)
+          .firstOrNull;
+
+      if (holder != null) {
+        holder.collection.hear(event);
+
+        return;
+      }
+    }
+
     _refresh?.cancel();
     _refresh = Timer(refreshDelay, _refreshEntries);
   }
+
+  /// Hears [event] as the watch of the rows does: what the list holding these
+  /// buckets, which watches for them, hands on.
+  void hear(ResourceChangedEvent event) => unawaited(_onRowsChanged(event));
 
   void _onAxisChanged(ResourceChangedEvent event) {
     if (!_loaded || _disposed) {

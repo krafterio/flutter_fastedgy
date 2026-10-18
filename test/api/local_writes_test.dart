@@ -4,6 +4,7 @@
  */
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_fastedgy/flutter_fastedgy.dart';
 import 'package:flutter_fastedgy/testing.dart';
@@ -52,10 +53,20 @@ void main() {
           final id = int.tryParse(request.path.split('/').last);
 
           if (request.method == 'GET') {
+            final filter = request.headers['X-Filter'] as String?;
+            final rule = filter == null || filter.isEmpty
+                ? null
+                : jsonDecode(filter) as List;
+            final ids = rule != null && rule[0] == 'id' ? rule[2] as List : null;
+            final rows = [
+              for (final row in stored.values)
+                if (ids == null || ids.contains(row['id'])) row,
+            ];
+
             return id == null
                 ? MockResponse.json({
-                    'items': stored.values.toList(),
-                    'total': stored.length,
+                    'items': rows,
+                    'total': rows.length,
                     'limit': 50,
                     'offset': 0,
                   })
@@ -288,6 +299,66 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 300));
 
       expect(reads(), before + 1);
+    });
+
+    test('an update named elsewhere reads its row alone; a row the filter left goes', () async {
+      final list = await collection();
+      List<MockRequest> reads() => [
+        for (final request in requests)
+          if (request.method == 'GET') request,
+      ];
+      final before = reads().length;
+
+      stored[7] = {...stored[7]!, 'name': 'Krafter SAS'};
+      stored.remove(8);
+      getService<Bus>()
+        ..fire(
+          const ResourceChangedEvent(
+            null,
+            model: 'thing',
+            type: ResourceChangeType.updated,
+            id: 7,
+            fields: {'name'},
+            announced: true,
+          ),
+        )
+        ..fire(
+          const ResourceChangedEvent(
+            null,
+            model: 'thing',
+            type: ResourceChangeType.updated,
+            id: 8,
+            fields: {'city'},
+            announced: true,
+          ),
+        );
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+
+      expect(reads(), hasLength(before + 1));
+      expect(reads().last.headers['X-Filter'], jsonEncode(['id', 'in', [7, 8]]));
+      expect(names(list), ['Krafter SAS']);
+      expect(list.total, 1);
+    });
+
+    test('an update moving the order reads the whole range again', () async {
+      final list = ApiCollection<_Thing>(api, fields: const ['id', 'name'], orderBy: const ['name']);
+
+      addTearDown(list.dispose);
+      await list.load();
+
+      getService<Bus>().fire(
+        const ResourceChangedEvent(
+          null,
+          model: 'thing',
+          type: ResourceChangeType.updated,
+          id: 7,
+          fields: {'name'},
+          announced: true,
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+
+      expect(requests.last.headers['X-Filter'], anyOf(isNull, isEmpty));
     });
 
     test('a record created joins the rows once the server answers', () async {

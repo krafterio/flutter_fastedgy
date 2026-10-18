@@ -75,10 +75,17 @@ void main() {
 
       if (request.method == 'GET' && rows != null) {
         final filter = sent(request)['filter'];
-        final stage = filter is List && filter.length == 3 ? filter[2] : null;
+        final ids = filter is List && filter.length == 3 && filter[0] == 'id'
+            ? filter[2] as List
+            : null;
+        final stage = ids == null && filter is List && filter.length == 3
+            ? filter[2]
+            : null;
         final items = [
           for (final row in rows)
-            if (stage == null || (row['stage'] as Map?)?['id'] == stage) row,
+            if ((ids == null || ids.contains(row['id'])) &&
+                (stage == null || (row['stage'] as Map?)?['id'] == stage))
+              row,
         ];
 
         return MockResponse.json({

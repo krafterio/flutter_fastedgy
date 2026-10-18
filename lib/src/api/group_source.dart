@@ -66,6 +66,10 @@ class ListGroup {
 /// loads it or turns its page. [watchApi] is what a caller watches to know the
 /// axis itself went stale.
 abstract class GroupSource {
+  /// The field the buckets group the rows by, null when the source does not
+  /// say: a write moving it moves its row to another bucket.
+  String? get field => null;
+
   /// Buckets of the current page, in the order the header shows them.
   List<ListGroup> get groups;
 
@@ -163,6 +167,7 @@ class ChoiceGroupSource extends GroupSource {
     }
   }
 
+  @override
   final String field;
 
   @override
@@ -247,6 +252,7 @@ class BooleanGroupSource extends GroupSource {
          ),
        ];
 
+  @override
   final String field;
 
   @override
@@ -323,6 +329,7 @@ class RelationGroupSource extends GroupSource {
          autoRefreshOnChange: false,
        );
 
+  @override
   final String field;
   final String labelField;
   final bool includeEmpty;

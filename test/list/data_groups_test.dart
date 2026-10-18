@@ -356,6 +356,35 @@ void main() {
       list.dispose();
     });
 
+    test('an update leaving the field of the groups alone reads its row alone, in its group', () async {
+      final list = DataIterator<Thing>(api, groupBy: 'stage');
+
+      await settle();
+
+      final before = groups.reads('/acme/things').length;
+
+      groups.things.first['name'] = 'Lantern';
+      getService<Bus>().fire(
+        const ResourceChangedEvent(
+          null,
+          model: 'thing',
+          type: ResourceChangeType.updated,
+          id: 1,
+          fields: {'name'},
+          announced: true,
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+
+      final reads = groups.reads('/acme/things');
+
+      expect(reads, hasLength(before + 1));
+      expect(sent(reads.last)['filter'], contains(equals(['id', 'in', [1]])));
+      expect(groupOf(list, 'id:1').items.first.data['name'], 'Lantern');
+
+      list.dispose();
+    });
+
     test('a record of the axis written on the screen renames its group at once, and deleted, gives its rows to the group of no value', () async {
       final list = DataIterator<Thing>(api, groupBy: 'stage');
       final bus = getService<Bus>();
