@@ -26,3 +26,5 @@ export 'mixins.dart';
 export 'pagination_result.dart';
 export 'base/attachment_api.dart';
 export 'base/dataset_api.dart';
+// The tokens alone: its `AuthApi` would take the name of the applications' own.
+export 'base/auth_api.dart' show Token;
