@@ -133,6 +133,11 @@ class RealtimeSocket with WidgetsBindingObserver {
   /// Every scope read: those of [watchAll], else the one of [watch].
   List<String> get scopes => _scopes ?? [?_scope];
 
+  /// The id of the scope the screens read under, among those [watchAll] reads,
+  /// null when nobody said: a holder of a model under that scope has nothing
+  /// to learn from the writes of another one ([ResourceChangedEvent.scopeId]).
+  int? focusedScope;
+
   /// What the server was last told this socket reads, compared to what it
   /// reads now.
   String? get _watched => _scopes == null ? _scope : jsonEncode(_scopes);

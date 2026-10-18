@@ -124,6 +124,17 @@ class ResourceWatch {
       return;
     }
 
+    // A socket reading several scopes hears the writes of every one of them:
+    // a model under the current workspace has nothing to learn from another.
+    final focused = _socket?.focusedScope;
+
+    if (focused != null &&
+        event.scopeId != null &&
+        event.scopeId != focused &&
+        _api.basePath.contains('{workspace}')) {
+      return;
+    }
+
     if (_where?.call(event) == false) {
       return;
     }

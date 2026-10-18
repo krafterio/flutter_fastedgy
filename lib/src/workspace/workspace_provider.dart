@@ -122,7 +122,10 @@ class WorkspaceProvider<T extends BaseModel<T>> extends ChangeNotifier {
 
     if (hasService<RealtimeSocket>()) {
       final socket = getService<RealtimeSocket>();
-      addListener(() => follow(socket));
+      addListener(() {
+        follow(socket);
+        socket.focusedScope = current?.id;
+      });
     }
   }
 

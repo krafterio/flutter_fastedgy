@@ -164,6 +164,54 @@ void main() {
     await Future<void>.delayed(Duration.zero);
   }
 
+  test('under the current workspace, leaves the writes of another one alone', () async {
+    final scoped = socket()..focusedScope = 1;
+    final account = _ThingApi('', modelName: 'thing', fetcher: fetcher);
+
+    watch();
+    await fire(
+      const ResourceChangedEvent(
+        null,
+        model: 'thing',
+        type: ResourceChangeType.updated,
+        id: 7,
+        announced: true,
+        scopeId: 2,
+      ),
+    );
+
+    expect(heard, isEmpty);
+
+    await fire(
+      const ResourceChangedEvent(
+        null,
+        model: 'thing',
+        type: ResourceChangeType.updated,
+        id: 7,
+        announced: true,
+        scopeId: 1,
+      ),
+    );
+
+    expect(heard, hasLength(1));
+
+    watch(on: account);
+    await fire(
+      const ResourceChangedEvent(
+        null,
+        model: 'thing',
+        type: ResourceChangeType.updated,
+        id: 8,
+        announced: true,
+        scopeId: 2,
+      ),
+    );
+
+    expect([for (final event in heard) event.id], [7, 8]);
+
+    scoped.focusedScope = null;
+  });
+
   test('hears a change of the model it watches', () async {
     watch();
     await fire(
