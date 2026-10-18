@@ -140,19 +140,38 @@ void main() {
 
     expect(heard, isEmpty);
     expect(response.data, {'done': 2});
-    expect((requests.single.method, requests.single.path), ('POST', '/things/read'));
+    expect(
+      (requests.single.method, requests.single.path),
+      ('POST', '/things/read'),
+    );
     expect(requests.single.body, {
       'ids': [7],
     });
 
     await settle();
 
-    expect((heard.single.type, heard.single.id), (ResourceChangeType.updated, null));
+    expect(
+      (heard.single.type, heard.single.id),
+      (ResourceChangeType.updated, null),
+    );
 
+    await things.action(
+      'post',
+      path: '/archive',
+      body: {'archived': true},
+      query: const ListQuery(
+        filter: [
+          'id',
+          'in',
+          [7],
+        ],
+      ),
+    );
     await things.action('get', path: '/stats');
     await settle();
 
-    expect(heard, hasLength(1));
+    expect(requests[1].headers['X-Filter'], '["id","in",[7]]');
+    expect(heard, hasLength(2));
   });
 
   test('an announcement outside a write is fired on the spot', () async {
