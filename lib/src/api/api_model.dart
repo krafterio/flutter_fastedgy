@@ -333,6 +333,39 @@ abstract class ApiModel<T extends BaseModel<T>> {
   Future<void> delete(Object id, {ApiParams? params}) =>
       _write(() async => (await _resolveEngine()).delete(id, params: params));
 
+  /// Reaches an action of the model outside its generated routes, the port of
+  /// `action()` in vue-fastedgy: [method] (`get`, `post`, `put`, `patch` or
+  /// `delete`) on what follows the model in its path ([path], `/12/archive`),
+  /// [body] for a write. A write announces it on the model as a whole, as a
+  /// create or an update does, once it returned: its path does not say which
+  /// record.
+  Future<Response> action(
+    String method, {
+    String path = '',
+    Object? body,
+    Map<String, dynamic>? params,
+  }) async {
+    final url = '${await resolvePath()}$path';
+
+    if (method == 'get') {
+      return fetcher.get(url, params: params);
+    }
+
+    return _write(() async {
+      final response = switch (method) {
+        'post' => await fetcher.post(url, body, params: params),
+        'put' => await fetcher.put(url, body, params: params),
+        'patch' => await fetcher.patch(url, body, params: params),
+        'delete' => await fetcher.delete(url, params: params),
+        _ => throw ArgumentError.value(method, 'method'),
+      };
+
+      notifyChanged(ResourceChangeType.updated);
+
+      return response;
+    });
+  }
+
   Future<Response> export({ExportQuery? query, ApiParams? params}) async =>
       (await _resolveEngine()).export(query: query, params: params);
 

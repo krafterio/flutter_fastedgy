@@ -109,6 +109,52 @@ void main() {
     },
   );
 
+  test('an action of the model writes under its path, announced on the model once it returned', () async {
+    final requests = <MockRequest>[];
+    final things = _ThingApi(
+      fetcher: createMockFetcher(
+        (request) {
+          requests.add(request);
+
+          return const MockResponse.json({'done': 2});
+        },
+        enableAuth: false,
+        enableTimezone: false,
+        enableRefreshToken: false,
+      ),
+    );
+    final heard = <ResourceChangedEvent>[];
+    final subscription = getService<Bus>().on<ResourceChangedEvent>().listen(
+      heard.add,
+    );
+
+    addTearDown(subscription.cancel);
+
+    final response = await things.action(
+      'post',
+      path: '/read',
+      body: {
+        'ids': [7],
+      },
+    );
+
+    expect(heard, isEmpty);
+    expect(response.data, {'done': 2});
+    expect((requests.single.method, requests.single.path), ('POST', '/things/read'));
+    expect(requests.single.body, {
+      'ids': [7],
+    });
+
+    await settle();
+
+    expect((heard.single.type, heard.single.id), (ResourceChangeType.updated, null));
+
+    await things.action('get', path: '/stats');
+    await settle();
+
+    expect(heard, hasLength(1));
+  });
+
   test('an announcement outside a write is fired on the spot', () async {
     final heard = <ResourceChangedEvent>[];
     final subscription = getService<Bus>().on<ResourceChangedEvent>().listen(
