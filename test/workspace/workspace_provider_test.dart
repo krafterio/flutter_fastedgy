@@ -8,6 +8,7 @@
 
 import 'dart:async';
 
+import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_fastedgy/flutter_fastedgy.dart';
 import 'package:flutter_fastedgy/testing.dart';
@@ -132,5 +133,36 @@ void main() {
 
     expect(workspaces.slug, 'gamma');
     expect(workspaces.slugs, ['gamma']);
+  });
+
+  group('offline', () {
+    test(
+      'opens on the last list read when the server does not answer',
+      () async {
+        final store = container.registerSingleton<LocalStore>(
+          DriftLocalStore(
+            databaseOpener: () => OfflineDatabase(NativeDatabase.memory()),
+          ),
+        );
+        await store.open();
+        addTearDown(store.close);
+        await workspaces.load();
+
+        answer = (request) => const MockResponse.error(503);
+        final reopened = _Provider();
+        await reopened.load();
+
+        expect(reopened.error, isNull);
+        expect(reopened.slugs, ['alpha', 'beta']);
+      },
+    );
+
+    test('keeps the failure without the offline layer', () async {
+      answer = (request) => const MockResponse.error(503);
+      await workspaces.load();
+
+      expect(workspaces.error, isNotNull);
+      expect(workspaces.slugs, isEmpty);
+    });
   });
 }

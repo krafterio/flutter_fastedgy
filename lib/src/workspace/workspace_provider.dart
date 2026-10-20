@@ -19,6 +19,7 @@ import '../fetcher/client.dart';
 import '../fetcher/http_error.dart';
 import '../logging/logger.dart';
 import '../metadata/metadata_provider.dart';
+import '../offline/offline_api_resource.dart';
 import '../offline/offline_context_params.dart';
 import '../realtime/realtime_events.dart';
 import '../realtime/realtime_socket.dart';
@@ -137,6 +138,10 @@ class WorkspaceProvider<T extends BaseModel<T>> extends ChangeNotifier {
   final Future<Object?> Function()? _account;
   final Future<List<T>> Function()? _list;
   final _log = getLogger('WorkspaceProvider');
+
+  /// The last list read, which an offline app opens on when the server does
+  /// not answer.
+  final _listCache = _WorkspacesCache();
 
   /// The last workspace opened on this device is the one opened next.
   final bool rememberLast;
@@ -591,13 +596,17 @@ class WorkspaceProvider<T extends BaseModel<T>> extends ChangeNotifier {
       return list();
     }
 
-    final response = await getService<Fetcher>().get(
-      '/workspaces',
-      params: {'limit': 200},
-      headers: {'X-Fields': fields},
-    );
-    final data = response.data;
-    final items = data is Map ? data['items'] : null;
+    final data = await _listCache.remoteOrCachedJson(() async {
+      final response = await getService<Fetcher>().get(
+        '/workspaces',
+        params: {'limit': 200},
+        headers: {'X-Fields': fields},
+      );
+      final data = response.data;
+
+      return data is Map<String, dynamic> ? data : const {};
+    });
+    final items = data['items'];
 
     return [
       if (items is List)
@@ -796,4 +805,10 @@ class _WorkspaceParams implements OfflineContextParamsResolver {
 
   @override
   Map<String, Object?> resolve() => {'workspace': _workspaces.slug};
+}
+
+/// The list of the account's workspaces in the offline layer's cache, when the
+/// app registered one (`initializeFastEdgy(offline: true)`).
+class _WorkspacesCache extends OfflineApiResource {
+  _WorkspacesCache() : super('/workspaces');
 }
