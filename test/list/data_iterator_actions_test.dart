@@ -156,6 +156,31 @@ void main() {
       },
     );
 
+    test('keeps the order a hand gives on this device while the server is out of reach, when asked', () async {
+      final status = SyncStatus(getService<Bus>());
+      container.registerSingleton<SyncStatus>(status);
+      addTearDown(() => container.unregister<SyncStatus>());
+
+      final list = DataIterator<Thing>(api, keepsOrderOffline: true);
+
+      await settle();
+      status.setServerAnswering(false);
+      await settle();
+
+      expect(list.isSortable, isTrue);
+
+      final reversed = [for (final thing in list.items.reversed) thing.id!];
+      final reads = server.lists.length;
+
+      await list.resequence(reversed);
+
+      expect([for (final thing in list.items) thing.id], reversed);
+      expect(orders(), isEmpty);
+      expect(server.lists, hasLength(reads));
+
+      list.dispose();
+    });
+
     test('keeps on under a quick filter that keeps the order', () async {
       final list = DataIterator<Thing>(
         api,

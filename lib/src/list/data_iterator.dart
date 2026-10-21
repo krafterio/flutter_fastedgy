@@ -154,6 +154,7 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
     this.orderable = true,
     bool enableSelection = false,
     this.append = false,
+    this.keepsOrderOffline = false,
     this.searchField = 'search_value',
     this.searchFields,
     this.scrollController,
@@ -262,6 +263,11 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
   /// Whether the pages read follow one another instead of replacing each
   /// other.
   final bool append;
+
+  /// The rows a hand moves while the server is out of reach keep their order
+  /// on this device, until an order is sent again: the list can be ordered
+  /// without a connection, the order being never buffered.
+  final bool keepsOrderOffline;
 
   /// The fulltext field the search is matched on.
   final String searchField;
@@ -742,7 +748,7 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
   bool get isSortable =>
       _sortable.isSortable &&
       _narrowing(ordered: true).isEmpty &&
-      SyncStatus.currentlyReachable;
+      (keepsOrderOffline || SyncStatus.currentlyReachable);
 
   /// Saves the order of [ids], moved to the group [groupValue] of
   /// [groupField] when given: the rows take it at once, the order is sent
@@ -765,6 +771,13 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
         : _holding(ids.firstOrNull)?.collection ?? _collection;
 
     _reorder(rows, ids);
+
+    if (keepsOrderOffline && !SyncStatus.currentlyReachable) {
+      notifyListeners();
+
+      return;
+    }
+
     _resequencing = true;
     notifyListeners();
 
