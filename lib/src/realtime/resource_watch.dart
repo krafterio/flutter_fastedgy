@@ -8,6 +8,7 @@ import 'dart:async';
 import '../api/api_model.dart';
 import '../bus/bus.dart';
 import '../container/container.dart';
+import 'origin.dart';
 import 'realtime_events.dart';
 import 'realtime_socket.dart';
 
@@ -56,6 +57,7 @@ class ResourceWatch {
   Timer? _pending;
   bool _active = true;
   bool _owed = false;
+  bool _catchingUp = false;
   bool _cancelled = false;
 
   Object? get id => _id;
@@ -97,6 +99,18 @@ class ResourceWatch {
     }
   }
 
+  /// Tells the watch its holder reads again on its own: what was heard so far
+  /// is answered by that read, so the call pending or owed for it is dropped.
+  /// So are the writes of this instance that ended before it, which the api
+  /// layer announces on the next timer, once their caller resumed and read.
+  void caughtUp() {
+    _pending?.cancel();
+    _pending = null;
+    _owed = false;
+    _catchingUp = true;
+    Timer.run(() => _catchingUp = false);
+  }
+
   /// Stops hearing, and lets go of the channel once however often it is called.
   void cancel() {
     if (_cancelled) {
@@ -114,7 +128,9 @@ class ResourceWatch {
       ResourceChangedEvent(_api.resolvedBasePath, model: _api.modelName);
 
   void _heard(ResourceChangedEvent event) {
-    if (_cancelled || !event.isAbout(_api)) {
+    if (_cancelled ||
+        !event.isAbout(_api) ||
+        (_catchingUp && event.origin == originId)) {
       return;
     }
 

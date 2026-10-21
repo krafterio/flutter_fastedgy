@@ -16,6 +16,9 @@ class _Thing extends BaseModel<_Thing> {
 
 class _ThingApi extends ApiModel<_Thing> {
   _ThingApi(super.basePath, {super.modelName, super.fetcher});
+
+  @override
+  _Thing fromJson(Map<String, dynamic> json) => _Thing(json);
 }
 
 class _Auth implements AuthProvider<dynamic> {
@@ -389,6 +392,46 @@ void main() {
       expect(heard.single.type, isNull);
     },
   );
+
+  test('drops the call pending or owed once its holder read on its own, and hears what comes after', () async {
+    final one = watch(refreshDelay: const Duration(milliseconds: 20));
+
+    await fire(const ResourceChangedEvent(null, model: 'thing', id: 7));
+    one.caughtUp();
+    await Future<void>.delayed(const Duration(milliseconds: 40));
+
+    one.active = false;
+    await fire(const ResourceChangedEvent(null, model: 'thing', id: 8));
+    await Future<void>.delayed(const Duration(milliseconds: 40));
+    one
+      ..caughtUp()
+      ..active = true;
+
+    expect(heard, isEmpty);
+
+    await fire(const ResourceChangedEvent(null, model: 'thing', id: 9));
+    await Future<void>.delayed(const Duration(milliseconds: 40));
+
+    expect(heard.single.id, 9);
+  });
+
+  test('drops a write of this instance announced once its holder read, and hears the others', () async {
+    final one = watch();
+
+    await api.update(7, _Thing({}));
+    one.caughtUp();
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+
+    expect(heard, isEmpty);
+
+    await fire(
+      const ResourceChangedEvent(null, model: 'thing', id: 8, origin: 'x'),
+    );
+    await api.update(9, _Thing({}));
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+
+    expect(heard.map((event) => event.id), [8, 9]);
+  });
 
   test('owes nothing when nothing came while it was inactive', () {
     watch()
