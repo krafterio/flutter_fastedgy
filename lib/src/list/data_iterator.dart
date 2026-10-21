@@ -134,7 +134,9 @@ int? _readId(String? raw) {
 /// before the page size kept on the device and the metadata of the model are
 /// known, nor while `enabled` is false; then one read goes out, already on the
 /// right page. The changes of one turn are read once, and a workspace switch
-/// starts the list over as if it were opened there.
+/// starts the list over as if it were opened there. A [seed] is the rows the
+/// caller already holds: shown at once, as read, before the list reads as it
+/// would.
 class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
     with LocalWrites<T>
     implements ActiveHolder {
@@ -174,6 +176,7 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
     this._refreshDelay = const Duration(milliseconds: 250),
     this._watchFields,
     this._where,
+    List<T>? seed,
   }) : _filter = filter,
        _isSelectionEnabled = enableSelection,
        defaultGroupBy = groupBy,
@@ -194,6 +197,11 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
       where: _readsChange,
     )..addListener(_relay);
     _follow();
+
+    if (seed != null) {
+      _loaded = true;
+      unawaited(_collection.load(seed: seed, reread: false));
+    }
 
     final entry = _entry = url?.read() ?? const <String, String>{};
     final page = int.tryParse(entry['p'] ?? '') ?? 1;

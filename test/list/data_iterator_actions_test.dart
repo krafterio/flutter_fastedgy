@@ -156,6 +156,35 @@ void main() {
       },
     );
 
+    test('shows the rows it is seeded with at once, as read, before reading as it would', () async {
+      final enabled = ValueNotifier(false);
+      final list = DataIterator<Thing>(
+        api,
+        seed: [
+          Thing({'id': 7, 'name': 'Held'}),
+        ],
+        enabled: enabled,
+      );
+
+      addTearDown(enabled.dispose);
+
+      expect(list.loaded, isTrue);
+      expect([for (final thing in list.items) thing.id], [7]);
+
+      await settle();
+
+      expect(server.lists, isEmpty);
+      expect([for (final thing in list.items) thing.id], [7]);
+
+      enabled.value = true;
+      await settle();
+
+      expect(server.lists, hasLength(1));
+      expect(list.items.first.id, 1);
+
+      list.dispose();
+    });
+
     test('keeps the order a hand gives on this device while the server is out of reach, when asked', () async {
       final status = SyncStatus(getService<Bus>());
       container.registerSingleton<SyncStatus>(status);
