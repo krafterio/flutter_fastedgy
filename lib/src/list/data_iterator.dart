@@ -390,6 +390,9 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
   /// Only the latest read counts for [loaded] and the scroll it restores.
   int _latest = 0;
 
+  /// The read [refresh] started, while it runs.
+  int? _held;
+
   /// The fields the last read carried.
   Set<String> _readFields = const {};
 
@@ -432,6 +435,13 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
               (entry) =>
                   entry.collection.isLoading || entry.collection.isLoadingMore,
             );
+
+  /// Whether the next page is being read ([loadMore]).
+  bool get loadingMore => _groupBy == null && _collection.isLoadingMore;
+
+  /// Whether the rows shown are being read again ([refresh]), in place: a
+  /// read nobody asked to see.
+  bool get refreshing => _held != null && _held == _latest;
 
   /// Whether a first answer came back, a failure included. A skeleton
   /// listens to it rather than to [loading]: a search does not blank the
@@ -1282,6 +1292,8 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
 
     final run = ++_latest;
     final field = _groupBy;
+
+    _held = mode == _Read.held ? run : null;
     final unread = fields.any((one) => !_readFields.contains(one));
 
     _readFields = {...fields};
@@ -1317,6 +1329,10 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
           params: params,
         ),
       );
+    }
+
+    if (_held == run) {
+      _held = null;
     }
 
     if (run != _latest || _disposed) {

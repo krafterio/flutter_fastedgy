@@ -113,6 +113,49 @@ void main() {
       },
     );
 
+    test('tells a refresh in place from the read of the next page', () async {
+      server.rows = 60;
+      final list = DataIterator<Thing>(
+        api,
+        append: true,
+        pageSize: 20,
+        availablePageSizes: const [20],
+      );
+
+      await settle();
+      final held = Completer<void>();
+
+      server.gates.add(held);
+      unawaited(list.refresh());
+      await settle();
+
+      expect(list.loading, isTrue);
+      expect(list.refreshing, isTrue);
+      expect(list.loadingMore, isFalse);
+
+      held.complete();
+      await settle();
+
+      expect(list.refreshing, isFalse);
+
+      final more = Completer<void>();
+
+      server.gates.add(more);
+      unawaited(list.loadMore());
+      await settle();
+
+      expect(list.loadingMore, isTrue);
+      expect(list.refreshing, isFalse);
+
+      more.complete();
+      await settle();
+
+      expect(list.loadingMore, isFalse);
+      expect(list.items, hasLength(40));
+
+      list.dispose();
+    });
+
     test('reads the id, the fields of the screen and the field of the manual order, once each', () async {
       await setUpList(sortable: true, sortableField: 'rank');
       final list = DataIterator<Thing>(api, fields: ['name', 'id', 'rank']);
@@ -196,19 +239,23 @@ void main() {
       );
     });
 
-    test('keeps the filter of the screen apart from what the controls set over it', () {
-      final followed = ValueNotifier<Object?>(['kind', '=', 1]);
-      final list = DataIterator<Thing>(api, filter: followed)..filter = ['owner', '=', 7];
+    test(
+      'keeps the filter of the screen apart from what the controls set over it',
+      () {
+        final followed = ValueNotifier<Object?>(['kind', '=', 1]);
+        final list = DataIterator<Thing>(api, filter: followed)
+          ..filter = ['owner', '=', 7];
 
-      addTearDown(list.dispose);
-      addTearDown(followed.dispose);
+        addTearDown(list.dispose);
+        addTearDown(followed.dispose);
 
-      expect(list.restrictiveFilter, ['kind', '=', 1]);
+        expect(list.restrictiveFilter, ['kind', '=', 1]);
 
-      followed.value = const <Object?>[];
+        followed.value = const <Object?>[];
 
-      expect(list.restrictiveFilter, isNull);
-    });
+        expect(list.restrictiveFilter, isNull);
+      },
+    );
 
     test('adds the filter of the controls, the expression, the quick filters and the search, in this order', () async {
       final late = QuickFilter<bool>(
