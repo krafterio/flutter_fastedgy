@@ -5,6 +5,7 @@
 
 export 'api_collection.dart';
 export 'api_record.dart';
+export 'record_form_controller.dart';
 export 'local_writes.dart';
 export 'api_holders.dart';
 export 'list_filter.dart';
