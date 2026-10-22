@@ -10,6 +10,7 @@ import 'package:flutter/widgets.dart';
 import '../container/container.dart';
 import '../metadata/models.dart';
 import '../query/registry.dart';
+import '../ui/combo_option.dart';
 import 'api_record.dart';
 import 'base_model.dart';
 import 'record_form_controller.dart';
@@ -133,6 +134,9 @@ class RecordFormInput {
   /// The lines of a text.
   final int? maxLines;
 
+  /// Offered in place of the choices of the metadata.
+  final List<ComboOption<Object?>>? options;
+
   /// How the input draws the field, as it understands it: a style of choice.
   final Object? variant;
 
@@ -144,6 +148,7 @@ class RecordFormInput {
     this.help,
     this.enabled = true,
     this.maxLines,
+    this.options,
     this.variant,
   });
 
@@ -184,6 +189,9 @@ class RecordFormField extends StatelessWidget {
   final bool enabled;
   final int? maxLines;
 
+  /// Offered in place of the choices of the metadata.
+  final List<ComboOption<Object?>>? options;
+
   /// How the input draws the field ([RecordFormInput.variant]).
   final Object? variant;
 
@@ -195,6 +203,7 @@ class RecordFormField extends StatelessWidget {
     this.help,
     this.enabled = true,
     this.maxLines,
+    this.options,
     this.variant,
   });
 
@@ -226,6 +235,7 @@ class RecordFormField extends StatelessWidget {
         help: help,
         enabled: enabled && !metadata.readonly && metadata.type != 'computed',
         maxLines: maxLines,
+        options: options,
         variant: variant,
       ),
     );

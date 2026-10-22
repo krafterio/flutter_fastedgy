@@ -41,6 +41,7 @@ export 'package:dio/dio.dart' show Response, ResponseType;
 export 'src/auth/auth.dart';
 
 export 'src/api/api.dart';
+export 'src/ui/combo_option.dart';
 
 export 'src/metadata/metadata.dart';
 
