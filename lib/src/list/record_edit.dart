@@ -148,9 +148,10 @@ class RecordEdit<T extends BaseModel<T>> extends ChangeNotifier {
   /// Keeps what the server said of [id]: by field, and for the whole row
   /// what it says about none.
   void _keep(Object? id, Object error) {
-    final formatted = error is HttpError
-        ? formatApiError(error.data, defaultTitle: error.message)
-        : formatApiError(null);
+    final formatted = formatApiError(
+      error,
+      defaultMessage: error is HttpError ? error.message : null,
+    );
 
     if (formatted.hasFieldErrors) {
       (_errors[id] ??= {}).addAll({

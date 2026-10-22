@@ -3,6 +3,7 @@
  * MIT License (see LICENSE file).
  */
 
+import '../fetcher/http_error.dart';
 import '../i18n/i18n.dart';
 import '../metadata/models.dart';
 
@@ -66,125 +67,123 @@ class FieldError {
     this.type = '',
   }) : label = fields?[field.split(RegExp(r'[.\[]')).first]?.label;
 
-  /// [message] named by its field, its label or its path otherwise: « Field
-  /// Email: not an email ».
+  /// [message] named by the label of its field, « Field Email: not an
+  /// email »; alone for a field the metadata do not name.
   String get described {
     final label = this.label;
 
-    return t('Field {name}: {message}', {
-      'name': label == null || label.isEmpty ? field : label,
-      'message': message,
-    });
+    return label == null || label.isEmpty
+        ? message
+        : t('Field {name}: {message}', {'name': label, 'message': message});
   }
 }
 
-/// Format API errors (especially HTTPValidationError from FastAPI/OpenAPI)
+/// [error] worded for the screen, a failed call of the fetcher
+/// ([HttpError]): the reason the server gives (`detail`, else its `message`
+/// or `error`), [defaultMessage] when it gives none (the network down, an
+/// answer without a body), « An error occurred » without one.
 ///
-/// Handles two cases:
-/// 1. Simple error: detail is a string
-/// 2. Validation error: detail is a list of validation errors (HTTPValidationError)
+/// A validation error (`detail` as a list, FastAPI's HTTPValidationError) is
+/// titled « Validation error »: what it says about a field of the body goes to
+/// [FormattedError.fieldErrors], its path read from `loc` (`["body", "items",
+/// 0, "value"]` to `items[0].value`) and named by its label in [fields], the
+/// metadata of the model written; the rest to [FormattedError.messages].
 ///
-/// For validation errors, extracts field paths from 'loc' array:
-/// - loc[0] is always "body" (ignored)
-/// - loc[1+] represents the field path (e.g., ["body", "workspace", "name"] -> "workspace.name")
+/// The same as `formatApiError` of vue-fastedgy.
 ///
-/// A validation error whose location is not in the body, or is the body
-/// itself, is said about no field ([FormattedError.messages]). A field is
-/// named by its label in [fields], the metadata of the model written.
-///
-/// Example:
 /// ```dart
 /// try {
 ///   await api.create(...);
-/// } catch (e) {
-///   if (e is HttpError) {
-///     final formatted = formatApiError(
-///       e.data,
-///       fields: (await api.metadata())?.fields,
-///     );
-///     showAlert(formatted.fullMessage);
-///   }
+/// } catch (error) {
+///   final formatted = formatApiError(
+///     error,
+///     fields: (await api.metadata())?.fields,
+///   );
+///   showAlert(formatted.fullMessage);
 /// }
 /// ```
 FormattedError formatApiError(
-  dynamic errorData, {
-  String? defaultTitle,
+  Object? error, {
+  String? defaultMessage,
   Map<String, MetadataField>? fields,
 }) {
-  defaultTitle ??= t('An error occurred');
+  final fallback = FormattedError(
+    title: defaultMessage ?? t('An error occurred'),
+  );
+  final data = error is HttpError ? error.data : null;
 
-  if (errorData == null) {
-    return FormattedError(title: defaultTitle);
+  if (data is! Map) {
+    return fallback;
   }
 
-  // If errorData is not a Map, return default
-  if (errorData is! Map<String, dynamic>) {
-    final errorStr = errorData.toString();
-    return FormattedError(title: errorStr.isNotEmpty ? errorStr : defaultTitle);
-  }
+  final detail = data['detail'];
 
-  final detail = errorData['detail'];
-
-  // Case 1: detail is a simple string
   if (detail is String && detail.isNotEmpty) {
     return FormattedError(title: detail);
   }
 
-  // Case 2: detail is a list of validation errors (HTTPValidationError)
-  if (detail is List && detail.isNotEmpty) {
+  if (detail is List) {
     final fieldErrors = <FieldError>[];
     final messages = <String>[];
 
     for (final item in detail) {
-      if (item is! Map<String, dynamic>) continue;
+      final msg = item is Map ? item['msg'] : null;
 
-      final loc = item['loc'] as List?;
-      final msg = item['msg'] as String?;
-      final type = item['type'] as String?;
+      if (msg is! String || msg.isEmpty) continue;
 
-      if (loc == null || msg == null) continue;
+      final loc = item['loc'];
+      final path = loc is List && loc.firstOrNull == 'body'
+          ? _buildFieldPath(loc)
+          : '';
 
-      final fieldPath = loc.firstOrNull == 'body' ? _buildFieldPath(loc) : '';
-
-      if (fieldPath.isEmpty) {
+      if (path.isEmpty) {
         messages.add(msg);
       } else {
         fieldErrors.add(
-          FieldError.about(fieldPath, msg, fields, type: type ?? 'unknown'),
+          FieldError.about(
+            path,
+            msg,
+            fields,
+            type: item['type'] as String? ?? 'unknown',
+          ),
         );
       }
     }
 
-    if (fieldErrors.isEmpty && messages.isEmpty) {
-      return FormattedError(title: defaultTitle);
+    return fieldErrors.isEmpty && messages.isEmpty
+        ? fallback
+        : FormattedError(
+            title: t('Validation error'),
+            fieldErrors: fieldErrors,
+            messages: messages,
+          );
+  }
+
+  for (final key in const ['message', 'error']) {
+    final said = data[key];
+
+    if (said is String && said.isNotEmpty) {
+      return FormattedError(title: said);
     }
-
-    return FormattedError(
-      title: t('Validation error'),
-      fieldErrors: fieldErrors,
-      messages: messages,
-    );
   }
 
-  // Try to get message from other common fields
-  if (errorData['message'] is String &&
-      (errorData['message'] as String).isNotEmpty) {
-    return FormattedError(title: errorData['message'] as String);
-  }
-
-  if (errorData['error'] is String &&
-      (errorData['error'] as String).isNotEmpty) {
-    return FormattedError(title: errorData['error'] as String);
-  }
-
-  // Fallback: return the error as-is or default message
-  final errorStr = errorData.toString();
-  if (errorStr.isNotEmpty && errorStr != '{}' && errorStr != 'null') {
-    return FormattedError(title: errorStr);
-  }
-
-  return FormattedError(title: defaultTitle);
+  return fallback;
 }
+
+/// [error] in one message ([FormattedError.fullMessage] of
+/// [formatApiError]); null without one. The same as `formatValidationErrors`
+/// of vue-fastedgy.
+String? formatValidationErrors(
+  Object? error, {
+  String? defaultMessage,
+  Map<String, MetadataField>? fields,
+}) => error == null
+    ? null
+    : formatApiError(
+        error,
+        defaultMessage: defaultMessage,
+        fields: fields,
+      ).fullMessage;
 
 /// Build field path from loc array, skipping "body"
 ///

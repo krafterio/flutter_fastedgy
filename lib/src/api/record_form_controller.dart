@@ -59,10 +59,9 @@ typedef RecordFormErrors = ({Map<String, String> fields, List<String> alerts});
 /// service of the container registered by [initializeFastEdgy], which an
 /// application replaces for errors of its own.
 ///
-/// A validation error of the server ([HttpError.validationErrors]) about the
-/// body goes to the field its location names (`["body", "preferences",
-/// "compact"]` to `preferences.compact`); the others, and any other error, to
-/// the alert, as their message.
+/// What the server says of a field of the body ([formatApiError]) goes to that
+/// field, by its path (`["body", "preferences", "compact"]` to
+/// `preferences.compact`); the rest, and any other error, to the alert.
 class RecordFormErrorReader {
   const RecordFormErrorReader();
 
@@ -71,29 +70,22 @@ class RecordFormErrorReader {
       return (fields: const {}, alerts: [error.message]);
     }
 
-    final validation = error is HttpError ? error.validationErrors : null;
+    final formatted = formatApiError(
+      error,
+      defaultMessage: error is HttpError ? error.message : '$error',
+    );
 
-    if (validation == null || validation.isEmpty) {
-      return (
-        fields: const {},
-        alerts: [if (error is HttpError) error.message else '$error'],
-      );
+    if (!formatted.hasFieldErrors && formatted.messages.isEmpty) {
+      return (fields: const {}, alerts: [formatted.title]);
     }
 
     final fields = <String, String>{};
-    final alerts = <String>[];
 
-    for (final failure in validation) {
-      final field = failure.loc.firstOrNull == 'body' ? failure.field : '';
-
-      if (field.isEmpty) {
-        alerts.add(failure.msg);
-      } else {
-        fields.putIfAbsent(field, () => failure.msg);
-      }
+    for (final one in formatted.fieldErrors) {
+      fields.putIfAbsent(one.field, () => one.message);
     }
 
-    return (fields: fields, alerts: alerts);
+    return (fields: fields, alerts: formatted.messages);
   }
 }
 
