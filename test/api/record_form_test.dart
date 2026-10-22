@@ -137,26 +137,45 @@ void main() {
   );
 
   testWidgets(
-    'draws a field with the input named for it, a key of a JSON field with its type',
+    'draws a field with the input given with its settings, a key of a JSON field with its type and default',
     (tester) async {
       getService<RecordFormInputs>()
-        ..registerNamed('shout', (context, input) => Text('${input.value}!'))
+        ..registerInput<_Shout>(
+          (context, field, input) => Text('${field.value}${input.mark}'),
+        )
         ..register(
           FieldKind.boolean,
-          (context, input) => Text('compact ${input.value}'),
+          (context, input) => Text('${input.field.name} ${input.value}'),
         );
 
       await pumpForm(tester, const [
-        RecordFormField('name', input: 'shout'),
+        RecordFormField('name', input: _Shout('!')),
         RecordFormField('data.compact', type: 'boolean'),
-        RecordFormField('data.other'),
+        RecordFormField('data.other', type: 'boolean', defaultValue: true),
+        RecordFormField('data.unknown'),
       ]);
 
       expect(find.text('Lamp!'), findsOneWidget);
-      expect(find.text('compact true'), findsOneWidget);
-      expect(find.byType(Text), findsNWidgets(2));
+      expect(find.text('data.compact true'), findsOneWidget);
+      expect(find.text('data.other true'), findsOneWidget);
+      expect(find.byType(Text), findsNWidgets(3));
     },
   );
+
+  testWidgets('a guard leaves the field as it is when it refuses a value', (
+    tester,
+  ) async {
+    getService<RecordFormInputs>().register(FieldKind.text, input);
+
+    final form = await pumpForm(tester, [
+      RecordFormField('name', guard: (value) => value != 'Lamp!'),
+    ]);
+
+    await tester.tap(find.text('Name: Lamp on'));
+    await tester.pump();
+
+    expect(form.dirty, isFalse);
+  });
 
   testWidgets(
     'tells the feedback of the container each save of a form of its own, on its own for the fields that say so',
@@ -225,6 +244,12 @@ void main() {
 
     expect((told.length, global.length), (1, 0));
   });
+}
+
+class _Shout extends FieldInput {
+  const _Shout(this.mark);
+
+  final String mark;
 }
 
 class _Feedback extends RecordFormFeedback {

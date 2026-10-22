@@ -38,6 +38,24 @@ class RecordFormFile {
   bool get removed => bytes == null;
 }
 
+/// What a form has to fix before a save asked for: its message, none when
+/// nothing.
+typedef RecordFormValidator = String? Function(
+  RecordFormController<dynamic> form,
+);
+
+/// Why a save asked for was not sent: what [RecordFormController.validate]
+/// said.
+@immutable
+class RecordFormInvalid implements Exception {
+  const RecordFormInvalid(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 /// What a save of a [RecordFormController] wrote, or why it could not.
 @immutable
 class RecordFormSave {
@@ -77,7 +95,8 @@ class RecordFormController<T extends BaseModel<T>> extends ChangeNotifier {
     bool autoSave = false,
     bool allowAutoSave = true,
     Duration autoSaveDelay = const Duration(milliseconds: 600),
-  }) : this._(record, autoSave, allowAutoSave, autoSaveDelay, false);
+    RecordFormValidator? validate,
+  }) : this._(record, autoSave, allowAutoSave, autoSaveDelay, validate, false);
 
   /// Edits the record [id] of [api], read with [fields] through a record of
   /// its own, given up with the controller: an api of the application, whose
@@ -91,6 +110,7 @@ class RecordFormController<T extends BaseModel<T>> extends ChangeNotifier {
     bool autoSave = false,
     bool allowAutoSave = true,
     Duration autoSaveDelay = const Duration(milliseconds: 600),
+    RecordFormValidator? validate,
   }) {
     final record = ApiRecord<T>(api, fields: fields);
 
@@ -101,6 +121,7 @@ class RecordFormController<T extends BaseModel<T>> extends ChangeNotifier {
       autoSave,
       allowAutoSave,
       autoSaveDelay,
+      validate,
       true,
     );
   }
@@ -110,6 +131,7 @@ class RecordFormController<T extends BaseModel<T>> extends ChangeNotifier {
     this.autoSave,
     this.allowAutoSave,
     this.autoSaveDelay,
+    this.validate,
     this._owns,
   ) {
     record.addListener(notifyListeners);
@@ -123,6 +145,10 @@ class RecordFormController<T extends BaseModel<T>> extends ChangeNotifier {
 
   final bool allowAutoSave;
   final Duration autoSaveDelay;
+
+  /// What a save asked for has to fix first: said in place of saving.
+  final RecordFormValidator? validate;
+
   final bool _owns;
 
   final _edited = <String, Object?>{};
@@ -218,11 +244,30 @@ class RecordFormController<T extends BaseModel<T>> extends ChangeNotifier {
   Future<bool> flush() =>
       _typing?.isActive ?? false ? _saveAuto() : Future.value(true);
 
-  /// Writes every value that changed: true once the record holds them. A save
-  /// asked while one runs waits for it, then writes what changed meanwhile.
-  Future<bool> save() {
+  /// Writes every value that changed once [validate] finds nothing to say:
+  /// true once the record holds them. A save asked while one runs waits for
+  /// it, then writes what changed meanwhile. Each save asked for is reported
+  /// ([saves]), one that had nothing to write included.
+  Future<bool> save() async {
     _typing?.cancel();
     _auto.clear();
+
+    final invalid = validate?.call(this);
+
+    if (invalid != null) {
+      _error = RecordFormInvalid(invalid);
+      _notify();
+      _report(RecordFormSave(fields: const {}, auto: false, error: _error));
+
+      return false;
+    }
+
+    if (_edited.isEmpty && _saving == null) {
+      _error = null;
+      _report(const RecordFormSave(fields: {}, auto: false));
+
+      return true;
+    }
 
     return _save(() => _edited.keys.toSet(), auto: false);
   }

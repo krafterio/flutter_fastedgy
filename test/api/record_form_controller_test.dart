@@ -326,4 +326,46 @@ void main() {
       await settle();
     },
   );
+
+  test(
+    'a save asked for says what to fix in place of writing, and is reported',
+    () async {
+      final form = RecordFormController(
+        await record(),
+        validate: (form) =>
+            (form['name'] as String?)?.isEmpty ?? true ? 'Name it' : null,
+      );
+      final saves = <RecordFormSave>[];
+
+      addTearDown(form.dispose);
+      form.saves.listen(saves.add);
+
+      form.set('name', '');
+
+      expect(await form.save(), isFalse);
+      await settle();
+
+      expect(writes(), isEmpty);
+      expect('${form.error}', 'Name it');
+      expect(saves.single.error, isA<RecordFormInvalid>());
+    },
+  );
+
+  test(
+    'a save asked for with nothing changed is reported, as written',
+    () async {
+      final form = RecordFormController(await record());
+      final saves = <RecordFormSave>[];
+
+      addTearDown(form.dispose);
+      form.saves.listen(saves.add);
+
+      expect(await form.save(), isTrue);
+      await settle();
+
+      expect(writes(), isEmpty);
+      expect(saves.single.fields, isEmpty);
+      expect(saves.single.saved, isTrue);
+    },
+  );
 }
