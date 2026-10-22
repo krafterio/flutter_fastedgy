@@ -324,10 +324,17 @@ void main() {
 
         expect(form.errorOf('name'), 'Too short');
         expect(find.text('Too short'), findsOneWidget);
-        expect(form.alerts, ['Nothing changes', 'Mail: Not a mail']);
-        expect(find.text('Mail: Not a mail'), findsOneWidget);
+        expect(form.alerts, ['Nothing changes', 'Field Mail: Not a mail']);
+        expect(find.text('Field Mail: Not a mail'), findsOneWidget);
         expect(told.single.errors, {'name': 'Too short'});
         expect(told.single.alerted, isTrue);
+        expect(
+          told.single.formatted?.fullMessage,
+          'Validation error\n'
+          '• Nothing changes\n'
+          '• Field Name: Too short\n'
+          '• Field Mail: Not a mail',
+        );
 
         await tester.tap(find.text('Name: Lamp! on'));
         await tester.pump();
@@ -337,7 +344,7 @@ void main() {
           findsNothing,
           reason: 'set again, the field lets go of its message',
         );
-        expect(find.text('Mail: Not a mail'), findsOneWidget);
+        expect(find.text('Field Mail: Not a mail'), findsOneWidget);
       },
     );
 

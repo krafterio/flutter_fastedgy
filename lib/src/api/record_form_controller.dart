@@ -9,11 +9,13 @@ import 'package:flutter/foundation.dart';
 
 import '../container/container.dart';
 import '../fetcher/http_error.dart';
+import '../i18n/i18n.dart';
 import '../metadata/models.dart';
 import '../storage/storage_uploader.dart';
 import 'api_model.dart';
 import 'api_record.dart';
 import 'base_model.dart';
+import 'error_formatter.dart';
 import 'record_values.dart';
 
 /// A file a field of a form is given: sent to the storage of that field of
@@ -117,6 +119,7 @@ class RecordFormSave {
     this.errors = const {},
     this.alerts = const [],
     this.alerted = false,
+    this.formatted,
   });
 
   final Set<String> fields;
@@ -135,6 +138,10 @@ class RecordFormSave {
   /// Whether an alert of the form shows [alerts] ([RecordFormAlert]): a
   /// feedback says them otherwise.
   final bool alerted;
+
+  /// Everything a refusal says, each field named by its label, for a toast
+  /// ([FormattedError.fullMessage]); null once written.
+  final FormattedError? formatted;
 
   bool get saved => error == null;
 }
@@ -242,6 +249,7 @@ class RecordFormController<T extends BaseModel<T>> extends ChangeNotifier {
 
   Map<String, String> _errors = const {};
   List<String> _alerts = const [];
+  RecordFormErrors _refusal = (fields: const {}, alerts: const []);
   Map<String, MetadataField>? _fields;
   Timer? _typing;
   Future<bool>? _saving;
@@ -319,19 +327,17 @@ class RecordFormController<T extends BaseModel<T>> extends ChangeNotifier {
       if (_shown.containsKey(field)) {
         fields[field] = message;
       } else {
-        final label = _fields?[field.split('.').first]?.label;
-
-        alerts.add(
-          '${label == null || label.isEmpty ? field : label}: $message',
-        );
+        alerts.add(FieldError.about(field, message, _fields).described);
       }
     }
 
+    _refusal = errors;
     _errors = fields;
     _alerts = alerts;
   }
 
   void _clearErrors() {
+    _refusal = (fields: const {}, alerts: const []);
     _errors = const {};
     _alerts = const [];
   }
@@ -516,6 +522,15 @@ class RecordFormController<T extends BaseModel<T>> extends ChangeNotifier {
         errors: _errors,
         alerts: _alerts,
         alerted: _alertViews > 0,
+        formatted: FormattedError(
+          title: t('Validation error'),
+          fieldErrors: [
+            for (final MapEntry(key: field, value: message)
+                in _refusal.fields.entries)
+              FieldError.about(field, message, _fields),
+          ],
+          messages: _refusal.alerts,
+        ),
       );
 
   /// [sent] as the record takes it: a file as its path once stored, the key

@@ -4,38 +4,49 @@
  */
 
 import '../i18n/i18n.dart';
+import '../metadata/models.dart';
 
-/// Formatted error message with title and optional field errors
+/// An error worded for the screen: its [title], what it says about a field
+/// ([fieldErrors]) and about none ([messages]).
 class FormattedError {
   final String title;
   final List<FieldError> fieldErrors;
 
-  const FormattedError({required this.title, this.fieldErrors = const []});
+  /// What the error says about no field.
+  final List<String> messages;
+
+  const FormattedError({
+    required this.title,
+    this.fieldErrors = const [],
+    this.messages = const [],
+  });
 
   /// Check if there are field-specific errors
   bool get hasFieldErrors => fieldErrors.isNotEmpty;
 
-  /// Get a single formatted message (title + field errors)
-  String get fullMessage {
-    if (fieldErrors.isEmpty) {
-      return title;
-    }
+  /// Each thing the error says: its [messages], then its [fieldErrors], each
+  /// named by its field ([FieldError.described]).
+  List<String> get points => [
+    ...messages,
+    for (final error in fieldErrors) error.described,
+  ];
 
-    final buffer = StringBuffer(title);
-    buffer.writeln();
-    buffer.writeln();
-
-    for (final error in fieldErrors) {
-      buffer.writeln('• ${error.field}: ${error.message}');
-    }
-
-    return buffer.toString().trim();
-  }
+  /// The error in one message, for a toast or a dialog: a point alone, or the
+  /// [title] over its points, one bullet each; the [title] when it says none.
+  String get fullMessage => switch (points) {
+    [] => title,
+    [final point] => point,
+    final points => [title, for (final point in points) '• $point'].join('\n'),
+  };
 }
 
 /// Represents a field-specific error
 class FieldError {
   final String field;
+
+  /// The name the metadata give the field, null when they do not describe it.
+  final String? label;
+
   final String message;
   final String type;
 
@@ -43,7 +54,28 @@ class FieldError {
     required this.field,
     required this.message,
     required this.type,
+    this.label,
   });
+
+  /// [message] about the field at [field], named by its label in [fields]:
+  /// the label of a JSON field or of a list for a path inside them.
+  FieldError.about(
+    this.field,
+    this.message,
+    Map<String, MetadataField>? fields, {
+    this.type = '',
+  }) : label = fields?[field.split(RegExp(r'[.\[]')).first]?.label;
+
+  /// [message] named by its field, its label or its path otherwise: « Field
+  /// Email: not an email ».
+  String get described {
+    final label = this.label;
+
+    return t('Field {name}: {message}', {
+      'name': label == null || label.isEmpty ? field : label,
+      'message': message,
+    });
+  }
 }
 
 /// Format API errors (especially HTTPValidationError from FastAPI/OpenAPI)
@@ -56,18 +88,29 @@ class FieldError {
 /// - loc[0] is always "body" (ignored)
 /// - loc[1+] represents the field path (e.g., ["body", "workspace", "name"] -> "workspace.name")
 ///
+/// A validation error whose location is not in the body, or is the body
+/// itself, is said about no field ([FormattedError.messages]). A field is
+/// named by its label in [fields], the metadata of the model written.
+///
 /// Example:
 /// ```dart
 /// try {
 ///   await api.create(...);
 /// } catch (e) {
 ///   if (e is HttpError) {
-///     final formatted = formatApiError(e.response?.data);
+///     final formatted = formatApiError(
+///       e.data,
+///       fields: (await api.metadata())?.fields,
+///     );
 ///     showAlert(formatted.fullMessage);
 ///   }
 /// }
 /// ```
-FormattedError formatApiError(dynamic errorData, {String? defaultTitle}) {
+FormattedError formatApiError(
+  dynamic errorData, {
+  String? defaultTitle,
+  Map<String, MetadataField>? fields,
+}) {
   defaultTitle ??= t('An error occurred');
 
   if (errorData == null) {
@@ -90,6 +133,7 @@ FormattedError formatApiError(dynamic errorData, {String? defaultTitle}) {
   // Case 2: detail is a list of validation errors (HTTPValidationError)
   if (detail is List && detail.isNotEmpty) {
     final fieldErrors = <FieldError>[];
+    final messages = <String>[];
 
     for (final item in detail) {
       if (item is! Map<String, dynamic>) continue;
@@ -100,26 +144,25 @@ FormattedError formatApiError(dynamic errorData, {String? defaultTitle}) {
 
       if (loc == null || msg == null) continue;
 
-      // Build field path from loc (skip first element which is always "body")
-      final fieldPath = _buildFieldPath(loc);
+      final fieldPath = loc.firstOrNull == 'body' ? _buildFieldPath(loc) : '';
 
-      fieldErrors.add(
-        FieldError(
-          field: fieldPath.isEmpty ? 'unknown' : fieldPath,
-          message: msg,
-          type: type ?? 'unknown',
-        ),
-      );
+      if (fieldPath.isEmpty) {
+        messages.add(msg);
+      } else {
+        fieldErrors.add(
+          FieldError.about(fieldPath, msg, fields, type: type ?? 'unknown'),
+        );
+      }
     }
 
-    if (fieldErrors.isEmpty) {
+    if (fieldErrors.isEmpty && messages.isEmpty) {
       return FormattedError(title: defaultTitle);
     }
 
-    // Group errors by field if needed, or return all
     return FormattedError(
       title: t('Validation error'),
       fieldErrors: fieldErrors,
+      messages: messages,
     );
   }
 

@@ -237,33 +237,66 @@ void main() {
   });
 
   test(
-    'writes nothing for a value the row holds, and reads its rows once its write is over',
+    'keeps what a refusal says about no field on its row, beside its cells',
     () async {
-      final list = DataIterator<Thing>(
-        api,
-        fields: ['name'],
-        refreshDelay: Duration.zero,
-      );
+      final list = DataIterator<Thing>(api, fields: ['name']);
       final cells = RecordEdit<Thing>(list);
 
       await settle();
-      await cells.edit(list.byId(1)!, 'name', 'Lamp');
 
-      expect(writes(), isEmpty);
+      refusal = const MockResponse.error(
+        422,
+        body: {
+          'detail': [
+            {
+              'loc': ['body', 'name'],
+              'msg': 'Too short',
+              'type': 'value_error',
+            },
+            {
+              'loc': ['body'],
+              'msg': 'Nothing changes',
+              'type': 'value_error',
+            },
+          ],
+        },
+      );
 
-      final read = reads();
+      await cells.edit(list.byId(1)!, 'name', 'L');
 
-      await cells.edit(list.byId(1)!, 'name', 'Lantern');
-      await settle();
-
-      expect(writes(), hasLength(1));
-      expect(reads(), read + 1);
-      expect(list.byId(1)?.data['name'], 'Lantern');
+      expect(cells.errorOf(list.byId(1), 'name'), 'Too short');
+      expect(cells.rowErrorOf(list.byId(1)), 'Nothing changes');
 
       list.dispose();
       cells.dispose();
     },
   );
+
+  test('writes nothing for a value the row holds, and reads its rows once its write is over', () async {
+    final list = DataIterator<Thing>(
+      api,
+      fields: ['name'],
+      refreshDelay: Duration.zero,
+    );
+    final cells = RecordEdit<Thing>(list);
+
+    await settle();
+    await cells.edit(list.byId(1)!, 'name', 'Lamp');
+
+    expect(writes(), isEmpty);
+
+    final read = reads();
+
+    await cells.edit(list.byId(1)!, 'name', 'Lantern');
+    await settle();
+
+    expect(writes(), hasLength(1));
+    expect(reads(), read + 1);
+    expect(list.byId(1)?.data['name'], 'Lantern');
+
+    list.dispose();
+    cells.dispose();
+  });
 
   test('moves a row to the group of its new value at once', () async {
     final list = DataIterator<Thing>(api, groupBy: 'stage', fields: ['name']);

@@ -145,21 +145,23 @@ class RecordEdit<T extends BaseModel<T>> extends ChangeNotifier {
     }
   }
 
-  /// Keeps what the server said of [id]: by field, or for the whole row when
-  /// it names none.
+  /// Keeps what the server said of [id]: by field, and for the whole row
+  /// what it says about none.
   void _keep(Object? id, Object error) {
     final formatted = error is HttpError
         ? formatApiError(error.data, defaultTitle: error.message)
         : formatApiError(null);
 
-    if (formatted.fieldErrors.isEmpty) {
-      _rowErrors[id] = formatted.title;
-
-      return;
+    if (formatted.hasFieldErrors) {
+      (_errors[id] ??= {}).addAll({
+        for (final one in formatted.fieldErrors) one.field: one.message,
+      });
     }
 
-    (_errors[id] ??= {}).addAll({
-      for (final one in formatted.fieldErrors) one.field: one.message,
-    });
+    if (!formatted.hasFieldErrors || formatted.messages.isNotEmpty) {
+      _rowErrors[id] = formatted.messages.isEmpty
+          ? formatted.title
+          : formatted.messages.join('\n');
+    }
   }
 }

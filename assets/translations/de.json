@@ -26,6 +26,7 @@
     "Duplicate the row": "Zeile duplizieren",
     "Edit link": "Link bearbeiten",
     "Empty": "Leer",
+    "Field {name}: {message}": "Feld {name}: {message}",
     "File": "Datei",
     "H1": "Ü1",
     "H2": "Ü2",
