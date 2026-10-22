@@ -8,8 +8,6 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 
 import '../container/container.dart';
-import '../metadata/default_metadata_provider.dart';
-import '../metadata/metadata_provider.dart';
 import '../metadata/models.dart';
 import '../query/registry.dart';
 import '../ui/combo_option.dart';
@@ -170,16 +168,8 @@ class _RecordFormState<T extends BaseModel<T>> extends State<RecordForm<T>> {
 
   /// The fields of the model when its metadata were read already: the form
   /// draws at once.
-  Map<String, MetadataField>? _cachedFields() {
-    final name = _controller.record.api.modelName;
-    final provider = hasService<MetadataProvider>()
-        ? getService<MetadataProvider>()
-        : null;
-
-    return name != null && provider is DefaultMetadataProvider
-        ? provider.cachedMetadata(name)?.fields
-        : null;
-  }
+  Map<String, MetadataField>? _cachedFields() =>
+      _controller.record.api.cachedMetadata()?.fields;
 
   Future<void> _readFields() async {
     final fields = (await _controller.record.api.metadata())?.fields;

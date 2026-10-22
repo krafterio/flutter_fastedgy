@@ -250,14 +250,19 @@ class RecordFormController<T extends BaseModel<T>> extends ChangeNotifier {
   Map<String, String> _errors = const {};
   List<String> _alerts = const [];
   RecordFormErrors _refusal = (fields: const {}, alerts: const []);
-  Map<String, MetadataField>? _fields;
+  Map<String, MetadataField>? _read;
   Timer? _typing;
   Future<bool>? _saving;
   Object? _error;
   bool _disposed = false;
 
+  /// The fields of the model: as read, or as the metadata hold them once
+  /// read elsewhere when they were not yet as the controller was made.
+  Map<String, MetadataField>? get _fields =>
+      _read ??= record.api.cachedMetadata()?.fields;
+
   Future<void> _readFields() async {
-    _fields = (await record.api.metadata())?.fields;
+    _read = (await record.api.metadata())?.fields;
   }
 
   /// What [field] holds in the form: the value edited, the record's otherwise.

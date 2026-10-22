@@ -10,6 +10,7 @@ import 'package:dio/dio.dart';
 import '../bus/bus.dart';
 import '../container/container.dart';
 import '../fetcher/client.dart';
+import '../metadata/default_metadata_provider.dart';
 import '../metadata/metadata_provider.dart';
 import '../metadata/models.dart';
 import '../realtime/origin.dart';
@@ -114,6 +115,19 @@ abstract class ApiModel<T extends BaseModel<T>> {
   /// [modelName], else the metadata name of the model served on [basePath].
   Future<String?> resolveModelName() async =>
       modelName ?? (_metadataName ??= (await metadata())?.name);
+
+  /// The metadata of [modelName] already read, without waiting: none before,
+  /// nor from a provider that keeps none.
+  MetadataModel? cachedMetadata() {
+    final name = modelName;
+    final provider = hasService<MetadataProvider>()
+        ? getService<MetadataProvider>()
+        : null;
+
+    return name != null && provider is DefaultMetadataProvider
+        ? provider.cachedMetadata(name)
+        : null;
+  }
 
   /// Metadata resolved by [modelName], else by the last [basePath] segment.
   Future<MetadataModel?> metadata() async {
