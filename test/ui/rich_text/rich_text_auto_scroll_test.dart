@@ -4,6 +4,7 @@
  */
 
 import 'package:appflowy_editor/appflowy_editor.dart';
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_fastedgy/ui.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -108,5 +109,79 @@ void main() {
       await tester.pump(const Duration(seconds: 1));
     },
     variant: TargetPlatformVariant.only(TargetPlatform.android),
+  );
+
+  /// Drags a selection with the mouse from the top of a scrollable editor 80
+  /// high down to [to], holds it there, and gives the scroll offsets meanwhile
+  /// with the selection the drag ends on.
+  Future<(List<double>, Selection?)> holdDrag(
+    WidgetTester tester, {
+    required double to,
+  }) async {
+    final state = longDocument(tester);
+
+    await tester.pumpWidget(host(state, height: 80));
+    await tester.pumpAndSettle();
+
+    final window = tester.getRect(find.byType(RichTextEditor));
+    final drag = await tester.startGesture(
+      window.topLeft + const Offset(20, 10),
+      kind: PointerDeviceKind.mouse,
+    );
+    for (var step = 1; step <= 10; step += 1) {
+      await drag.moveTo(
+        window.topLeft + Offset(20 + step * 5.0, 10 + step * (to - 10) / 10),
+      );
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+
+    final offsets = <double>[];
+    for (var frame = 0; frame < 30; frame += 1) {
+      await tester.pump(const Duration(milliseconds: 16));
+      offsets.add(state.scrollableState!.position.pixels);
+    }
+    final selection = state.selection;
+    await drag.up();
+    await tester.pumpAndSettle();
+
+    return (offsets, selection);
+  }
+
+  /// Where the scrolling went back the other way.
+  List<int> turnsOf(List<double> offsets) {
+    final steps = [
+      for (var i = 1; i < offsets.length; i += 1)
+        (offsets[i] - offsets[i - 1]).sign,
+    ].where((sign) => sign != 0).toList();
+
+    return [
+      for (var i = 1; i < steps.length; i += 1)
+        if (steps[i] != steps[i - 1]) i,
+    ];
+  }
+
+  final desktop = TargetPlatformVariant.only(TargetPlatform.macOS);
+
+  testWidgets(
+    'a mouse holding a selection in the middle of a short editor leaves the text still',
+    (tester) async {
+      final (offsets, _) = await holdDrag(tester, to: 40);
+
+      expect(turnsOf(offsets), isEmpty);
+      expect(offsets.last, offsets.first);
+    },
+    variant: desktop,
+  );
+
+  testWidgets(
+    'a mouse holding a selection at the foot of a short editor keeps scrolling down',
+    (tester) async {
+      final (offsets, selection) = await holdDrag(tester, to: 76);
+
+      expect(turnsOf(offsets), isEmpty);
+      expect(offsets.last, greaterThan(offsets.first));
+      expect(selection!.end.path.first, greaterThan(3));
+    },
+    variant: desktop,
   );
 }

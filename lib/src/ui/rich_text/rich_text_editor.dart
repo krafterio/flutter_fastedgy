@@ -8,13 +8,15 @@ import 'dart:math' show min;
 
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/foundation.dart' show FlutterExceptionHandler;
-import 'package:flutter/gestures.dart' show kTouchSlop;
+import 'package:flutter/gestures.dart'
+    show PointerDeviceKind, kPrimaryMouseButton, kTouchSlop;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_fastedgy/core.dart' show t;
 import 'package:provider/provider.dart';
 
 import '../icons.dart';
 import '../interaction.dart';
+import '../responsive.dart' show DeviceType;
 import 'rich_text_blank.dart';
 import 'rich_text_action.dart';
 import 'rich_text_action_bar.dart';
@@ -300,6 +302,14 @@ class RichTextEditorState extends State<RichTextEditor> {
   /// The block list a finger opens, held here because the shortcut and the
   /// toolbar button both open the same one.
   final _slash = RichTextSlashController();
+
+  /// The height of the window a scrollable editor scrolls its blocks in, as
+  /// last laid out.
+  double _window = double.infinity;
+
+  /// Whether the mouse dragging a selection is scrolled by this editor rather
+  /// than by the package (see [_takeDrag]).
+  bool _steering = false;
 
   @override
   void initState() {
@@ -1134,13 +1144,14 @@ class RichTextEditorState extends State<RichTextEditor> {
     final theme = RichTextTheme.of(context);
     final toolbarTheme = RichTextToolbarTheme.of(context);
 
-    // Built for the room kept around the caret, which a scrollable editor only
+    // Built for the window the blocks scroll in, which a scrollable editor only
     // knows once laid out (see [_measured]).
-    Widget page(double autoScrollEdgeOffset) {
+    Widget page(double window) {
       final editor = AppFlowyEditor(
         editorState: widget.editorState,
         editorScrollController: scrollController,
-        autoScrollEdgeOffset: autoScrollEdgeOffset,
+        autoScrollEdgeOffset: _edgeOffsetWithin(window),
+        disableAutoScroll: _steering,
         blockComponentBuilders: _builders,
         editable: widget.editable,
         shrinkWrap: !widget.scrollable,
@@ -1227,11 +1238,9 @@ class RichTextEditorState extends State<RichTextEditor> {
   /// the content first is what the package's own example does, and it is the
   /// component's job rather than every caller's. A rendered document is always
   /// measured: it takes the height of what it holds wherever it is put.
-  Widget _measured(Widget Function(double autoScrollEdgeOffset) page) {
+  Widget _measured(Widget Function(double window) page) {
     if (!widget.editable) {
-      return IntrinsicHeight(
-        child: _beside(page(appFlowyEditorAutoScrollEdgeOffset)),
-      );
+      return IntrinsicHeight(child: _beside(page(double.infinity)));
     }
 
     if (widget.scrollable) {
@@ -1240,8 +1249,18 @@ class RichTextEditorState extends State<RichTextEditor> {
       // that same frame (a keyboard coming up) must already be accounted for.
       return _beside(
         LayoutBuilder(
-          builder: (context, constraints) =>
-              page(_edgeOffsetWithin(constraints.maxHeight)),
+          builder: (context, constraints) {
+            _window = constraints.maxHeight;
+
+            return Listener(
+              behavior: HitTestBehavior.translucent,
+              onPointerDown: _takeDrag,
+              onPointerMove: _steerDrag,
+              onPointerUp: _releaseDrag,
+              onPointerCancel: _releaseDrag,
+              child: page(_window),
+            );
+          },
         ),
       );
     }
@@ -1277,9 +1296,7 @@ class RichTextEditorState extends State<RichTextEditor> {
                   child: SingleChildScrollView(
                     key: _viewportKey,
                     controller: scrollController.scrollController,
-                    child: IntrinsicHeight(
-                      child: page(_edgeOffsetWithin(maxHeight)),
-                    ),
+                    child: IntrinsicHeight(child: page(maxHeight)),
                   ),
                 ),
               ),
@@ -1295,7 +1312,7 @@ class RichTextEditorState extends State<RichTextEditor> {
     // that scrolls. The pass runs the whole subtree twice, which a block laying
     // itself out against its constraints (a picture and its handles) refuses
     // outright, so a field given a height of its own is left alone.
-    final field = page(appFlowyEditorAutoScrollEdgeOffset);
+    final field = page(double.infinity);
     final measured = LayoutBuilder(
       builder: (context, constraints) =>
           constraints.hasBoundedHeight ? field : IntrinsicHeight(child: field),
@@ -1323,6 +1340,58 @@ class RichTextEditorState extends State<RichTextEditor> {
   /// with a tall keyboard open is such a window.
   static double _edgeOffsetWithin(double window) =>
       min(appFlowyEditorAutoScrollEdgeOffset, window / 2);
+
+  /// The room the package keeps in view around a mouse dragging a selection:
+  /// a value of its own, which [AppFlowyEditor.autoScrollEdgeOffset] does not
+  /// reach.
+  static const _dragEdgeOffset = 100.0;
+
+  /// Takes the scrolling of a mouse drag over from the package where its room
+  /// does not fit: in a window under twice that room, a mouse held anywhere
+  /// but at its very middle keeps scrolling, and under the room itself the
+  /// text shakes under a mouse that does not move.
+  ///
+  /// The package's own calls are switched off for the drag, and its scroller
+  /// is driven from here with half the window instead (see [_steerDrag]).
+  /// Where the package picks its desktop selection, as it alone drags with a
+  /// room of its own.
+  void _takeDrag(PointerDownEvent event) {
+    if (event.kind != PointerDeviceKind.mouse ||
+        event.buttons != kPrimaryMouseButton ||
+        DeviceType.current == DeviceType.mobile ||
+        _window >= 2 * _dragEdgeOffset) {
+      return;
+    }
+
+    _steering = true;
+    widget.editorState.disableAutoScroll = true;
+  }
+
+  /// Scrolls towards the mouse the way the package does, with half the window
+  /// as its room. The package goes on following the drag as it scrolls, from
+  /// the same scroller: the room set here is the one it keeps.
+  void _steerDrag(PointerMoveEvent event) {
+    if (!_steering) {
+      return;
+    }
+
+    widget.editorState.autoScroller?.startAutoScroll(
+      event.position,
+      edgeOffset: _window / 2,
+      duration: const Duration(milliseconds: 2),
+    );
+  }
+
+  void _releaseDrag(PointerEvent event) {
+    if (!_steering) {
+      return;
+    }
+
+    _steering = false;
+    widget.editorState
+      ..disableAutoScroll = false
+      ..autoScroller?.stopAutoScroll();
+  }
 
   /// The words with whatever the caller stood at their sides.
   Widget _beside(Widget words) {
