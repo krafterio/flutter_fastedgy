@@ -18,49 +18,43 @@ void main() {
     api = ThingApi(ThingServer().fetcher);
   });
 
-  test(
-    'hands what is typed to the list, and shows a search cleared elsewhere',
-    () async {
-      final list = DataIterator<Thing>(api);
-      final controller = DataSearchController(list);
+  test('hands what is typed to the list, and shows a search cleared elsewhere', () async {
+    final list = DataIterator<Thing>(api);
+    final controller = DataSearchController(list);
 
-      controller.text = 'lamp';
+    controller.text = 'lamp';
 
-      expect(list.search, 'lamp');
+    expect(list.search, 'lamp');
 
-      list.search = '';
+    list.search = '';
 
-      expect(controller.text, isEmpty);
+    expect(controller.text, isEmpty);
 
-      controller.dispose();
-      list.dispose();
-    },
-  );
+    controller.dispose();
+    list.dispose();
+  });
 
-  test(
-    'shows the search of the list it is given, and leaves the one it left',
-    () async {
-      final first = DataIterator<Thing>(api)..search = 'lamp';
-      final second = DataIterator<Thing>(api)..search = 'desk';
-      final controller = DataSearchController();
+  test('shows the search of the list it is given, and leaves the one it left', () async {
+    final first = DataIterator<Thing>(api)..search = 'lamp';
+    final second = DataIterator<Thing>(api)..search = 'desk';
+    final controller = DataSearchController();
 
-      controller.list = first;
+    controller.list = first;
 
-      expect(controller.text, 'lamp');
+    expect(controller.text, 'lamp');
 
-      controller.list = second;
-      first.search = 'chair';
+    controller.list = second;
+    first.search = 'chair';
 
-      expect(controller.text, 'desk');
+    expect(controller.text, 'desk');
 
-      controller.text = 'table';
+    controller.text = 'table';
 
-      expect(second.search, 'table');
-      expect(first.search, 'chair');
+    expect(second.search, 'table');
+    expect(first.search, 'chair');
 
-      controller.dispose();
-      first.dispose();
-      second.dispose();
-    },
-  );
+    controller.dispose();
+    first.dispose();
+    second.dispose();
+  });
 }
