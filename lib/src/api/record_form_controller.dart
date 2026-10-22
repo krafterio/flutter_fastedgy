@@ -81,9 +81,10 @@ class RecordFormSave {
 /// saved again.
 ///
 /// A field set to save on its own ([set] `autoSave`, [autoSave] for those
-/// that do not say) is saved alone as soon as it is set, a text once
-/// [autoSaveDelay] went by without typing; refused, its value gives way to the
-/// one the record holds. [allowAutoSave] off, nothing saves on its own.
+/// that do not say) is saved alone as soon as it is set, with the others set
+/// in the same turn, a text once [autoSaveDelay] went by without typing;
+/// refused, its value gives way to the one the record holds. [allowAutoSave]
+/// off, nothing saves on its own.
 ///
 /// A field is named by its path in the record: `preferences.compact` is the
 /// key `compact` of the JSON field `preferences`, written as the whole of
@@ -223,12 +224,10 @@ class RecordFormController<T extends BaseModel<T>> extends ChangeNotifier {
 
     _auto.add(field);
     _typing?.cancel();
-
-    if (typing) {
-      _typing = Timer(autoSaveDelay, () => unawaited(_saveAuto()));
-    } else {
-      unawaited(_saveAuto());
-    }
+    _typing = Timer(
+      typing ? autoSaveDelay : Duration.zero,
+      () => unawaited(_saveAuto()),
+    );
   }
 
   /// Gives up what was edited: every field holds the record's value again.

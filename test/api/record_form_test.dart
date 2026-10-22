@@ -177,6 +177,26 @@ void main() {
     expect(form.dirty, isFalse);
   });
 
+  testWidgets('a field is told of each value it takes, to set another', (
+    tester,
+  ) async {
+    getService<RecordFormInputs>().register(FieldKind.text, input);
+
+    final form = await pumpForm(tester, [
+      RecordFormField(
+        'name',
+        onChanged: (value) =>
+            RecordForm.controllerOf(tester.element(find.byType(Column)))
+                ?.set('mail', 'b@c.d'),
+      ),
+    ]);
+
+    await tester.tap(find.text('Name: Lamp on'));
+    await tester.pump();
+
+    expect(form.changes, {'name': 'Lamp!', 'mail': 'b@c.d'});
+  });
+
   testWidgets(
     'tells the feedback of the container each save of a form of its own, on its own for the fields that say so',
     (tester) async {

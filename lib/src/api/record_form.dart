@@ -286,6 +286,9 @@ class RecordFormInput {
   /// Whether a value set is taken: false leaves the field as it is.
   final bool Function(Object? value)? guard;
 
+  /// Told of each value taken, once the form holds it.
+  final ValueChanged<Object?>? onChanged;
+
   const RecordFormInput({
     required this.form,
     required this.field,
@@ -297,6 +300,7 @@ class RecordFormInput {
     this.input,
     this.autoSave,
     this.guard,
+    this.onChanged,
   });
 
   /// What the form holds of the field, its default while it holds none.
@@ -309,6 +313,7 @@ class RecordFormInput {
   void set(Object? value, {bool typing = false}) {
     if (guard?.call(value) ?? true) {
       form.set(field.name, value, typing: typing, autoSave: autoSave);
+      onChanged?.call(value);
     }
   }
 
@@ -382,6 +387,10 @@ class RecordFormField extends StatelessWidget {
   /// shown in place of turning a paid option on).
   final bool Function(Object? value)? guard;
 
+  /// Told of each value taken, once the form holds it: a field that sets
+  /// another along with it.
+  final ValueChanged<Object?>? onChanged;
+
   const RecordFormField(
     this.field, {
     super.key,
@@ -395,6 +404,7 @@ class RecordFormField extends StatelessWidget {
     this.type,
     this.defaultValue,
     this.guard,
+    this.onChanged,
   });
 
   @override
@@ -454,6 +464,7 @@ class RecordFormField extends StatelessWidget {
         input: input,
         autoSave: autoSave,
         guard: guard,
+        onChanged: onChanged,
       ),
     );
   }

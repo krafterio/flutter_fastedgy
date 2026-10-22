@@ -368,4 +368,23 @@ void main() {
       expect(saves.single.saved, isTrue);
     },
   );
+
+  test(
+    'saves in one write the fields set on their own in the same turn',
+    () async {
+      final form = RecordFormController(await record(), autoSave: true);
+
+      addTearDown(form.dispose);
+
+      form
+        ..set('city', 'Paris')
+        ..set('preferences.compact', true);
+      await settle();
+
+      expect(writes().single.body, {
+        'city': 'Paris',
+        'preferences': {'compact': true, 'theme': 'dark'},
+      });
+    },
+  );
 }
