@@ -20,8 +20,16 @@ import 'workspace_provider.dart';
 /// gone. The same as vue-fastedgy's `useWorkspaces`.
 ///
 /// The provider is the one registered as [WorkspaceProvider], looked up on
-/// each request: it is registered after the fetcher it serves.
+/// each request: it is registered after the fetcher it serves. An app that
+/// registers none, its server choosing the workspace of a request, names in
+/// [fallback] the segment a request under `/{workspace}` goes under.
 class WorkspacePrefixInterceptor extends Interceptor {
+  WorkspacePrefixInterceptor({this.fallback});
+
+  /// Where a request under `/{workspace}` goes when no [WorkspaceProvider] is
+  /// registered; `null` refuses it.
+  final String? fallback;
+
   static const _placeholder = '/{workspace}';
 
   /// Marks a tenant request, to recognize its errors.
@@ -49,7 +57,9 @@ class WorkspacePrefixInterceptor extends Interceptor {
   ) async {
     final workspaces = _workspaces;
     final slug = await workspaces?.ensureCurrent();
-    final target = slug ?? workspaces?.workspaceless;
+    final target = workspaces == null
+        ? fallback
+        : slug ?? workspaces.workspaceless;
 
     // A path that keeps the placeholder would reach a route that does not
     // exist, and its 404 would hide the real fault: no workspace to read.
