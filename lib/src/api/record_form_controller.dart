@@ -365,7 +365,9 @@ class RecordFormController<T extends BaseModel<T>> extends ChangeNotifier {
 
   Future<String?> _store(String field, RecordFormFile file) async {
     final uploader = getService<StorageUploader>();
-    final model = await record.api.resolveModelName() ?? record.api.basePath;
+    final model =
+        await record.api.resolveModelName() ??
+        record.api.basePath.split('/').last;
     final id = int.parse('${record.id}');
     final bytes = file.bytes;
 
