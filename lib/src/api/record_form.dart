@@ -21,7 +21,7 @@ import 'record_form_controller.dart';
 /// The record a form edits, for the [RecordFormField]s below it: each reads
 /// its field there and writes it back. Saved by [RecordFormController.save],
 /// a field on its own with [autoSave] (or its own `autoSave`) unless
-/// [allowAutoSave] is off. Each save ending is told to the
+/// [allowAutoSave] is off. Each save ending is told to [feedback], or to the
 /// [RecordFormFeedback] of the container: a toast.
 class RecordForm<T extends BaseModel<T>> extends StatefulWidget {
   final ApiRecord<T>? record;
@@ -41,6 +41,10 @@ class RecordForm<T extends BaseModel<T>> extends StatefulWidget {
 
   final bool allowAutoSave;
   final Duration autoSaveDelay;
+
+  /// What says the saves of this form, in place of the one of the container.
+  final RecordFormFeedback? feedback;
+
   final Widget child;
 
   /// Edits [record] with a controller of its own, given up with the form:
@@ -52,6 +56,7 @@ class RecordForm<T extends BaseModel<T>> extends StatefulWidget {
     this.autoSave = false,
     this.allowAutoSave = true,
     this.autoSaveDelay = const Duration(milliseconds: 600),
+    this.feedback,
   }) : api = null,
        id = null,
        fields = null,
@@ -70,6 +75,7 @@ class RecordForm<T extends BaseModel<T>> extends StatefulWidget {
     this.autoSave = false,
     this.allowAutoSave = true,
     this.autoSaveDelay = const Duration(milliseconds: 600),
+    this.feedback,
   }) : record = null,
        controller = null;
 
@@ -79,6 +85,7 @@ class RecordForm<T extends BaseModel<T>> extends StatefulWidget {
     required RecordFormController<T> this.controller,
     required this.child,
     super.key,
+    this.feedback,
   }) : record = null,
        api = null,
        id = null,
@@ -166,8 +173,14 @@ class _RecordFormState<T extends BaseModel<T>> extends State<RecordForm<T>> {
   }
 
   void _tell(RecordFormSave save) {
-    if (mounted && hasService<RecordFormFeedback>()) {
-      getService<RecordFormFeedback>().show(context, save);
+    final feedback =
+        widget.feedback ??
+        (hasService<RecordFormFeedback>()
+            ? getService<RecordFormFeedback>()
+            : null);
+
+    if (mounted) {
+      feedback?.show(context, save);
     }
   }
 

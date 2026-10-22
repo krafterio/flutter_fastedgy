@@ -193,6 +193,38 @@ void main() {
       expect((told.single.auto, told.single.saved), (true, true));
     },
   );
+  testWidgets('tells its own feedback in place of the one of the container', (
+    tester,
+  ) async {
+    final told = <RecordFormSave>[];
+    final global = <RecordFormSave>[];
+
+    container
+      ..unregister<RecordFormFeedback>()
+      ..registerSingleton<RecordFormFeedback>(_Feedback(global));
+    getService<RecordFormInputs>().register(FieldKind.text, input);
+
+    final form = RecordFormController(thing);
+
+    addTearDown(form.dispose);
+
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: RecordForm.controlled(
+          controller: form,
+          feedback: _Feedback(told),
+          child: const RecordFormField('name'),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.text('Name: Lamp on'));
+    await tester.runAsync(form.save);
+    await tester.pump();
+
+    expect((told.length, global.length), (1, 0));
+  });
 }
 
 class _Feedback extends RecordFormFeedback {
