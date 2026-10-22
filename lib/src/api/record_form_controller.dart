@@ -176,9 +176,10 @@ class RecordFormController<T extends BaseModel<T>> extends ChangeNotifier {
   /// its own, given up with the controller: an api of the application, whose
   /// routes are its own ([ApiModel.getResult], [ApiModel.update]), is read and
   /// written as any other. A [seed] is the record already held, shown at once.
+  /// Without [id], a record to create, created by the first save.
   factory RecordFormController.api(
     ApiModel<T> api,
-    Object id, {
+    Object? id, {
     dynamic fields,
     T? seed,
     bool autoSave = false,
@@ -188,7 +189,9 @@ class RecordFormController<T extends BaseModel<T>> extends ChangeNotifier {
   }) {
     final record = ApiRecord<T>(api, fields: fields);
 
-    unawaited(record.load(id, seed: seed));
+    if (id != null) {
+      unawaited(record.load(id, seed: seed));
+    }
 
     return RecordFormController._(
       record,
@@ -478,7 +481,11 @@ class RecordFormController<T extends BaseModel<T>> extends ChangeNotifier {
 
   Future<bool> _write(Map<String, Object?> sent, {required bool auto}) async {
     try {
-      await record.update(await _payload(sent));
+      final payload = await _payload(sent);
+
+      await (record.id == null
+          ? record.create(payload)
+          : record.update(payload));
       _forget(sent);
       _report(RecordFormSave(fields: sent.keys.toSet(), auto: auto));
 

@@ -250,6 +250,7 @@ void main() {
     Future<(RecordFormController<_Thing>, List<RecordFormSave>)> pumpRefused(
       WidgetTester tester, {
       bool alert = true,
+      EdgeInsets alertPadding = EdgeInsets.zero,
       RecordFormFieldValidator? validator,
       Widget Function(BuildContext context, RecordFormInput input)? drawn,
     }) async {
@@ -270,7 +271,7 @@ void main() {
             controller: form,
             child: Column(
               children: [
-                if (alert) const RecordFormAlert(),
+                if (alert) RecordFormAlert(padding: alertPadding),
                 RecordFormField('name', validator: validator),
               ],
             ),
@@ -340,6 +341,29 @@ void main() {
       },
     );
 
+    testWidgets('lays the room of its alert only while it shows', (
+      tester,
+    ) async {
+      refusal = const MockResponse.error(
+        400,
+        body: {'detail': 'Already taken'},
+      );
+      const room = EdgeInsets.only(bottom: 12);
+      final (form, _) = await pumpRefused(tester, alertPadding: room);
+      final laid = find.descendant(
+        of: find.byType(RecordFormAlert),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is Padding && widget.padding == room,
+        ),
+      );
+
+      expect(laid, findsNothing);
+
+      await tapAndSave(tester, form);
+
+      expect(laid, findsOneWidget);
+    });
+
     testWidgets('leaves its alerts to the feedback when no alert shows them', (
       tester,
     ) async {
@@ -393,6 +417,46 @@ void main() {
       expect(find.text('No bang'), findsNothing);
       expect(find.text('input 1'), findsOneWidget);
     });
+  });
+
+  testWidgets('creates its record with its first save, then writes it', (
+    tester,
+  ) async {
+    getService<RecordFormInputs>().register(FieldKind.text, input);
+    late RecordFormController<dynamic> form;
+
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: RecordForm<_Thing>.api(
+          api: api,
+          child: Builder(
+            builder: (context) {
+              form = RecordForm.controllerOf(context)!;
+
+              return const RecordFormField('name');
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('Name: null on'));
+    await tester.pump();
+    await tester.runAsync(form.save);
+    await tester.pump();
+
+    expect(writes.map((write) => write.method), ['POST']);
+    expect(form.record.id, 1);
+    expect(form.dirty, isFalse);
+
+    await tester.tap(find.text('Name: Lamp on'));
+    await tester.pump();
+    await tester.runAsync(form.save);
+    await tester.pump();
+
+    expect(writes.map((write) => write.method), ['POST', 'PATCH']);
   });
 
   testWidgets('tells its own feedback in place of the one of the container', (

@@ -165,6 +165,16 @@ class ApiRecord<T extends BaseModel<T>> extends ChangeNotifier
     Future<R> Function(Map<String, Object?> sent) write,
   ) => updateItemWith(_bound, values, write);
 
+  /// Creates the record of [values] (see [LocalWrites.createItem]), then
+  /// binds it: a record no [load] bound yet, written once.
+  Future<T> create(Map<String, Object?> values) async {
+    final created = await createItem(values);
+
+    await load(created.id!, seed: created, reread: false);
+
+    return created;
+  }
+
   /// Deletes the record, taken out at once from every list holding it, then
   /// marks it [isDeleted]; a refusal puts it back in them and is thrown.
   Future<void> delete() async {

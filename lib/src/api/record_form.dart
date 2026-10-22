@@ -74,12 +74,13 @@ class RecordForm<T extends BaseModel<T>> extends StatefulWidget {
        controller = null;
 
   /// Edits the record [id] of [api], read with [fields]: an api of the
-  /// application, whose routes are its own, as any other.
+  /// application, whose routes are its own, as any other. Without [id], a
+  /// record to create, created by its first save.
   const RecordForm.api({
     required ApiModel<T> this.api,
-    required Object this.id,
     required this.child,
     super.key,
+    this.id,
     this.fields,
     this.seed,
     this.autoSave = false,
@@ -140,7 +141,7 @@ class _RecordFormState<T extends BaseModel<T>> extends State<RecordForm<T>> {
       );
     }
 
-    if (api != null && id != null) {
+    if (api != null) {
       return RecordFormController<T>.api(
         api,
         id,
@@ -319,7 +320,11 @@ class _RecordFormScope
 /// Nothing while there is nothing to say, nor when the feedback gives no
 /// alert (it says them otherwise).
 class RecordFormAlert extends StatefulWidget {
-  const RecordFormAlert({super.key});
+  const RecordFormAlert({super.key, this.padding = EdgeInsets.zero});
+
+  /// The room around the alert where the screen lays it, given only while it
+  /// shows.
+  final EdgeInsetsGeometry padding;
 
   @override
   State<RecordFormAlert> createState() => _RecordFormAlertState();
@@ -355,7 +360,10 @@ class _RecordFormAlertState extends State<RecordFormAlert> {
 
     return alerts.isEmpty
         ? const SizedBox.shrink()
-        : scope!.feedback.alert(context, alerts);
+        : Padding(
+            padding: widget.padding,
+            child: scope!.feedback.alert(context, alerts),
+          );
   }
 }
 
