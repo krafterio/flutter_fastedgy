@@ -130,6 +130,58 @@ void main() {
     );
   });
 
+  test('reads the message of a detail the server gives as an object', () {
+    final formatted = formatApiError(
+      _answered({
+        'detail': {'message': 'Import failed: 2 error(s) found', 'errors': 2},
+      }),
+    );
+
+    expect(formatted.fullMessage, 'Import failed: 2 error(s) found');
+  });
+
+  test('leaves out the prefix pydantic gives the message of a validator', () {
+    final formatted = formatApiError(
+      _answered({
+        'detail': [
+          {
+            'loc': ['body', 'name'],
+            'msg': 'Value error, Already taken',
+            'type': 'value_error',
+          },
+          {
+            'loc': ['body'],
+            'msg': 'Assertion failed, Dates reversed',
+            'type': 'assertion_error',
+          },
+        ],
+      }),
+    );
+
+    expect(formatted.fieldErrors.single.message, 'Already taken');
+    expect(formatted.messages, ['Dates reversed']);
+  });
+
+  test(
+    'says a position in the body, a JSON that does not parse, about no field',
+    () {
+      final formatted = formatApiError(
+        _answered({
+          'detail': [
+            {
+              'loc': ['body', 12],
+              'msg': 'JSON decode error',
+              'type': 'json_invalid',
+            },
+          ],
+        }),
+      );
+
+      expect(formatted.fieldErrors, isEmpty);
+      expect(formatted.fullMessage, 'JSON decode error');
+    },
+  );
+
   test('says nothing without an error', () {
     expect(formatValidationErrors(null), isNull);
   });

@@ -79,15 +79,19 @@ class FieldError {
 }
 
 /// [error] worded for the screen, a failed call of the fetcher
-/// ([HttpError]): the reason the server gives (`detail`, else its `message`
-/// or `error`), [defaultMessage] when it gives none (the network down, an
-/// answer without a body), « An error occurred » without one.
+/// ([HttpError]): the reason the server gives (`detail` as a text, or the
+/// `message` of a `detail` object, else the `message` or `error` of the
+/// body), [defaultMessage] when it gives none (the network down, an answer
+/// without a body), « An error occurred » without one.
 ///
 /// A validation error (`detail` as a list, FastAPI's HTTPValidationError) is
 /// titled « Validation error »: what it says about a field of the body goes to
 /// [FormattedError.fieldErrors], its path read from `loc` (`["body", "items",
 /// 0, "value"]` to `items[0].value`) and named by its label in [fields], the
-/// metadata of the model written; the rest to [FormattedError.messages].
+/// metadata of the model written; the rest to [FormattedError.messages], a
+/// position in the body included (`["body", 12]`, a JSON that does not
+/// parse). The prefix pydantic gives the message of a validator (« Value
+/// error, », « Assertion failed, ») is left out.
 ///
 /// The same as `formatApiError` of vue-fastedgy.
 ///
@@ -122,17 +126,28 @@ FormattedError formatApiError(
     return FormattedError(title: detail);
   }
 
+  if (detail is Map) {
+    final said = detail['message'];
+
+    if (said is String && said.isNotEmpty) {
+      return FormattedError(title: said);
+    }
+  }
+
   if (detail is List) {
     final fieldErrors = <FieldError>[];
     final messages = <String>[];
 
     for (final item in detail) {
-      final msg = item is Map ? item['msg'] : null;
+      final msg = item is Map ? _reason(item) : null;
 
-      if (msg is! String || msg.isEmpty) continue;
+      if (msg == null) continue;
 
       final loc = item['loc'];
-      final path = loc is List && loc.firstOrNull == 'body'
+      final path =
+          loc is List &&
+              loc.firstOrNull == 'body' &&
+              loc.elementAtOrNull(1) is String
           ? _buildFieldPath(loc)
           : '';
 
@@ -184,6 +199,26 @@ String? formatValidationErrors(
         defaultMessage: defaultMessage,
         fields: fields,
       ).fullMessage;
+
+/// What a validation error [item] says, the prefix pydantic gives the message
+/// of a validator left out; null when it says nothing.
+String? _reason(Map<dynamic, dynamic> item) {
+  final msg = item['msg'];
+
+  if (msg is! String || msg.isEmpty) {
+    return null;
+  }
+
+  final prefix = switch (item['type']) {
+    'value_error' => 'Value error, ',
+    'assertion_error' => 'Assertion failed, ',
+    _ => null,
+  };
+
+  return prefix != null && msg.startsWith(prefix)
+      ? msg.substring(prefix.length)
+      : msg;
+}
 
 /// Build field path from loc array, skipping "body"
 ///
