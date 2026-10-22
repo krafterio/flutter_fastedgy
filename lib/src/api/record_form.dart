@@ -13,6 +13,7 @@ import '../metadata/metadata_provider.dart';
 import '../metadata/models.dart';
 import '../query/registry.dart';
 import '../ui/combo_option.dart';
+import '../ui/theme/theme.dart';
 import 'api_model.dart';
 import 'api_record.dart';
 import 'base_model.dart';
@@ -187,19 +188,20 @@ class _RecordFormState<T extends BaseModel<T>> extends State<RecordForm<T>> {
     }
   }
 
+  RecordFormFeedback get _feedback =>
+      widget.feedback ??
+      (hasService<RecordFormFeedback>()
+          ? getService<RecordFormFeedback>()
+          : const RecordFormFeedback());
+
   void _tell(RecordFormSave save) {
-    final feedback =
-        widget.feedback ??
-        (hasService<RecordFormFeedback>()
-            ? getService<RecordFormFeedback>()
-            : null);
     final record = _controller.record.value;
 
     if (!mounted) {
       return;
     }
 
-    feedback?.show(context, save);
+    _feedback.show(context, save);
 
     if (save.saved && record != null) {
       widget.onSaved?.call(record);
@@ -217,27 +219,89 @@ class _RecordFormState<T extends BaseModel<T>> extends State<RecordForm<T>> {
   Widget build(BuildContext context) => _RecordFormScope(
     controller: _controller,
     fields: _fields,
+    feedback: _feedback,
     child: widget.child,
   );
 }
 
-/// What a [RecordForm] says once a save ends, written or refused: a service of
-/// the container registered by [initializeFastEdgy], silent here. An
-/// application registers its own before it starts: a toast, for the saves it
-/// wants told.
+/// How a [RecordForm] says its saves: a service of the container registered
+/// by [initializeFastEdgy]. An application registers its own before it
+/// starts: a toast once saved, its own look for a message under a field
+/// ([field]) or for the alert of a form ([alert]), or a toast in place of the
+/// alert ([alertInForm] off, [show] saying [RecordFormSave.alerts]).
 class RecordFormFeedback {
   const RecordFormFeedback();
 
+  /// Told of each save as it ends, written or refused: silent here.
   void show(BuildContext context, RecordFormSave save) {}
+
+  /// [input] with [error] under it, when it has one.
+  Widget field(BuildContext context, Widget input, String? error) {
+    if (error == null) {
+      return input;
+    }
+
+    final theme = FastEdgyTheme.of(context);
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        input,
+        Padding(
+          padding: EdgeInsets.only(top: theme.spacing * 1.5),
+          child: Text(
+            error,
+            style: theme.typography.small.copyWith(color: theme.colors.danger),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Whether the alert of a form says the messages about no field shown
+  /// ([RecordFormAlert]); off, they are left to [show].
+  bool get alertInForm => true;
+
+  /// The alert of a form showing [messages] ([RecordFormAlert]).
+  Widget alert(BuildContext context, List<String> messages) {
+    final theme = FastEdgyTheme.of(context);
+    final danger = theme.colors.danger;
+
+    return Semantics(
+      liveRegion: true,
+      child: Container(
+        padding: EdgeInsets.all(theme.spacing * 3),
+        decoration: BoxDecoration(
+          color: danger.withValues(alpha: 0.08),
+          border: Border.all(color: danger.withValues(alpha: 0.3)),
+          borderRadius: BorderRadius.circular(theme.radius),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          spacing: theme.spacing,
+          children: [
+            for (final message in messages)
+              Text(
+                message,
+                style: theme.typography.body.copyWith(color: danger),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _RecordFormScope
     extends InheritedNotifier<RecordFormController<dynamic>> {
   final Map<String, MetadataField>? fields;
+  final RecordFormFeedback feedback;
 
   const _RecordFormScope({
     required RecordFormController<dynamic> controller,
     required this.fields,
+    required this.feedback,
     required super.child,
   }) : super(notifier: controller);
 
@@ -245,7 +309,54 @@ class _RecordFormScope
 
   @override
   bool updateShouldNotify(_RecordFormScope oldWidget) =>
-      super.updateShouldNotify(oldWidget) || fields != oldWidget.fields;
+      super.updateShouldNotify(oldWidget) ||
+      fields != oldWidget.fields ||
+      feedback != oldWidget.feedback;
+}
+
+/// Why the last save of the [RecordForm] above was refused, about no field it
+/// shows: the alert of its [RecordFormFeedback], where the screen lays it.
+/// Nothing while there is nothing to say, nor when the feedback gives no
+/// alert (it says them otherwise).
+class RecordFormAlert extends StatefulWidget {
+  const RecordFormAlert({super.key});
+
+  @override
+  State<RecordFormAlert> createState() => _RecordFormAlertState();
+}
+
+class _RecordFormAlertState extends State<RecordFormAlert> {
+  /// The form told this alert shows its messages.
+  RecordFormController<dynamic>? _shows;
+
+  void _follow(RecordFormController<dynamic>? form) {
+    if (!identical(form, _shows)) {
+      _shows?.detachAlert();
+      _shows = form;
+      form?.attachAlert();
+    }
+  }
+
+  @override
+  void dispose() {
+    _shows?.detachAlert();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scope = context
+        .dependOnInheritedWidgetOfExactType<_RecordFormScope>();
+    final inForm = scope != null && scope.feedback.alertInForm;
+
+    _follow(inForm ? scope.controller : null);
+
+    final alerts = inForm ? scope.controller.alerts : const <String>[];
+
+    return alerts.isEmpty
+        ? const SizedBox.shrink()
+        : scope!.feedback.alert(context, alerts);
+  }
 }
 
 /// How a field of a [RecordForm] is edited, and with what settings: the input
@@ -356,7 +467,10 @@ class RecordFormInputs extends FieldRegistry<RecordFormInputBuilder> {
 /// [field] is a path in the record: `preferences.compact`, the key `compact`
 /// of the JSON field `preferences`, which the metadata do not describe and
 /// [type] does.
-class RecordFormField extends StatelessWidget {
+///
+/// Why a save was refused about it, by [validator] or by the server, shows
+/// under it as the [RecordFormFeedback] of the form says ([RecordFormFeedback.field]).
+class RecordFormField extends StatefulWidget {
   final String field;
 
   /// Left null, the label of the metadata; empty, none.
@@ -394,6 +508,9 @@ class RecordFormField extends StatelessWidget {
   /// another along with it.
   final ValueChanged<Object?>? onChanged;
 
+  /// What its value has to fix before a save asked for, said under it.
+  final RecordFormFieldValidator? validator;
+
   const RecordFormField(
     this.field, {
     super.key,
@@ -409,17 +526,66 @@ class RecordFormField extends StatelessWidget {
     this.required,
     this.guard,
     this.onChanged,
+    this.validator,
   });
 
   @override
+  State<RecordFormField> createState() => _RecordFormFieldState();
+}
+
+class _RecordFormFieldState extends State<RecordFormField> {
+  /// The form told this field shows, and under which path.
+  RecordFormController<dynamic>? _form;
+  String? _shown;
+
+  void _follow(RecordFormController<dynamic>? form) {
+    if (!identical(form, _form) || _shown != widget.field) {
+      if (_shown case final field?) {
+        _form?.detach(field);
+      }
+
+      _form = form;
+      _shown = form == null ? null : widget.field;
+      form?.attach(widget.field, validator: widget.validator);
+    } else if (widget.validator case final validator?) {
+      form?.check(widget.field, validator);
+    }
+  }
+
+  @override
+  void dispose() {
+    if (_shown case final field?) {
+      _form?.detach(field);
+    }
+
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final RecordFormField(
+      :field,
+      :label,
+      :placeholder,
+      :help,
+      :enabled,
+      :options,
+      :input,
+      :autoSave,
+      :type,
+      :defaultValue,
+      :required,
+      :guard,
+      :onChanged,
+    ) = widget;
     final scope = context
         .dependOnInheritedWidgetOfExactType<_RecordFormScope>();
 
     assert(scope != null, 'A RecordFormField stands under a RecordForm');
 
+    _follow(scope?.controller);
+
     final described = scope?.fields?[field];
-    final input = this.input;
     final metadata = scope?.fields == null
         ? null
         : described == null && type == null && input == null
@@ -453,23 +619,27 @@ class RecordFormField extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
-    final label = this.label ?? metadata.label;
+    final shown = label ?? metadata.label;
 
-    return builder(
+    return scope.feedback.field(
       context,
-      RecordFormInput(
-        form: scope.controller,
-        field: metadata,
-        label: label.isEmpty ? null : label,
-        placeholder: placeholder,
-        help: help,
-        enabled: enabled && !metadata.readonly && metadata.type != 'computed',
-        options: options,
-        input: input,
-        autoSave: autoSave,
-        guard: guard,
-        onChanged: onChanged,
+      builder(
+        context,
+        RecordFormInput(
+          form: scope.controller,
+          field: metadata,
+          label: shown.isEmpty ? null : shown,
+          placeholder: placeholder,
+          help: help,
+          enabled: enabled && !metadata.readonly && metadata.type != 'computed',
+          options: options,
+          input: input,
+          autoSave: autoSave,
+          guard: guard,
+          onChanged: onChanged,
+        ),
       ),
+      scope.controller.errorOf(field),
     );
   }
 }

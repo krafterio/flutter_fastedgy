@@ -8,6 +8,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../container/container.dart';
+import '../fetcher/http_error.dart';
 import '../metadata/models.dart';
 import '../storage/storage_uploader.dart';
 import 'api_model.dart';
@@ -44,6 +45,56 @@ typedef RecordFormValidator = String? Function(
   RecordFormController<dynamic> form,
 );
 
+/// What a field has to fix before a save asked for, given its value: its
+/// message, none when nothing.
+typedef RecordFormFieldValidator = String? Function(Object? value);
+
+/// The messages of a refused save: [fields] by the path of the field they
+/// are about, [alerts] about none.
+typedef RecordFormErrors = ({Map<String, String> fields, List<String> alerts});
+
+/// How a refused save is split between the fields of a form and its alert: a
+/// service of the container registered by [initializeFastEdgy], which an
+/// application replaces for errors of its own.
+///
+/// A validation error of the server ([HttpError.validationErrors]) about the
+/// body goes to the field its location names (`["body", "preferences",
+/// "compact"]` to `preferences.compact`); the others, and any other error, to
+/// the alert, as their message.
+class RecordFormErrorReader {
+  const RecordFormErrorReader();
+
+  RecordFormErrors read(Object error) {
+    if (error is RecordFormInvalid) {
+      return (fields: const {}, alerts: [error.message]);
+    }
+
+    final validation = error is HttpError ? error.validationErrors : null;
+
+    if (validation == null || validation.isEmpty) {
+      return (
+        fields: const {},
+        alerts: [if (error is HttpError) error.message else '$error'],
+      );
+    }
+
+    final fields = <String, String>{};
+    final alerts = <String>[];
+
+    for (final failure in validation) {
+      final field = failure.loc.firstOrNull == 'body' ? failure.field : '';
+
+      if (field.isEmpty) {
+        alerts.add(failure.msg);
+      } else {
+        fields.putIfAbsent(field, () => failure.msg);
+      }
+    }
+
+    return (fields: fields, alerts: alerts);
+  }
+}
+
 /// Why a save asked for was not sent: what [RecordFormController.validate]
 /// said.
 @immutable
@@ -59,7 +110,14 @@ class RecordFormInvalid implements Exception {
 /// What a save of a [RecordFormController] wrote, or why it could not.
 @immutable
 class RecordFormSave {
-  const RecordFormSave({required this.fields, required this.auto, this.error});
+  const RecordFormSave({
+    required this.fields,
+    required this.auto,
+    this.error,
+    this.errors = const {},
+    this.alerts = const [],
+    this.alerted = false,
+  });
 
   final Set<String> fields;
 
@@ -67,6 +125,16 @@ class RecordFormSave {
   final bool auto;
 
   final Object? error;
+
+  /// The messages said under the fields shown, by their path.
+  final Map<String, String> errors;
+
+  /// The messages about no field shown.
+  final List<String> alerts;
+
+  /// Whether an alert of the form shows [alerts] ([RecordFormAlert]): a
+  /// feedback says them otherwise.
+  final bool alerted;
 
   bool get saved => error == null;
 }
@@ -90,6 +158,11 @@ class RecordFormSave {
 /// key `compact` of the JSON field `preferences`, written as the whole of
 /// `preferences`, the other keys as the record holds them. A [RecordFormFile]
 /// is sent to the storage of its field first.
+///
+/// A save refused says why under the fields shown ([errorOf]), read from the
+/// error by the [RecordFormErrorReader] of the container or found by their
+/// validator, and the rest in the alert of the form ([alerts]); a field set
+/// again lets go of its message.
 class RecordFormController<T extends BaseModel<T>> extends ChangeNotifier {
   RecordFormController(
     ApiRecord<T> record, {
@@ -158,6 +231,14 @@ class RecordFormController<T extends BaseModel<T>> extends ChangeNotifier {
   final _auto = <String>{};
 
   final _saves = StreamController<RecordFormSave>.broadcast();
+
+  /// The fields shown, how many times each, and the validators they carry.
+  final _shown = <String, int>{};
+  final _validators = <String, RecordFormFieldValidator>{};
+  int _alertViews = 0;
+
+  Map<String, String> _errors = const {};
+  List<String> _alerts = const [];
   Map<String, MetadataField>? _fields;
   Timer? _typing;
   Future<bool>? _saving;
@@ -187,6 +268,71 @@ class RecordFormController<T extends BaseModel<T>> extends ChangeNotifier {
   /// Each save as it ends, written or refused.
   Stream<RecordFormSave> get saves => _saves.stream;
 
+  /// Why the last save refused [field], said under it.
+  String? errorOf(String field) => _errors[field];
+
+  /// Why the last save was refused, about no field shown: said by the alert
+  /// of the form.
+  List<String> get alerts => _alerts;
+
+  /// [field] shows in the form ([RecordFormField]), checked by [validator]
+  /// before a save asked for: an error about it is said under it.
+  void attach(String field, {RecordFormFieldValidator? validator}) {
+    _shown[field] = (_shown[field] ?? 0) + 1;
+
+    if (validator != null) {
+      check(field, validator);
+    }
+  }
+
+  /// [validator] checks [field] before a save asked for, in place of the one
+  /// before.
+  void check(String field, RecordFormFieldValidator validator) =>
+      _validators[field] = validator;
+
+  void detach(String field) {
+    final left = (_shown[field] ?? 0) - 1;
+
+    if (left > 0) {
+      _shown[field] = left;
+    } else {
+      _shown.remove(field);
+      _validators.remove(field);
+    }
+  }
+
+  /// An alert of the form shows [alerts] ([RecordFormAlert]).
+  void attachAlert() => _alertViews++;
+
+  void detachAlert() => _alertViews--;
+
+  /// Holds [errors] under the fields shown, the others in the alert, named by
+  /// their label.
+  void _hold(RecordFormErrors errors) {
+    final fields = <String, String>{};
+    final alerts = [...errors.alerts];
+
+    for (final MapEntry(key: field, value: message) in errors.fields.entries) {
+      if (_shown.containsKey(field)) {
+        fields[field] = message;
+      } else {
+        final label = _fields?[field.split('.').first]?.label;
+
+        alerts.add(
+          '${label == null || label.isEmpty ? field : label}: $message',
+        );
+      }
+    }
+
+    _errors = fields;
+    _alerts = alerts;
+  }
+
+  void _clearErrors() {
+    _errors = const {};
+    _alerts = const [];
+  }
+
   bool _holds(String field, Object? value) {
     if (value is RecordFormFile) {
       return value.removed && _at(record.value?.data, field) == null;
@@ -206,6 +352,10 @@ class RecordFormController<T extends BaseModel<T>> extends ChangeNotifier {
   /// when null: at once, or once the typing pauses.
   void set(String field, Object? value, {bool typing = false, bool? autoSave}) {
     final shown = shownValue(_fields?[field], value);
+
+    if (_errors.containsKey(field)) {
+      _errors = {..._errors}..remove(field);
+    }
 
     if (_holds(field, shown)) {
       _edited.remove(field);
@@ -236,6 +386,7 @@ class RecordFormController<T extends BaseModel<T>> extends ChangeNotifier {
     _edited.clear();
     _auto.clear();
     _error = null;
+    _clearErrors();
     notifyListeners();
   }
 
@@ -251,18 +402,26 @@ class RecordFormController<T extends BaseModel<T>> extends ChangeNotifier {
     _typing?.cancel();
     _auto.clear();
 
-    final invalid = validate?.call(this);
+    final invalid = {
+      for (final MapEntry(key: field, value: check) in _validators.entries)
+        field: ?check(this[field]),
+    };
+    final message = validate?.call(this);
 
-    if (invalid != null) {
-      _error = RecordFormInvalid(invalid);
+    if (invalid.isNotEmpty || message != null) {
+      _error = RecordFormInvalid(message ?? invalid.values.first);
+      _hold((fields: invalid, alerts: [?message]));
       _notify();
-      _report(RecordFormSave(fields: const {}, auto: false, error: _error));
+      _report(_refused(const {}, auto: false));
 
       return false;
     }
 
+    _clearErrors();
+
     if (_edited.isEmpty && _saving == null) {
       _error = null;
+      _notify();
       _report(const RecordFormSave(fields: {}, auto: false));
 
       return true;
@@ -306,6 +465,7 @@ class RecordFormController<T extends BaseModel<T>> extends ChangeNotifier {
 
     _saving = saving;
     _error = null;
+    _clearErrors();
     _notify();
 
     try {
@@ -325,18 +485,31 @@ class RecordFormController<T extends BaseModel<T>> extends ChangeNotifier {
       return true;
     } catch (error) {
       _error = error;
+      _hold(
+        hasService<RecordFormErrorReader>()
+            ? getService<RecordFormErrorReader>().read(error)
+            : const RecordFormErrorReader().read(error),
+      );
 
       if (auto) {
         _forget(sent);
       }
 
-      _report(
-        RecordFormSave(fields: sent.keys.toSet(), auto: auto, error: error),
-      );
+      _report(_refused(sent.keys.toSet(), auto: auto));
 
       return false;
     }
   }
+
+  RecordFormSave _refused(Set<String> fields, {required bool auto}) =>
+      RecordFormSave(
+        fields: fields,
+        auto: auto,
+        error: _error,
+        errors: _errors,
+        alerts: _alerts,
+        alerted: _alertViews > 0,
+      );
 
   /// [sent] as the record takes it: a file as its path once stored, the key
   /// of a JSON field in the whole of that field.

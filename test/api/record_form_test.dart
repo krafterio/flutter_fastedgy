@@ -27,6 +27,10 @@ void main() {
   late _ThingApi api;
   late ApiRecord<_Thing> thing;
 
+  /// What the server answers a write with, when it refuses it.
+  MockResponse? refusal;
+  late List<MockRequest> writes;
+
   setUp(() async {
     await container.reset(dispose: false);
     container
@@ -56,9 +60,19 @@ void main() {
       'data': {'compact': true},
     };
 
+    refusal = null;
+    writes = [];
     api = _ThingApi(
       fetcher: createMockFetcher(
-        (request) async => MockResponse.json(stored),
+        (request) async {
+          if (request.method != 'GET') {
+            writes.add(request);
+          }
+
+          return request.method == 'GET'
+              ? MockResponse.json(stored)
+              : refusal ?? MockResponse.json(stored);
+        },
         enableAuth: false,
         enableTimezone: false,
         enableRefreshToken: false,
@@ -232,6 +246,130 @@ void main() {
       expect((told.single.auto, told.single.saved), (true, true));
     },
   );
+  group('a refused save', () {
+    Future<(RecordFormController<_Thing>, List<RecordFormSave>)> pumpRefused(
+      WidgetTester tester, {
+      bool alert = true,
+      RecordFormFieldValidator? validator,
+    }) async {
+      final told = <RecordFormSave>[];
+
+      getService<RecordFormInputs>().register(FieldKind.text, input);
+      container
+        ..unregister<RecordFormFeedback>()
+        ..registerSingleton<RecordFormFeedback>(_Feedback(told));
+
+      final form = RecordFormController(thing);
+
+      addTearDown(form.dispose);
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: RecordForm.controlled(
+            controller: form,
+            child: Column(
+              children: [
+                if (alert) const RecordFormAlert(),
+                RecordFormField('name', validator: validator),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      return (form, told);
+    }
+
+    Future<void> tapAndSave(
+      WidgetTester tester,
+      RecordFormController<_Thing> form,
+    ) async {
+      await tester.tap(find.text('Name: Lamp on'));
+      await tester.pump();
+      await tester.runAsync(form.save);
+      await tester.pump();
+    }
+
+    testWidgets(
+      'says the errors of the server under the fields they name, the others in its alert',
+      (tester) async {
+        refusal = const MockResponse.error(
+          422,
+          body: {
+            'detail': [
+              {
+                'loc': ['body', 'name'],
+                'msg': 'Too short',
+                'type': 'value_error',
+              },
+              {
+                'loc': ['body', 'mail'],
+                'msg': 'Not a mail',
+                'type': 'value_error',
+              },
+              {
+                'loc': ['body'],
+                'msg': 'Nothing changes',
+                'type': 'value_error',
+              },
+            ],
+          },
+        );
+        final (form, told) = await pumpRefused(tester);
+
+        await tapAndSave(tester, form);
+
+        expect(form.errorOf('name'), 'Too short');
+        expect(find.text('Too short'), findsOneWidget);
+        expect(form.alerts, ['Nothing changes', 'Mail: Not a mail']);
+        expect(find.text('Mail: Not a mail'), findsOneWidget);
+        expect(told.single.errors, {'name': 'Too short'});
+        expect(told.single.alerted, isTrue);
+
+        await tester.tap(find.text('Name: Lamp! on'));
+        await tester.pump();
+
+        expect(
+          find.text('Too short'),
+          findsNothing,
+          reason: 'set again, the field lets go of its message',
+        );
+        expect(find.text('Mail: Not a mail'), findsOneWidget);
+      },
+    );
+
+    testWidgets('leaves its alerts to the feedback when no alert shows them', (
+      tester,
+    ) async {
+      refusal = const MockResponse.error(
+        400,
+        body: {'detail': 'Already taken'},
+      );
+      final (form, told) = await pumpRefused(tester, alert: false);
+
+      await tapAndSave(tester, form);
+
+      expect(told.single.alerts, ['Already taken']);
+      expect(told.single.alerted, isFalse);
+    });
+
+    testWidgets('checks a field with its validator before writing', (
+      tester,
+    ) async {
+      final (form, told) = await pumpRefused(
+        tester,
+        validator: (value) => '$value'.endsWith('!') ? 'No bang' : null,
+      );
+
+      await tapAndSave(tester, form);
+
+      expect(writes, isEmpty);
+      expect(find.text('No bang'), findsOneWidget);
+      expect(told.single.error, isA<RecordFormInvalid>());
+    });
+  });
+
   testWidgets('tells its own feedback in place of the one of the container', (
     tester,
   ) async {

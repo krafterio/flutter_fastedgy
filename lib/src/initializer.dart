@@ -30,6 +30,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 
 import 'api/api_model_engine.dart';
 import 'api/record_form.dart';
+import 'api/record_form_controller.dart' show RecordFormErrorReader;
 import 'query/registry.dart';
 import 'offline/offline_api_model_engine.dart';
 import 'offline/filesystem_local_image_store.dart';
@@ -230,6 +231,12 @@ Future<void> initializeFastEdgy({
 
   if (!hasService<RecordFormInputs>()) {
     container.registerSingleton<RecordFormInputs>(RecordFormInputs());
+  }
+
+  if (!hasService<RecordFormErrorReader>()) {
+    container.registerSingleton<RecordFormErrorReader>(
+      const RecordFormErrorReader(),
+    );
   }
 
   if (!hasService<RecordFormFeedback>()) {
