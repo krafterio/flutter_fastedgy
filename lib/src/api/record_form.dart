@@ -383,6 +383,9 @@ class RecordFormField extends StatelessWidget {
   /// default of the metadata.
   final Object? defaultValue;
 
+  /// Whether the field is to be filled, in place of what the metadata say.
+  final bool? required;
+
   /// Whether a value set is taken: false leaves the field as it is (an offer
   /// shown in place of turning a paid option on).
   final bool Function(Object? value)? guard;
@@ -403,6 +406,7 @@ class RecordFormField extends StatelessWidget {
     this.autoSave,
     this.type,
     this.defaultValue,
+    this.required,
     this.guard,
     this.onChanged,
   });
@@ -425,7 +429,7 @@ class RecordFormField extends StatelessWidget {
             label: described?.label ?? '',
             type: described?.type ?? type ?? '',
             readonly: described?.readonly ?? false,
-            required: described?.required ?? false,
+            required: required ?? described?.required ?? false,
             searchable: described?.searchable ?? false,
             extra: described?.extra ?? false,
             filterOperators: described?.filterOperators ?? const [],
