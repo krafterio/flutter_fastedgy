@@ -24,6 +24,7 @@ class _ThingApi extends ApiModel<_Thing> {
 }
 
 void main() {
+  late _ThingApi api;
   late ApiRecord<_Thing> thing;
 
   setUp(() async {
@@ -44,20 +45,26 @@ void main() {
         }),
       );
 
-    container.registerSingleton<RecordFormInputs>(RecordFormInputs());
+    container
+      ..registerSingleton<RecordFormInputs>(RecordFormInputs())
+      ..registerSingleton<RecordFormFeedback>(const RecordFormFeedback());
 
-    final stored = <String, Object?>{'id': 1, 'name': 'Lamp', 'mail': 'a@b.c'};
+    final stored = <String, Object?>{
+      'id': 1,
+      'name': 'Lamp',
+      'mail': 'a@b.c',
+      'data': {'compact': true},
+    };
 
-    thing = ApiRecord<_Thing>(
-      _ThingApi(
-        fetcher: createMockFetcher(
-          (request) async => MockResponse.json(stored),
-          enableAuth: false,
-          enableTimezone: false,
-          enableRefreshToken: false,
-        ),
+    api = _ThingApi(
+      fetcher: createMockFetcher(
+        (request) async => MockResponse.json(stored),
+        enableAuth: false,
+        enableTimezone: false,
+        enableRefreshToken: false,
       ),
     );
+    thing = ApiRecord<_Thing>(api);
     addTearDown(thing.dispose);
     await thing.load(1);
   });
@@ -128,4 +135,71 @@ void main() {
       expect(find.text('Name: Lamp! on'), findsOneWidget);
     },
   );
+
+  testWidgets(
+    'draws a field with the input named for it, a key of a JSON field with its type',
+    (tester) async {
+      getService<RecordFormInputs>()
+        ..registerNamed('shout', (context, input) => Text('${input.value}!'))
+        ..register(
+          FieldKind.boolean,
+          (context, input) => Text('compact ${input.value}'),
+        );
+
+      await pumpForm(tester, const [
+        RecordFormField('name', input: 'shout'),
+        RecordFormField('data.compact', type: 'boolean'),
+        RecordFormField('data.other'),
+      ]);
+
+      expect(find.text('Lamp!'), findsOneWidget);
+      expect(find.text('compact true'), findsOneWidget);
+      expect(find.byType(Text), findsNWidgets(2));
+    },
+  );
+
+  testWidgets(
+    'tells the feedback of the container each save of a form of its own, on its own for the fields that say so',
+    (tester) async {
+      final told = <RecordFormSave>[];
+
+      container
+        ..unregister<RecordFormFeedback>()
+        ..registerSingleton<RecordFormFeedback>(_Feedback(told));
+      getService<RecordFormInputs>().register(FieldKind.text, input);
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: RecordForm.api(
+            api: api,
+            id: 1,
+            child: const Column(
+              children: [RecordFormField('name', autoSave: true)],
+            ),
+          ),
+        ),
+      );
+      for (var turn = 0; turn < 10; turn++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+
+      await tester.tap(find.text('Name: Lamp on'));
+      for (var turn = 0; turn < 10; turn++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+
+      expect(told.single.fields, {'name'});
+      expect((told.single.auto, told.single.saved), (true, true));
+    },
+  );
+}
+
+class _Feedback extends RecordFormFeedback {
+  _Feedback(this.told);
+
+  final List<RecordFormSave> told;
+
+  @override
+  void show(BuildContext context, RecordFormSave save) => told.add(save);
 }

@@ -232,6 +232,10 @@ Future<void> initializeFastEdgy({
     container.registerSingleton<RecordFormInputs>(RecordFormInputs());
   }
 
+  if (!hasService<RecordFormFeedback>()) {
+    container.registerSingleton<RecordFormFeedback>(const RecordFormFeedback());
+  }
+
   // ApiImageCache
   if (!hasService<ApiImageCache>()) {
     container.registerSingleton<ApiImageCache>(

@@ -91,6 +91,7 @@ B? resolveFilterInput<B>(
 class FieldRegistry<B> {
   final _kinds = <FieldKind, B>{};
   final _types = <String, B>{};
+  final _named = <String, B>{};
 
   /// Draws the fields of [kind] with [builder], in place of the one before.
   void register(FieldKind kind, B builder) => _kinds[kind] = builder;
@@ -101,6 +102,13 @@ class FieldRegistry<B> {
 
   /// What draws [field], none when nothing is registered for it.
   B? of(MetadataField field) => _types[field.type] ?? _kinds[kindOf(field)];
+
+  /// Draws with [builder] the fields that ask for it by [name], whatever their
+  /// type: an input of the application for a text holding an emoji.
+  void registerNamed(String name, B builder) => _named[name] = builder;
+
+  /// What is registered as [name], none when nothing is.
+  B? named(String name) => _named[name];
 }
 
 /// Where the records of a model are listed and read again for the value of a

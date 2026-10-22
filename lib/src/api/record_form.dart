@@ -11,17 +11,30 @@ import '../container/container.dart';
 import '../metadata/models.dart';
 import '../query/registry.dart';
 import '../ui/combo_option.dart';
+import 'api_model.dart';
 import 'api_record.dart';
 import 'base_model.dart';
 import 'record_form_controller.dart';
 
 /// The record a form edits, for the [RecordFormField]s below it: each reads
 /// its field there and writes it back. Saved by [RecordFormController.save],
-/// or on its own with [autoSave].
+/// a field on its own with [autoSave] (or its own `autoSave`) unless
+/// [allowAutoSave] is off. Each save ending is told to the
+/// [RecordFormFeedback] of the container: a toast.
 class RecordForm<T extends BaseModel<T>> extends StatefulWidget {
   final ApiRecord<T>? record;
+  final ApiModel<T>? api;
+  final Object? id;
+
+  /// What the record of [api] is read with.
+  final dynamic fields;
+
   final RecordFormController<T>? controller;
+
+  /// Whether a field that does not say saves on its own.
   final bool autoSave;
+
+  final bool allowAutoSave;
   final Duration autoSaveDelay;
   final Widget child;
 
@@ -32,8 +45,26 @@ class RecordForm<T extends BaseModel<T>> extends StatefulWidget {
     required this.child,
     super.key,
     this.autoSave = false,
+    this.allowAutoSave = true,
     this.autoSaveDelay = const Duration(milliseconds: 600),
-  }) : controller = null;
+  }) : api = null,
+       id = null,
+       fields = null,
+       controller = null;
+
+  /// Edits the record [id] of [api], read with [fields]: an api of the
+  /// application, whose routes are its own, as any other.
+  const RecordForm.api({
+    required ApiModel<T> this.api,
+    required Object this.id,
+    required this.child,
+    super.key,
+    this.fields,
+    this.autoSave = false,
+    this.allowAutoSave = true,
+    this.autoSaveDelay = const Duration(milliseconds: 600),
+  }) : record = null,
+       controller = null;
 
   /// Edits through [controller], held by whoever saves it: a button out of
   /// the form.
@@ -42,7 +73,11 @@ class RecordForm<T extends BaseModel<T>> extends StatefulWidget {
     required this.child,
     super.key,
   }) : record = null,
+       api = null,
+       id = null,
+       fields = null,
        autoSave = false,
+       allowAutoSave = true,
        autoSaveDelay = Duration.zero;
 
   /// The controller of the form above [context], if there is one.
@@ -56,19 +91,43 @@ class RecordForm<T extends BaseModel<T>> extends StatefulWidget {
 }
 
 class _RecordFormState<T extends BaseModel<T>> extends State<RecordForm<T>> {
-  late final RecordFormController<T> _own = RecordFormController<T>(
-    widget.record!,
-    autoSave: widget.autoSave,
-    autoSaveDelay: widget.autoSaveDelay,
-  );
+  late final RecordFormController<T>? _own = _create();
 
-  RecordFormController<T> get _controller => widget.controller ?? _own;
+  RecordFormController<T> get _controller => widget.controller ?? _own!;
 
   Map<String, MetadataField>? _fields;
+  StreamSubscription<RecordFormSave>? _saves;
+
+  RecordFormController<T>? _create() {
+    final RecordForm(:record, :api, :id) = widget;
+
+    if (record != null) {
+      return RecordFormController<T>(
+        record,
+        autoSave: widget.autoSave,
+        allowAutoSave: widget.allowAutoSave,
+        autoSaveDelay: widget.autoSaveDelay,
+      );
+    }
+
+    if (api != null && id != null) {
+      return RecordFormController<T>.api(
+        api,
+        id,
+        fields: widget.fields,
+        autoSave: widget.autoSave,
+        allowAutoSave: widget.allowAutoSave,
+        autoSaveDelay: widget.autoSaveDelay,
+      );
+    }
+
+    return null;
+  }
 
   @override
   void initState() {
     super.initState();
+    _saves = _controller.saves.listen(_tell);
     unawaited(_readFields());
   }
 
@@ -80,12 +139,16 @@ class _RecordFormState<T extends BaseModel<T>> extends State<RecordForm<T>> {
     }
   }
 
+  void _tell(RecordFormSave save) {
+    if (mounted && hasService<RecordFormFeedback>()) {
+      getService<RecordFormFeedback>().show(context, save);
+    }
+  }
+
   @override
   void dispose() {
-    if (widget.controller == null) {
-      _own.dispose();
-    }
-
+    unawaited(_saves?.cancel());
+    _own?.dispose();
     super.dispose();
   }
 
@@ -95,6 +158,16 @@ class _RecordFormState<T extends BaseModel<T>> extends State<RecordForm<T>> {
     fields: _fields,
     child: widget.child,
   );
+}
+
+/// What a [RecordForm] says once a save ends, written or refused: a service of
+/// the container registered by [initializeFastEdgy], silent here. An
+/// application registers its own before it starts: a toast, for the saves it
+/// wants told.
+class RecordFormFeedback {
+  const RecordFormFeedback();
+
+  void show(BuildContext context, RecordFormSave save) {}
 }
 
 class _RecordFormScope
@@ -140,6 +213,9 @@ class RecordFormInput {
   /// How the input draws the field, as it understands it: a style of choice.
   final Object? variant;
 
+  /// Whether the field saves on its own; null, as the form says.
+  final bool? autoSave;
+
   const RecordFormInput({
     required this.form,
     required this.field,
@@ -150,6 +226,7 @@ class RecordFormInput {
     this.maxLines,
     this.options,
     this.variant,
+    this.autoSave,
   });
 
   Object? get value => form[field.name];
@@ -158,7 +235,7 @@ class RecordFormInput {
 
   /// Sets the value: [typing] while a text is being typed.
   void set(Object? value, {bool typing = false}) =>
-      form.set(field.name, value, typing: typing);
+      form.set(field.name, value, typing: typing, autoSave: autoSave);
 
   /// Saves what waits for the typing to pause: the input is left.
   void leave() => unawaited(form.flush());
@@ -175,9 +252,14 @@ typedef RecordFormInputBuilder = Widget Function(
 class RecordFormInputs extends FieldRegistry<RecordFormInputBuilder> {}
 
 /// The field [field] of the record of the [RecordForm] above, edited with the
-/// input [RecordFormInputs] holds for it. Its label and whether it is required
-/// come from the metadata; a read-only field cannot be changed. Nothing shows
-/// while the metadata is read, nor for a field no input is registered for.
+/// input [RecordFormInputs] holds for it, or the one registered as [input].
+/// Its label and whether it is required come from the metadata; a read-only
+/// field cannot be changed. Nothing shows while the metadata is read, nor for
+/// a field no input is registered for.
+///
+/// [field] is a path in the record: `preferences.compact`, the key `compact`
+/// of the JSON field `preferences`, which the metadata do not describe and
+/// [type] does.
 class RecordFormField extends StatelessWidget {
   final String field;
 
@@ -195,6 +277,17 @@ class RecordFormField extends StatelessWidget {
   /// How the input draws the field ([RecordFormInput.variant]).
   final Object? variant;
 
+  /// Whether the field saves on its own; null, as the form says.
+  final bool? autoSave;
+
+  /// The metadata type of a field the metadata do not describe: a key of a
+  /// JSON field.
+  final String? type;
+
+  /// The name of the input to draw it with, registered by
+  /// [FieldRegistry.registerNamed], in place of the one of its type.
+  final String? input;
+
   const RecordFormField(
     this.field, {
     super.key,
@@ -205,6 +298,9 @@ class RecordFormField extends StatelessWidget {
     this.maxLines,
     this.options,
     this.variant,
+    this.autoSave,
+    this.type,
+    this.input,
   });
 
   @override
@@ -214,18 +310,39 @@ class RecordFormField extends StatelessWidget {
 
     assert(scope != null, 'A RecordFormField stands under a RecordForm');
 
-    final metadata = scope?.fields?[field];
-    final input = metadata == null || !hasService<RecordFormInputs>()
+    final fields = scope?.fields;
+    final type = this.type;
+    final metadata =
+        fields?[field] ??
+        (fields == null || type == null
+            ? null
+            : MetadataField(
+                name: field,
+                label: '',
+                type: type,
+                readonly: false,
+                required: false,
+                searchable: false,
+                extra: false,
+                filterOperators: const [],
+              ));
+    final inputs = hasService<RecordFormInputs>()
+        ? getService<RecordFormInputs>()
+        : null;
+    final name = input;
+    final builder = metadata == null
         ? null
-        : getService<RecordFormInputs>().of(metadata);
+        : name != null
+        ? inputs?.named(name)
+        : inputs?.of(metadata);
 
-    if (scope == null || metadata == null || input == null) {
+    if (scope == null || metadata == null || builder == null) {
       return const SizedBox.shrink();
     }
 
     final label = this.label ?? metadata.label;
 
-    return input(
+    return builder(
       context,
       RecordFormInput(
         form: scope.controller,
@@ -237,6 +354,7 @@ class RecordFormField extends StatelessWidget {
         maxLines: maxLines,
         options: options,
         variant: variant,
+        autoSave: autoSave,
       ),
     );
   }
