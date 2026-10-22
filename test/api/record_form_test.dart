@@ -44,6 +44,8 @@ void main() {
         }),
       );
 
+    container.registerSingleton<RecordFormInputs>(RecordFormInputs());
+
     final stored = <String, Object?>{'id': 1, 'name': 'Lamp', 'mail': 'a@b.c'};
 
     thing = ApiRecord<_Thing>(
@@ -92,8 +94,6 @@ void main() {
   testWidgets('draws nothing for a field no input is registered for', (
     tester,
   ) async {
-    container.registerSingleton<RecordFormInputs>(RecordFormInputs());
-
     await pumpForm(tester, const [RecordFormField('name')]);
 
     expect(find.byType(Text), findsNothing);
@@ -102,14 +102,12 @@ void main() {
   testWidgets(
     'draws a field with the input of its type, else of its kind, and writes it back',
     (tester) async {
-      container.registerSingleton<RecordFormInputs>(
-        RecordFormInputs()
-          ..register(FieldKind.text, input)
-          ..registerType(
-            'email',
-            (context, input) => Text('mail ${input.value}'),
-          ),
-      );
+      getService<RecordFormInputs>()
+        ..register(FieldKind.text, input)
+        ..registerType(
+          'email',
+          (context, input) => Text('mail ${input.value}'),
+        );
 
       final form = await pumpForm(tester, const [
         RecordFormField('name'),

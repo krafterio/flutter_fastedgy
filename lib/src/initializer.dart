@@ -30,6 +30,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 
 import 'api/api_model_engine.dart';
 import 'api/record_form.dart';
+import 'query/registry.dart';
 import 'offline/offline_api_model_engine.dart';
 import 'offline/filesystem_local_image_store.dart';
 import 'offline/drift_local_store.dart';
@@ -222,7 +223,11 @@ Future<void> initializeFastEdgy({
     );
   }
 
-  // RecordFormInputs: empty, filled by a package of inputs and the application
+  // The registries an application and the packages of inputs fill
+  if (!hasService<ValueSources>()) {
+    container.registerSingleton<ValueSources>(ValueSources());
+  }
+
   if (!hasService<RecordFormInputs>()) {
     container.registerSingleton<RecordFormInputs>(RecordFormInputs());
   }

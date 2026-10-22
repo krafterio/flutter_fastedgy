@@ -6,13 +6,29 @@
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:logging/logging.dart';
 
+import '../container/container.dart';
 import '../fetcher/http_error.dart';
 import './listeners/console_log_listener.dart';
 import './listeners/flutter_log_listener.dart';
 import './log_listener.dart';
 
-/// List of registered log listeners
-final List<LogListener> _listeners = [];
+/// The listeners the records of the logs go to: a service of the container,
+/// registered by [initializeLogger].
+class LogListeners {
+  final _listeners = <LogListener>[];
+
+  void add(LogListener listener) => _listeners.add(listener);
+
+  void remove(LogListener listener) => _listeners.remove(listener);
+
+  void clear() => _listeners.clear();
+
+  /// The listeners that are enabled, in the order they were added.
+  List<LogListener> get enabled => [
+    for (final listener in _listeners)
+      if (listener.isEnabled) listener,
+  ];
+}
 
 const defaultLogLevel = Level.INFO;
 
@@ -49,21 +65,24 @@ void initializeLogger({Level? logLevel, List<LogListener>? listeners}) {
   final level = logLevel ?? config.level;
   Logger.root.level = level;
 
-  // Clear existing listeners
-  _listeners.clear();
+  if (!hasService<LogListeners>()) {
+    container.registerSingleton<LogListeners>(LogListeners());
+  }
+
+  final registered = getService<LogListeners>()..clear();
 
   // Add default listeners
   if (config.listeners.contains('console')) {
-    _listeners.add(ConsoleLogListener());
+    registered.add(ConsoleLogListener());
   }
 
   if (config.listeners.contains('flutter')) {
-    _listeners.add(FlutterLogListener());
+    registered.add(FlutterLogListener());
   }
 
   // Add provided listeners
-  if (listeners != null && listeners.isNotEmpty) {
-    _listeners.addAll(listeners);
+  for (final listener in listeners ?? const <LogListener>[]) {
+    registered.add(listener);
   }
 
   // Setup logging
@@ -75,29 +94,27 @@ void initializeLogger({Level? logLevel, List<LogListener>? listeners}) {
         return;
       }
 
-      for (final listener in _listeners) {
-        if (listener.isEnabled) {
-          listener.onData(entry);
-        }
+      for (final listener in _enabledListeners) {
+        listener.onData(entry);
       }
     },
     onError: (error, stackTrace) {
-      for (final listener in _listeners) {
-        if (listener.isEnabled) {
-          listener.onError(error, stackTrace);
-        }
+      for (final listener in _enabledListeners) {
+        listener.onError(error, stackTrace);
       }
     },
     onDone: () {
-      for (final listener in _listeners) {
-        if (listener.isEnabled) {
-          listener.onDone();
-        }
+      for (final listener in _enabledListeners) {
+        listener.onDone();
       }
     },
     cancelOnError: false,
   );
 }
+
+/// The enabled listeners, none once the container is emptied.
+List<LogListener> get _enabledListeners =>
+    hasService<LogListeners>() ? getService<LogListeners>().enabled : const [];
 
 /// Rewrites a record whose error is an unanswered request ([isServerUnavailable]:
 /// no network, timeout, server in maintenance) into a single INFO line, and
@@ -134,16 +151,6 @@ LogRecord? degradeUnansweredRequest(LogRecord record) {
     record.zone,
     record.object,
   );
-}
-
-/// Add a custom log listener
-void addLogListener(LogListener listener) {
-  _listeners.add(listener);
-}
-
-/// Remove a log listener
-void removeLogListener(LogListener listener) {
-  _listeners.remove(listener);
 }
 
 /// Get a logger for a specific name

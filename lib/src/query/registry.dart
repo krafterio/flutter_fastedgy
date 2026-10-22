@@ -4,6 +4,7 @@
  */
 
 import '../api/api_model.dart';
+import '../container/container.dart';
 import '../metadata/models.dart';
 import 'builder.dart';
 import 'catalog.dart';
@@ -145,13 +146,19 @@ class ValueSourceContext {
 
 typedef ValueSourceBuilder = ValueSource Function(ValueSourceContext context);
 
-final _valueSources = <String, ValueSourceBuilder>{};
+/// The value sources an application declares, by the metadata name of their
+/// model: a service of the container, registered by [initializeFastEdgy].
+class ValueSources {
+  final _sources = <String, ValueSourceBuilder>{};
 
-/// Says where the records of [target] (its metadata name) are listed and read
-/// again, when it is not its own API, or not the way the default reads it.
-/// The source a list declares wins over this one.
-void registerValueSource(String target, ValueSourceBuilder source) =>
-    _valueSources[target] = source;
+  /// Says where the records of [target] are listed and read again, when it is
+  /// not its own API, or not the way the default reads it. The source a list
+  /// declares wins over this one.
+  void register(String target, ValueSourceBuilder source) =>
+      _sources[target] = source;
+
+  ValueSourceBuilder? of(String target) => _sources[target];
+}
 
 const _labelFields = [
   'display_name',
@@ -220,8 +227,12 @@ ValueSource defaultValueSource(
 /// The source of the values of [target]: the list's, the application's, laid
 /// over the default one.
 ValueSource resolveValueSource(String target, ValueSourceContext context) {
-  final declared = (context.valueSources[target] ?? _valueSources[target])
-      ?.call(context);
+  final declared =
+      (context.valueSources[target] ??
+              (hasService<ValueSources>()
+                  ? getService<ValueSources>().of(target)
+                  : null))
+          ?.call(context);
   final fallback = defaultValueSource(
     target,
     prefix: context.prefix,

@@ -187,7 +187,9 @@ void main() {
     );
 
     test('take what a list declares over what the application does, over the default', () {
-      registerValueSource(
+      container.registerSingleton<ValueSources>(ValueSources());
+      addTearDown(container.unregister<ValueSources>);
+      getService<ValueSources>().register(
         'household_user',
         (context) =>
             ValueSource(label: (record) => 'member of ${context.prefix}'),

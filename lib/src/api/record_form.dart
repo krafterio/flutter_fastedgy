@@ -164,9 +164,9 @@ typedef RecordFormInputBuilder = Widget Function(
   RecordFormInput input,
 );
 
-/// The inputs of the [RecordForm]s, a service of the container: empty here,
-/// filled by a package of inputs, then by the application in their place or
-/// for a metadata type of its own.
+/// The inputs of the [RecordForm]s, a service of the container registered by
+/// [initializeFastEdgy]: empty here, filled by a package of inputs, then by
+/// the application in their place or for a metadata type of its own.
 class RecordFormInputs extends FieldRegistry<RecordFormInputBuilder> {}
 
 /// The field [field] of the record of the [RecordForm] above, edited with the
