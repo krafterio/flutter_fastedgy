@@ -85,6 +85,23 @@ B? resolveFilterInput<B>(
   return best;
 }
 
+/// What draws a field, `B`, by its metadata type, else by its kind: a
+/// package registers its own, an application registers its own in their place.
+class FieldRegistry<B> {
+  final _kinds = <FieldKind, B>{};
+  final _types = <String, B>{};
+
+  /// Draws the fields of [kind] with [builder], in place of the one before.
+  void register(FieldKind kind, B builder) => _kinds[kind] = builder;
+
+  /// Draws the fields of the metadata type [type] with [builder], over the one
+  /// of their kind.
+  void registerType(String type, B builder) => _types[type] = builder;
+
+  /// What draws [field], none when nothing is registered for it.
+  B? of(MetadataField field) => _types[field.type] ?? _kinds[kindOf(field)];
+}
+
 /// Where the records of a model are listed and read again for the value of a
 /// relation, and how one shows. What a source leaves out comes from
 /// [defaultValueSource].
