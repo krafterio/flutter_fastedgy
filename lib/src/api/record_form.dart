@@ -534,6 +534,10 @@ class RecordFormField extends StatefulWidget {
 }
 
 class _RecordFormFieldState extends State<RecordFormField> {
+  /// The input, kept as it is (its focus, its text) while the feedback lays
+  /// a message under it or takes it away.
+  final _input = GlobalKey();
+
   /// The form told this field shows, and under which path.
   RecordFormController<dynamic>? _form;
   String? _shown;
@@ -623,20 +627,24 @@ class _RecordFormFieldState extends State<RecordFormField> {
 
     return scope.feedback.field(
       context,
-      builder(
-        context,
-        RecordFormInput(
-          form: scope.controller,
-          field: metadata,
-          label: shown.isEmpty ? null : shown,
-          placeholder: placeholder,
-          help: help,
-          enabled: enabled && !metadata.readonly && metadata.type != 'computed',
-          options: options,
-          input: input,
-          autoSave: autoSave,
-          guard: guard,
-          onChanged: onChanged,
+      KeyedSubtree(
+        key: _input,
+        child: builder(
+          context,
+          RecordFormInput(
+            form: scope.controller,
+            field: metadata,
+            label: shown.isEmpty ? null : shown,
+            placeholder: placeholder,
+            help: help,
+            enabled:
+                enabled && !metadata.readonly && metadata.type != 'computed',
+            options: options,
+            input: input,
+            autoSave: autoSave,
+            guard: guard,
+            onChanged: onChanged,
+          ),
         ),
       ),
       scope.controller.errorOf(field),

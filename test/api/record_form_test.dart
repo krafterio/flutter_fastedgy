@@ -251,10 +251,11 @@ void main() {
       WidgetTester tester, {
       bool alert = true,
       RecordFormFieldValidator? validator,
+      Widget Function(BuildContext context, RecordFormInput input)? drawn,
     }) async {
       final told = <RecordFormSave>[];
 
-      getService<RecordFormInputs>().register(FieldKind.text, input);
+      getService<RecordFormInputs>().register(FieldKind.text, drawn ?? input);
       container
         ..unregister<RecordFormFeedback>()
         ..registerSingleton<RecordFormFeedback>(_Feedback(told));
@@ -368,6 +369,30 @@ void main() {
       expect(find.text('No bang'), findsOneWidget);
       expect(told.single.error, isA<RecordFormInvalid>());
     });
+
+    testWidgets('keeps its input as it is while its message comes and goes', (
+      tester,
+    ) async {
+      final (form, _) = await pumpRefused(
+        tester,
+        validator: (value) => '$value'.endsWith('!') ? 'No bang' : null,
+        drawn: (context, input) => _Kept(input),
+      );
+
+      await tester.tap(find.text('input 1'));
+      await tester.pump();
+      await tester.runAsync(form.save);
+      await tester.pump();
+
+      expect(find.text('No bang'), findsOneWidget);
+      expect(find.text('input 1'), findsOneWidget);
+
+      await tester.tap(find.text('input 1'));
+      await tester.pump();
+
+      expect(find.text('No bang'), findsNothing);
+      expect(find.text('input 1'), findsOneWidget);
+    });
   });
 
   testWidgets('tells its own feedback in place of the one of the container', (
@@ -417,4 +442,26 @@ class _Feedback extends RecordFormFeedback {
 
   @override
   void show(BuildContext context, RecordFormSave save) => told.add(save);
+}
+
+/// An input with a state of its own, named by the order it was made in.
+class _Kept extends StatefulWidget {
+  const _Kept(this.input);
+
+  final RecordFormInput input;
+
+  static int made = 0;
+
+  @override
+  State<_Kept> createState() => _KeptState();
+}
+
+class _KeptState extends State<_Kept> {
+  late final int _order = ++_Kept.made;
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+    onTap: () => widget.input.set('${widget.input.value}!'),
+    child: Text('input $_order'),
+  );
 }
