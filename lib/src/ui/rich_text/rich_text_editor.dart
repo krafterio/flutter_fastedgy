@@ -4,6 +4,7 @@
  */
 
 import 'dart:async';
+import 'dart:math' show min;
 
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/foundation.dart' show FlutterExceptionHandler;
@@ -1133,49 +1134,54 @@ class RichTextEditorState extends State<RichTextEditor> {
     final theme = RichTextTheme.of(context);
     final toolbarTheme = RichTextToolbarTheme.of(context);
 
-    final editor = AppFlowyEditor(
-      editorState: widget.editorState,
-      editorScrollController: scrollController,
-      blockComponentBuilders: _builders,
-      editable: widget.editable,
-      shrinkWrap: !widget.scrollable,
-      // Nothing to type into, nothing to select, nothing to scroll: the three
-      // service layers come off and only the renderer is left.
-      disableKeyboardService: !widget.editable,
-      disableSelectionService: !widget.editable,
-      disableScrollService: !widget.editable,
-      // Every shortcut but a feature's own goes behind the features' guards, so
-      // a block that swallows typing keeps Enter, the markdown triggers and the
-      // "/" menu out of itself.
-      characterShortcutEvents: _characterShortcuts,
-      // A feature's own first, then what any block selected whole needs — the
-      // package walks a delta for both, and these blocks have none.
-      commandShortcutEvents: [
-        ...widget.features.commandShortcuts,
-        if (widget.onSubmit != null) ..._submitShortcuts,
-        ...wholeBlockCommands,
-        richTextCopyCommand(features: widget.features),
-        richTextCutCommand(features: widget.features),
-        richTextPasteCommand(features: widget.features),
-        ...standardCommandShortcutEvents,
-      ],
-      // Only ever called where there is a pointer to right-click with: the
-      // package wires it on the desktop side alone, which is what left a thumb
-      // with no way to paste (see RichTextTouchMenu).
-      contextMenuBuilder: _buildContextMenu,
-      editorStyle: RichTextStyle.editor(
-        theme,
-        padding: widget.padding,
-        maxWidth: widget.maxWidth,
-        textSpanDecorator: widget.features.textSpanDecorator,
-        text: widget.textStyle,
-      ),
-      dropTargetStyle: RichTextStyle.dropTarget(theme),
-      header: _header(toolbarTheme),
-      footer: _footer(toolbarTheme),
-    );
+    // Built for the room kept around the caret, which a scrollable editor only
+    // knows once laid out (see [_measured]).
+    Widget page(double autoScrollEdgeOffset) {
+      final editor = AppFlowyEditor(
+        editorState: widget.editorState,
+        editorScrollController: scrollController,
+        autoScrollEdgeOffset: autoScrollEdgeOffset,
+        blockComponentBuilders: _builders,
+        editable: widget.editable,
+        shrinkWrap: !widget.scrollable,
+        // Nothing to type into, nothing to select, nothing to scroll: the three
+        // service layers come off and only the renderer is left.
+        disableKeyboardService: !widget.editable,
+        disableSelectionService: !widget.editable,
+        disableScrollService: !widget.editable,
+        // Every shortcut but a feature's own goes behind the features' guards, so
+        // a block that swallows typing keeps Enter, the markdown triggers and the
+        // "/" menu out of itself.
+        characterShortcutEvents: _characterShortcuts,
+        // A feature's own first, then what any block selected whole needs — the
+        // package walks a delta for both, and these blocks have none.
+        commandShortcutEvents: [
+          ...widget.features.commandShortcuts,
+          if (widget.onSubmit != null) ..._submitShortcuts,
+          ...wholeBlockCommands,
+          richTextCopyCommand(features: widget.features),
+          richTextCutCommand(features: widget.features),
+          richTextPasteCommand(features: widget.features),
+          ...standardCommandShortcutEvents,
+        ],
+        // Only ever called where there is a pointer to right-click with: the
+        // package wires it on the desktop side alone, which is what left a thumb
+        // with no way to paste (see RichTextTouchMenu).
+        contextMenuBuilder: _buildContextMenu,
+        editorStyle: RichTextStyle.editor(
+          theme,
+          padding: widget.padding,
+          maxWidth: widget.maxWidth,
+          textSpanDecorator: widget.features.textSpanDecorator,
+          text: widget.textStyle,
+        ),
+        dropTargetStyle: RichTextStyle.dropTarget(theme),
+        header: _header(toolbarTheme),
+        footer: _footer(toolbarTheme),
+      );
 
-    final page = widget.editable ? _underContent(editor) : editor;
+      return widget.editable ? _underContent(editor) : editor;
+    }
 
     // The strip goes on the outside, and it matters where: a capped field puts
     // its blocks in a scroll view, and a strip inside that one stood at the
@@ -1221,13 +1227,23 @@ class RichTextEditorState extends State<RichTextEditor> {
   /// the content first is what the package's own example does, and it is the
   /// component's job rather than every caller's. A rendered document is always
   /// measured: it takes the height of what it holds wherever it is put.
-  Widget _measured(Widget page) {
+  Widget _measured(Widget Function(double autoScrollEdgeOffset) page) {
     if (!widget.editable) {
-      return IntrinsicHeight(child: _beside(page));
+      return IntrinsicHeight(
+        child: _beside(page(appFlowyEditorAutoScrollEdgeOffset)),
+      );
     }
 
     if (widget.scrollable) {
-      return _beside(page);
+      // Built while laying out, before the frame's callbacks: the package
+      // scrolls to the caret from one of them, and a window that shrank in
+      // that same frame (a keyboard coming up) must already be accounted for.
+      return _beside(
+        LayoutBuilder(
+          builder: (context, constraints) =>
+              page(_edgeOffsetWithin(constraints.maxHeight)),
+        ),
+      );
     }
 
     // The arrangement the package asks for when the document lays itself out as
@@ -1261,7 +1277,9 @@ class RichTextEditorState extends State<RichTextEditor> {
                   child: SingleChildScrollView(
                     key: _viewportKey,
                     controller: scrollController.scrollController,
-                    child: IntrinsicHeight(child: page),
+                    child: IntrinsicHeight(
+                      child: page(_edgeOffsetWithin(maxHeight)),
+                    ),
                   ),
                 ),
               ),
@@ -1277,9 +1295,10 @@ class RichTextEditorState extends State<RichTextEditor> {
     // that scrolls. The pass runs the whole subtree twice, which a block laying
     // itself out against its constraints (a picture and its handles) refuses
     // outright, so a field given a height of its own is left alone.
+    final field = page(appFlowyEditorAutoScrollEdgeOffset);
     final measured = LayoutBuilder(
       builder: (context, constraints) =>
-          constraints.hasBoundedHeight ? page : IntrinsicHeight(child: page),
+          constraints.hasBoundedHeight ? field : IntrinsicHeight(child: field),
     );
 
     if (widget.minHeight case final minHeight?) {
@@ -1293,6 +1312,17 @@ class RichTextEditorState extends State<RichTextEditor> {
 
     return _beside(measured);
   }
+
+  /// The room kept around the caret, under half of the [window] the blocks
+  /// scroll in.
+  ///
+  /// The package keeps a square of 220 around the caret in view, and a window
+  /// shorter than that can never hold it: one of its edges is always out, and
+  /// the package scrolls back and forth for good, with no duration, in a chain
+  /// of microtasks that never hands the frame back. A note under its cover
+  /// with a tall keyboard open is such a window.
+  static double _edgeOffsetWithin(double window) =>
+      min(appFlowyEditorAutoScrollEdgeOffset, window / 2);
 
   /// The words with whatever the caller stood at their sides.
   Widget _beside(Widget words) {
