@@ -17,6 +17,7 @@ export 'src/list/column_layout.dart';
 export 'src/list/custom_views.dart';
 export 'src/list/data_groups.dart';
 export 'src/list/data_iterator.dart';
+export 'src/list/data_search_controller.dart';
 export 'src/list/data_table.dart';
 export 'src/list/list_activity.dart';
 export 'src/list/list_url.dart';
