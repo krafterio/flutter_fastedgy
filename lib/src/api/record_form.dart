@@ -8,6 +8,8 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 
 import '../container/container.dart';
+import '../metadata/default_metadata_provider.dart';
+import '../metadata/metadata_provider.dart';
 import '../metadata/models.dart';
 import '../query/registry.dart';
 import '../ui/combo_option.dart';
@@ -28,6 +30,9 @@ class RecordForm<T extends BaseModel<T>> extends StatefulWidget {
 
   /// What the record of [api] is read with.
   final dynamic fields;
+
+  /// The record of [api] already held, shown at once.
+  final T? seed;
 
   final RecordFormController<T>? controller;
 
@@ -50,6 +55,7 @@ class RecordForm<T extends BaseModel<T>> extends StatefulWidget {
   }) : api = null,
        id = null,
        fields = null,
+       seed = null,
        controller = null;
 
   /// Edits the record [id] of [api], read with [fields]: an api of the
@@ -60,6 +66,7 @@ class RecordForm<T extends BaseModel<T>> extends StatefulWidget {
     required this.child,
     super.key,
     this.fields,
+    this.seed,
     this.autoSave = false,
     this.allowAutoSave = true,
     this.autoSaveDelay = const Duration(milliseconds: 600),
@@ -76,6 +83,7 @@ class RecordForm<T extends BaseModel<T>> extends StatefulWidget {
        api = null,
        id = null,
        fields = null,
+       seed = null,
        autoSave = false,
        allowAutoSave = true,
        autoSaveDelay = Duration.zero;
@@ -115,6 +123,7 @@ class _RecordFormState<T extends BaseModel<T>> extends State<RecordForm<T>> {
         api,
         id,
         fields: widget.fields,
+        seed: widget.seed,
         autoSave: widget.autoSave,
         allowAutoSave: widget.allowAutoSave,
         autoSaveDelay: widget.autoSaveDelay,
@@ -128,7 +137,24 @@ class _RecordFormState<T extends BaseModel<T>> extends State<RecordForm<T>> {
   void initState() {
     super.initState();
     _saves = _controller.saves.listen(_tell);
-    unawaited(_readFields());
+    _fields = _cachedFields();
+
+    if (_fields == null) {
+      unawaited(_readFields());
+    }
+  }
+
+  /// The fields of the model when its metadata were read already: the form
+  /// draws at once.
+  Map<String, MetadataField>? _cachedFields() {
+    final name = _controller.record.api.modelName;
+    final provider = hasService<MetadataProvider>()
+        ? getService<MetadataProvider>()
+        : null;
+
+    return name != null && provider is DefaultMetadataProvider
+        ? provider.cachedMetadata(name)?.fields
+        : null;
   }
 
   Future<void> _readFields() async {

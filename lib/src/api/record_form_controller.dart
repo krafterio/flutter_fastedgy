@@ -82,18 +82,19 @@ class RecordFormController<T extends BaseModel<T>> extends ChangeNotifier {
   /// Edits the record [id] of [api], read with [fields] through a record of
   /// its own, given up with the controller: an api of the application, whose
   /// routes are its own ([ApiModel.getResult], [ApiModel.update]), is read and
-  /// written as any other.
+  /// written as any other. A [seed] is the record already held, shown at once.
   factory RecordFormController.api(
     ApiModel<T> api,
     Object id, {
     dynamic fields,
+    T? seed,
     bool autoSave = false,
     bool allowAutoSave = true,
     Duration autoSaveDelay = const Duration(milliseconds: 600),
   }) {
     final record = ApiRecord<T>(api, fields: fields);
 
-    unawaited(record.load(id));
+    unawaited(record.load(id, seed: seed));
 
     return RecordFormController._(
       record,

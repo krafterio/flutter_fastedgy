@@ -190,6 +190,23 @@ void main() {
       expect(await store.get('/dataset/metadatas', 'metadatas'), isNotNull);
     });
 
+    test(
+      'gives the metadata already read without waiting, none before',
+      () async {
+        adapter.routes['GET /dataset/metadatas'] = (options) =>
+            _metadatasPayload;
+
+        expect(provider.cachedMetadata('workspace_user'), isNull);
+
+        await provider.getMetadatas();
+
+        expect(
+          provider.cachedMetadata('workspace_user')?.apiName,
+          'workspace_users',
+        );
+      },
+    );
+
     test('parses the default a field declares', () async {
       adapter.routes['GET /dataset/metadatas'] = (options) => _metadatasPayload;
 

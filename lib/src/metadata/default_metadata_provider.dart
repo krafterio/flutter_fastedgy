@@ -218,4 +218,8 @@ class DefaultMetadataProvider implements MetadataProvider {
     final metadatas = await getMetadatas();
     return metadatas?[modelName];
   }
+
+  /// The metadata of [modelName] already read, without waiting: none before.
+  MetadataModel? cachedMetadata(String modelName) =>
+      _metadatas[_resolvedPrefix]?[modelName];
 }
