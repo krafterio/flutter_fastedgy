@@ -108,13 +108,35 @@ Future<void> writeRichTextClipboard({
   }
 }
 
-/// Copy, then take away what was copied.
+/// Copy, then take away what was copied. A selection starting on a block
+/// without words and reaching into a table is copied only: the package's
+/// deletion reads the words of that first block there, and finds none.
 Future<void> cutRichText(
   EditorState editorState, {
   required RichTextFeatures features,
 }) async {
   await copyRichText(editorState, features: features);
-  await deleteSelectedContent(editorState);
+
+  if (!_startsOutsideTheWordsOfATable(editorState)) {
+    await deleteSelectedContent(editorState);
+  }
+}
+
+bool _startsOutsideTheWordsOfATable(EditorState editorState) {
+  final selection = editorState.selection?.normalized;
+
+  if (selection == null || selection.isCollapsed) {
+    return false;
+  }
+
+  final nodes = editorState.getNodesInSelection(selection);
+
+  return nodes.length > 1 &&
+      nodes.first.delta == null &&
+      [
+        nodes.first.parent?.type,
+        nodes.last.parent?.type,
+      ].contains(TableCellBlockKeys.type);
 }
 
 /// Stands ahead of the package's own copy, which writes the words alone.

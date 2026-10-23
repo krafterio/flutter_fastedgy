@@ -481,6 +481,35 @@ void main() {
       expect(AppFlowyClipboard.lastText, '**Lait** entier');
       expect(state.getNodeAtPath([0])?.delta?.toPlainText(), isEmpty);
     });
+
+    test(
+      'cutting from a block without words into a table keeps the document',
+      () async {
+        final state =
+            EditorState(
+                document: Document(
+                  root: pageNode(
+                    children: [
+                      dividerNode(),
+                      TableNode.fromList([
+                        ['Lait', 'Pain'],
+                      ]).node,
+                    ],
+                  ),
+                ),
+              )
+              ..selection = Selection(
+                start: Position(path: [0]),
+                end: Position(path: [1, 0, 0], offset: 4),
+              );
+        addTearDown(state.dispose);
+        final before = state.document.toJson();
+
+        await cutRichText(state, features: defaultRichTextFeatures);
+
+        expect(state.document.toJson(), before);
+      },
+    );
   });
 
   group('the paste command', () {
