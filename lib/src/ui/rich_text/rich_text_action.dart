@@ -230,6 +230,22 @@ class RichTextAction {
       editorState.selection != null;
 }
 
+/// The word a bare caret stands in, or null over a space or a selection.
+Selection? _wordAtCaret(EditorState editorState) {
+  final selection = editorState.selection;
+
+  if (selection == null || !selection.isCollapsed) {
+    return null;
+  }
+
+  final word = editorState
+      .getNodeAtPath(selection.start.path)
+      ?.selectable
+      ?.getWordBoundaryInPosition(selection.start);
+
+  return word == null || word.isCollapsed ? null : word;
+}
+
 /// Whether there are words under the selection, rather than a bare caret.
 bool _hasSelection(EditorState editorState) {
   final selection = editorState.selection;
@@ -256,6 +272,27 @@ class RichTextActions {
   ///
   /// [features] because what is pasted comes back as the blocks this document
   /// knows how to hold, rather than as the characters it was.
+  /// The system's own "Select" over a bare caret: a held press on iOS only
+  /// moves the caret, and select all was the one way left to reach a word.
+  static RichTextAction get selectWord => RichTextAction(
+    id: 'select_word',
+    glyph: FastEdgyGlyph.selectAll,
+    getLabel: () => t('Select'),
+    group: 6,
+    isActive: (_) => false,
+    isEnabled: (editorState) => _wordAtCaret(editorState) != null,
+    run: (editorState) async {
+      final word = _wordAtCaret(editorState);
+
+      if (word != null) {
+        await editorState.updateSelectionWithReason(
+          word,
+          reason: SelectionUpdateReason.uiEvent,
+        );
+      }
+    },
+  );
+
   static List<RichTextAction> clipboard(RichTextFeatures features) => [
     RichTextAction(
       id: 'cut',

@@ -180,6 +180,7 @@ class _RichTextTouchCalloutState extends State<_RichTextTouchCallout> {
   /// reads down its left edge.
   List<ContextMenuButtonItem> _items() => [
     for (final action in [
+      RichTextActions.selectWord,
       ...RichTextActions.clipboard(widget.features),
       ...widget.actions,
     ])

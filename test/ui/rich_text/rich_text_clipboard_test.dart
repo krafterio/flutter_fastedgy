@@ -30,6 +30,65 @@ void main() {
     return state;
   }
 
+  group('sélectionner un mot', () {
+    Future<EditorState> pumpCaretIn(WidgetTester tester, int offset) async {
+      final state = EditorState(
+        document: Document(
+          root: pageNode(children: [paragraphNode(text: 'Lait entier')]),
+        ),
+      );
+      addTearDown(state.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: RichTextEditor(
+              features: defaultRichTextFeatures,
+              editorState: state,
+            ),
+          ),
+        ),
+      );
+      state.selection = Selection.collapsed(
+        Position(path: [0], offset: offset),
+      );
+      await tester.pump();
+
+      return state;
+    }
+
+    testWidgets('prend le mot sous le curseur, pas toute la note', (
+      tester,
+    ) async {
+      final state = await pumpCaretIn(tester, 2);
+      final select = RichTextActions.selectWord;
+
+      expect(select.isEnabled(state), isTrue);
+      final ran = select.run(state);
+      await tester.pump();
+      await ran;
+
+      expect(
+        state.selection,
+        Selection(
+          start: Position(path: [0], offset: 0),
+          end: Position(path: [0], offset: 4),
+        ),
+      );
+    });
+
+    testWidgets('ne s\'offre pas sur des mots déjà sélectionnés', (
+      tester,
+    ) async {
+      final state = await pumpCaretIn(tester, 2);
+      state.selection = Selection(
+        start: Position(path: [0], offset: 0),
+        end: Position(path: [0], offset: 4),
+      );
+
+      expect(RichTextActions.selectWord.isEnabled(state), isFalse);
+    });
+  });
+
   group('ce qu\'il y a à coller', () {
     test('le bouton ne s\'allume que quand le presse-papier dit oui', () {
       final state = withCaret();
