@@ -99,6 +99,17 @@ void main() {
     expect(record.value?.data['name'], 'Seed');
   });
 
+  test('binds the record it created without reading it again', () async {
+    final record = ApiRecord<_Thing>(api);
+
+    addTearDown(record.dispose);
+    await record.create({'name': 'Krafter'});
+    await settle();
+
+    expect(requests.map((request) => request.method), ['POST']);
+    expect(record.value?.data['name'], 'Krafter');
+  });
+
   test('re-reads on an event that names no record', () async {
     final record = await loaded();
     final before = requests.length;

@@ -187,7 +187,8 @@ class ApiRecord<T extends BaseModel<T>> extends ChangeNotifier
   ///
   /// A [seed] is the record the caller already holds (the row a list opened):
   /// it is shown at once, without a loader, then read again silently unless
-  /// [reread] is false.
+  /// [reread] is false: the seed is then what the app just wrote, and the
+  /// echo of that write is not read.
   Future<bool> load(
     Object id, {
     dynamic fields,
@@ -207,6 +208,10 @@ class ApiRecord<T extends BaseModel<T>> extends ChangeNotifier
       )..active = _active;
     } else {
       watch.id = id;
+    }
+
+    if (seed != null && !reread) {
+      _watch!.caughtUp();
     }
 
     _loaded = true;
