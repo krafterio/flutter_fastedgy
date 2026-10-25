@@ -305,6 +305,37 @@ void main() {
   );
 
   test(
+    'creates a record before storing its files, then writes their paths',
+    () async {
+      final form = RecordFormController.api(api, null);
+
+      addTearDown(form.dispose);
+
+      form
+        ..set('name', 'Krafter')
+        ..set(
+          'avatar',
+          RecordFormFile(bytes: Uint8List.fromList([1, 2, 3]), name: 'me.png'),
+        );
+
+      expect(await form.save(), isTrue);
+      await settle();
+
+      final [create, upload, patch] = [
+        for (final request in requests)
+          if (request.method != 'GET') request,
+      ];
+
+      expect(create.method, 'POST');
+      expect(create.body, {'name': 'Krafter'});
+      expect(upload.path, '/storage/upload/thing/7/avatar');
+      expect(patch.method, 'PATCH');
+      expect(patch.body, {'avatar': 'things/7/avatar.png'});
+      expect(form.dirty, isFalse);
+    },
+  );
+
+  test(
     'reads and writes the record of an api through a record of its own',
     () async {
       final form = RecordFormController.api(

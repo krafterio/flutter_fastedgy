@@ -489,11 +489,12 @@ class RecordFormController<T extends BaseModel<T>> extends ChangeNotifier {
 
   Future<bool> _write(Map<String, Object?> sent, {required bool auto}) async {
     try {
-      final payload = await _payload(sent);
+      if (record.id == null) {
+        await _create(sent);
+      } else {
+        await record.update(await _payload(sent));
+      }
 
-      await (record.id == null
-          ? record.create(payload)
-          : record.update(payload));
       _forget(sent);
       _report(RecordFormSave(fields: sent.keys.toSet(), auto: auto));
 
@@ -534,6 +535,26 @@ class RecordFormController<T extends BaseModel<T>> extends ChangeNotifier {
           messages: _refusal.alerts,
         ),
       );
+
+  /// Creates the record with [sent], its files stored once it exists, their
+  /// paths written then: a file is stored under the id of its record.
+  Future<void> _create(Map<String, Object?> sent) async {
+    final files = {
+      for (final MapEntry(:key, :value) in sent.entries)
+        if (value is RecordFormFile) key: value,
+    };
+
+    await record.create(
+      await _payload({
+        for (final MapEntry(:key, :value) in sent.entries)
+          if (value is! RecordFormFile) key: value,
+      }),
+    );
+
+    if (files.isNotEmpty) {
+      await record.update(await _payload(files));
+    }
+  }
 
   /// [sent] as the record takes it: a file as its path once stored, the key
   /// of a JSON field in the whole of that field.
