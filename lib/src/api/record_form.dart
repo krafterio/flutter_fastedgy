@@ -227,7 +227,8 @@ class RecordFormFeedback {
   /// Told of each save as it ends, written or refused: silent here.
   void show(BuildContext context, RecordFormSave save) {}
 
-  /// [input] with [error] under it, when it has one.
+  /// [input] with [error] under it, when it has one: as wide as the room it
+  /// is given, as wide as the input in a room without bounds (a row).
   Widget field(BuildContext context, Widget input, String? error) {
     if (error == null) {
       return input;
@@ -235,19 +236,25 @@ class RecordFormFeedback {
 
     final theme = FastEdgyTheme.of(context);
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        input,
-        Padding(
-          padding: EdgeInsets.only(top: theme.spacing * 1.5),
-          child: Text(
-            error,
-            style: theme.typography.small.copyWith(color: theme.colors.danger),
+    return LayoutBuilder(
+      builder: (context, constraints) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: constraints.hasBoundedWidth
+            ? CrossAxisAlignment.stretch
+            : CrossAxisAlignment.start,
+        children: [
+          input,
+          Padding(
+            padding: EdgeInsets.only(top: theme.spacing * 1.5),
+            child: Text(
+              error,
+              style: theme.typography.small.copyWith(
+                color: theme.colors.danger,
+              ),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 

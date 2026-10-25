@@ -447,8 +447,15 @@ void main() {
       bool? required,
       Object? defaultValue,
       RecordFormFieldValidator? validator,
+      bool inRow = false,
     }) async {
       final told = <RecordFormSave>[];
+      final filled = RecordFormField(
+        field,
+        required: required,
+        defaultValue: defaultValue,
+        validator: validator,
+      );
 
       getService<RecordFormInputs>().register(FieldKind.text, input);
       container
@@ -463,16 +470,7 @@ void main() {
           textDirection: TextDirection.ltr,
           child: RecordForm.controlled(
             controller: form,
-            child: Column(
-              children: [
-                RecordFormField(
-                  field,
-                  required: required,
-                  defaultValue: defaultValue,
-                  validator: validator,
-                ),
-              ],
-            ),
+            child: inRow ? Row(children: [filled]) : Column(children: [filled]),
           ),
         ),
       );
@@ -501,6 +499,18 @@ void main() {
       expect(find.text('This field is required'), findsOneWidget);
       expect(told.single.error, isA<RecordFormInvalid>());
       expect(told.single.formatted?.fullMessage, contains('Name'));
+    });
+
+    testWidgets('says so under it beside another field, in a row', (
+      tester,
+    ) async {
+      final (form, _) = await pumpFilled(tester, required: true, inRow: true);
+
+      form.set('name', null);
+      await save(tester, form);
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('This field is required'), findsOneWidget);
     });
 
     testWidgets('reads from the metadata that it is to be filled', (
