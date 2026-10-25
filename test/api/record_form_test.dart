@@ -44,6 +44,12 @@ void main() {
               'mail': metaField('mail', type: 'email', label: 'Mail'),
               'code': metaField('code', type: 'char', readonly: true),
               'data': metaField('data', type: 'json'),
+              'title': metaField(
+                'title',
+                type: 'char',
+                label: 'Title',
+                required: true,
+              ),
             },
           ),
         }),
@@ -253,6 +259,9 @@ void main() {
       EdgeInsets alertPadding = EdgeInsets.zero,
       RecordFormFieldValidator? validator,
       Widget Function(BuildContext context, RecordFormInput input)? drawn,
+      String field = 'name',
+      bool? required,
+      Object? defaultValue,
     }) async {
       final told = <RecordFormSave>[];
 
@@ -272,7 +281,12 @@ void main() {
             child: Column(
               children: [
                 if (alert) RecordFormAlert(padding: alertPadding),
-                RecordFormField('name', validator: validator),
+                RecordFormField(
+                  field,
+                  validator: validator,
+                  required: required,
+                  defaultValue: defaultValue,
+                ),
               ],
             ),
           ),
@@ -423,6 +437,124 @@ void main() {
 
       expect(find.text('No bang'), findsNothing);
       expect(find.text('input 1'), findsOneWidget);
+    });
+  });
+
+  group('a field to be filled', () {
+    Future<(RecordFormController<_Thing>, List<RecordFormSave>)> pumpFilled(
+      WidgetTester tester, {
+      String field = 'name',
+      bool? required,
+      Object? defaultValue,
+      RecordFormFieldValidator? validator,
+    }) async {
+      final told = <RecordFormSave>[];
+
+      getService<RecordFormInputs>().register(FieldKind.text, input);
+      container
+        ..unregister<RecordFormFeedback>()
+        ..registerSingleton<RecordFormFeedback>(_Feedback(told));
+
+      final form = RecordFormController(thing);
+
+      addTearDown(form.dispose);
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: RecordForm.controlled(
+            controller: form,
+            child: Column(
+              children: [
+                RecordFormField(
+                  field,
+                  required: required,
+                  defaultValue: defaultValue,
+                  validator: validator,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      return (form, told);
+    }
+
+    Future<void> save(
+      WidgetTester tester,
+      RecordFormController<_Thing> form,
+    ) async {
+      await tester.runAsync(form.save);
+      await tester.pump();
+    }
+
+    testWidgets('refuses a save while it is left blank, and says so under it', (
+      tester,
+    ) async {
+      final (form, told) = await pumpFilled(tester, required: true);
+
+      form.set('name', '   ');
+      await save(tester, form);
+
+      expect(writes, isEmpty);
+      expect(find.text('This field is required'), findsOneWidget);
+      expect(told.single.error, isA<RecordFormInvalid>());
+      expect(told.single.formatted?.fullMessage, contains('Name'));
+    });
+
+    testWidgets('reads from the metadata that it is to be filled', (
+      tester,
+    ) async {
+      final (form, told) = await pumpFilled(tester, field: 'title');
+
+      await save(tester, form);
+
+      expect(writes, isEmpty);
+      expect(find.text('This field is required'), findsOneWidget);
+      expect(told.single.saved, isFalse);
+    });
+
+    testWidgets('takes the default it shows for its value', (tester) async {
+      final (form, told) = await pumpFilled(
+        tester,
+        field: 'title',
+        defaultValue: 'Untitled',
+      );
+
+      await save(tester, form);
+
+      expect(find.text('This field is required'), findsNothing);
+      expect(told.single.saved, isTrue);
+    });
+
+    testWidgets('lets a field not to be filled stay empty', (tester) async {
+      final (form, told) = await pumpFilled(tester, required: false);
+
+      form.set('name', null);
+      await save(tester, form);
+
+      expect(find.text('This field is required'), findsNothing);
+      expect(writes.map((write) => write.method), ['PATCH']);
+      expect(told.single.saved, isTrue);
+    });
+
+    testWidgets('still checks it with its validator once filled', (
+      tester,
+    ) async {
+      final (form, told) = await pumpFilled(
+        tester,
+        required: true,
+        validator: (value) => '$value'.endsWith('!') ? 'No bang' : null,
+      );
+
+      await tester.tap(find.text('Name: Lamp on'));
+      await tester.pump();
+      await save(tester, form);
+
+      expect(writes, isEmpty);
+      expect(find.text('No bang'), findsOneWidget);
+      expect(told.single.error, isA<RecordFormInvalid>());
     });
   });
 

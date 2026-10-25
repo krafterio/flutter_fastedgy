@@ -294,9 +294,14 @@ class RecordFormController<T extends BaseModel<T>> extends ChangeNotifier {
   }
 
   /// [validator] checks [field] before a save asked for, in place of the one
-  /// before.
-  void check(String field, RecordFormFieldValidator validator) =>
+  /// before; none, [field] is no longer checked.
+  void check(String field, RecordFormFieldValidator? validator) {
+    if (validator == null) {
+      _validators.remove(field);
+    } else {
       _validators[field] = validator;
+    }
+  }
 
   void detach(String field) {
     final left = (_shown[field] ?? 0) - 1;

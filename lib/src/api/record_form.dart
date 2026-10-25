@@ -8,6 +8,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 
 import '../container/container.dart';
+import '../i18n/i18n.dart';
 import '../metadata/models.dart';
 import '../query/registry.dart';
 import '../ui/combo_option.dart';
@@ -468,6 +469,8 @@ class RecordFormInputs extends FieldRegistry<RecordFormInputBuilder> {
 ///
 /// Why a save was refused about it, by [validator] or by the server, shows
 /// under it as the [RecordFormFeedback] of the form says ([RecordFormFeedback.field]).
+/// A field to be filled ([required], or the metadata) is checked before a save
+/// asked for: left empty, it says so in place of saving.
 class RecordFormField extends StatefulWidget {
   final String field;
 
@@ -495,7 +498,8 @@ class RecordFormField extends StatefulWidget {
   /// default of the metadata.
   final Object? defaultValue;
 
-  /// Whether the field is to be filled, in place of what the metadata say.
+  /// Whether the field is to be filled, in place of what the metadata say:
+  /// left empty, a save asked for is refused.
   final bool? required;
 
   /// Whether a value set is taken: false leaves the field as it is (an offer
@@ -548,10 +552,22 @@ class _RecordFormFieldState extends State<RecordFormField> {
 
       _form = form;
       _shown = form == null ? null : widget.field;
-      form?.attach(widget.field, validator: widget.validator);
-    } else if (widget.validator case final validator?) {
-      form?.check(widget.field, validator);
+      form?.attach(widget.field);
     }
+  }
+
+  /// The [RecordFormField.validator], after the check of a field to be filled
+  /// left empty: its default counts as filled, the field shows it.
+  RecordFormFieldValidator? _validatorOf(bool required, Object? defaultValue) {
+    final validator = widget.validator;
+
+    if (!required) {
+      return validator;
+    }
+
+    return (value) => _blank(value ?? defaultValue)
+        ? t('This field is required')
+        : validator?.call(value);
   }
 
   @override
@@ -588,6 +604,15 @@ class _RecordFormFieldState extends State<RecordFormField> {
     _follow(scope?.controller);
 
     final described = scope?.fields?[field];
+
+    scope?.controller.check(
+      field,
+      _validatorOf(
+        required ?? described?.required ?? false,
+        defaultValue ?? described?.defaultValue,
+      ),
+    );
+
     final metadata = scope?.fields == null
         ? null
         : described == null && type == null && input == null
@@ -649,3 +674,14 @@ class _RecordFormFieldState extends State<RecordFormField> {
     );
   }
 }
+
+/// Whether [value] leaves a field empty: nothing, a blank text, an empty list
+/// or map, a file taken away.
+bool _blank(Object? value) => switch (value) {
+  null => true,
+  String() => value.trim().isEmpty,
+  Iterable<Object?>() => value.isEmpty,
+  Map<Object?, Object?>() => value.isEmpty,
+  RecordFormFile() => value.removed,
+  _ => false,
+};
