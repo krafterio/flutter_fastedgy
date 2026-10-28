@@ -18,6 +18,8 @@ export 'src/initializer.dart';
 
 export 'src/app_info/app_info.dart';
 
+export 'src/binding/fastedgy_binding.dart';
+
 export 'src/container/container.dart'
     show container, initializeContainer, getService, hasService;
 
