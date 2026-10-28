@@ -151,6 +151,15 @@ Fetcher _fetcher(_ScriptedAdapter adapter) => Fetcher.create(
   enableErrorTransform: false,
 );
 
+class _ReadonlyStore extends Fake implements LocalStore {
+  @override
+  Future<void> put(
+    String model,
+    Object id,
+    Map<String, dynamic> record,
+  ) async => throw StateError('attempt to write a readonly database');
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -337,6 +346,26 @@ void main() {
 
       expect(await provider.getMetadatas(), isNull);
       expect(provider.error, isA<UnauthorizedError>());
+      expect(severe, isEmpty);
+    },
+  );
+
+  test(
+    'a local store that refuses the write keeps the metadata read',
+    () async {
+      adapter.routes['GET /dataset/metadatas'] = (options) => _metadatasPayload;
+      container.unregister<LocalStore>();
+      container.registerSingleton<LocalStore>(_ReadonlyStore());
+      final severe = <LogRecord>[];
+      final subscription = Logger.root.onRecord
+          .where((record) => record.level >= Level.SEVERE)
+          .listen(severe.add);
+      addTearDown(subscription.cancel);
+
+      final metadatas = await provider.getMetadatas();
+
+      expect(metadatas?['workspace_user']?.apiName, 'workspace_users');
+      expect(provider.error, isNull);
       expect(severe, isEmpty);
     },
   );

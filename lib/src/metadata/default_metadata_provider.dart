@@ -179,7 +179,12 @@ class DefaultMetadataProvider implements MetadataProvider {
   // The raw payload is mirrored into the local store so the schema stays
   // available offline (LocalSchema/replica depend on it at cold boot).
   Future<void> _persist(String scope, Map<String, dynamic> data) async {
-    await _localStore?.put(_cacheModel, _cacheKeyOf(scope), data);
+    try {
+      await _localStore?.put(_cacheModel, _cacheKeyOf(scope), data);
+    } catch (e) {
+      // The schema read is good, only its offline copy is missing.
+      _logger.warning('Metadata not mirrored locally: $e');
+    }
   }
 
   Future<bool> _restore(String scope) async {
