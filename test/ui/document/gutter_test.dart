@@ -40,10 +40,9 @@ void main() {
     WidgetTester tester, {
     DocumentLayout? mounted,
     Widget? header,
+    String markdown = 'Un\n\nDeux\n\nTrois',
   }) async {
-    final state = EditorState(
-      document: markdownToDocument('Un\n\nDeux\n\nTrois'),
-    );
+    final state = EditorState(document: markdownToDocument(markdown));
     addTearDown(state.dispose);
 
     final editor = DocumentEditor(editorState: state, header: header);
@@ -289,6 +288,35 @@ void main() {
         expect(handles(FastEdgyGlyph.add), findsNothing);
         expect(handles(FastEdgyGlyph.gripRow), findsNWidgets(3));
         expect(find.byType(Draggable<Node>), findsNWidgets(3));
+      });
+    });
+
+    testWidgets('un tableau se dessine sous le pointeur qui le traîne', (
+      tester,
+    ) async {
+      await onPlatform(TargetPlatform.macOS, () async {
+        final state = await pumpPage(
+          tester,
+          markdown: '| a | b |\n| --- | --- |\n| 1 | 2 |\n\nFin',
+        );
+        await caretOn(tester, state, 0);
+
+        final handle = tester.getCenter(find.byType(Draggable<Node>).first);
+        final gesture = await tester.createGesture(
+          kind: PointerDeviceKind.mouse,
+        );
+        await gesture.addPointer(location: handle - const Offset(0, 20));
+        await gesture.moveTo(handle);
+        await tester.pump();
+        await gesture.down(handle);
+        await tester.pump();
+        await gesture.moveBy(const Offset(0, 10));
+        await tester.pump();
+        await gesture.moveBy(const Offset(0, 40));
+        await tester.pump();
+        expect(tester.takeException(), isNull);
+        await gesture.up();
+        await tester.pumpAndSettle();
       });
     });
 

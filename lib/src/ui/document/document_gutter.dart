@@ -193,7 +193,10 @@ class _DocumentGutterState extends State<DocumentGutter> {
         child: IntrinsicHeight(
           child: Provider.value(
             value: _editorState,
-            child: widget.builder.build(_feedbackContext),
+            child: ChangeNotifierProvider<Node>.value(
+              value: _node,
+              child: widget.builder.build(_feedbackContext),
+            ),
           ),
         ),
       ),
