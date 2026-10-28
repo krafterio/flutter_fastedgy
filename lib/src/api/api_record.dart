@@ -7,6 +7,7 @@ import '../fetcher/http_error.dart';
 import '../realtime/resource_watch.dart';
 import 'api_holders.dart';
 import 'api_model.dart';
+import 'read_cache.dart';
 import 'api_query.dart';
 import 'base_model.dart';
 import 'data_availability.dart';
@@ -31,7 +32,12 @@ import 'local_writes.dart';
 class ApiRecord<T extends BaseModel<T>> extends ChangeNotifier
     with DataAvailabilityState<T>, LocalWrites<T>
     implements ApiHolder, ActiveHolder {
-  ApiRecord(this.api, {dynamic fields}) : _configFields = fields {
+  ApiRecord(
+    this.api, {
+    dynamic fields,
+    this.cacheKey,
+    this.staleAfter = const Duration(minutes: 5),
+  }) : _configFields = fields {
     listenAvailability();
     followPatches();
   }
@@ -39,6 +45,17 @@ class ApiRecord<T extends BaseModel<T>> extends ChangeNotifier
   @override
   final ApiModel<T> api;
   dynamic _configFields;
+
+  /// The key the record last read is kept under ([ReadCache]), for
+  /// [loadCached] to show it at once; null keeps nothing. The id is added to
+  /// it: name in it whom the record is read for.
+  final String? cacheKey;
+
+  /// How old the kept record may be before [loadCached] reads it again.
+  final Duration staleAfter;
+
+  /// The record last written to the [ReadCache], not to be written again.
+  T? _kept;
 
   ResourceWatch? _watch;
   bool _active = true;
@@ -256,6 +273,49 @@ class ApiRecord<T extends BaseModel<T>> extends ChangeNotifier
 
   @override
   Future<bool> reload() => _id != null ? load(_id!) : Future.value(false);
+
+  /// [load] from the record last read for [id] under [cacheKey]: shown at
+  /// once, without a loader, and read again only once older than
+  /// [staleAfter], or when [force]d. Without a cacheKey, or anything kept,
+  /// a plain [load].
+  Future<bool> loadCached(Object id, {bool force = false}) async {
+    final key = cacheKey == null ? null : '$cacheKey:$id';
+    final kept = key == null
+        ? null
+        : ReadCache.peek(key) ?? await ReadCache.read(key);
+    final value = kept?.value;
+
+    if (kept == null || value is! Map) {
+      return load(id);
+    }
+
+    final seed = api.fromJson(Map<String, dynamic>.from(value));
+    _kept = seed;
+
+    return load(id, seed: seed, reread: force || kept.isStale(staleAfter));
+  }
+
+  @override
+  void notifyListeners() {
+    _keep();
+    super.notifyListeners();
+  }
+
+  void _keep() {
+    final key = cacheKey;
+    final value = _value;
+
+    if (key == null ||
+        value == null ||
+        !_loaded ||
+        _isLoading ||
+        identical(value, _kept)) {
+      return;
+    }
+
+    _kept = value;
+    unawaited(ReadCache.write('$key:$_id', value.toJson()));
+  }
 
   Future<void> _onResourceChanged(ResourceChangedEvent event) async {
     if (!_loaded || _disposed || _id == null) return;

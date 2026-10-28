@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
@@ -13,6 +14,7 @@ import 'data_availability.dart';
 import 'local_writes.dart';
 import 'list_sort.dart';
 import 'pagination_result.dart';
+import 'read_cache.dart';
 
 /// The rows of a model, read a page at a time and followed as they change.
 ///
@@ -31,6 +33,8 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
     this.refreshDelay = const Duration(milliseconds: 250),
     this._watchFields,
     bool Function(ResourceChangedEvent event)? where,
+    this.cacheKey,
+    this.staleAfter = const Duration(minutes: 5),
   }) : _configFields = fields,
        _configOrderBy = orderBy {
     if (autoRefreshOnChange) {
@@ -82,6 +86,17 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
 
     return declared is Iterable<String> ? declared.toList() : const [];
   }
+
+  /// The key the rows last read are kept under ([ReadCache]), for
+  /// [loadCached] to show them at once; null keeps nothing. The query is
+  /// added to it: name in it whom the rows are read for.
+  final String? cacheKey;
+
+  /// How old the kept rows may be before [loadCached] reads them again.
+  final Duration staleAfter;
+
+  /// The rows last written to the [ReadCache], not to be written again.
+  List<T>? _kept;
 
   /// How long a burst of writes is collapsed before the rows re-read.
   ///
@@ -197,6 +212,65 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
       if (e.id == id) return e;
     }
     return null;
+  }
+
+  /// [load] from the rows last read for [query] under [cacheKey]: shown at
+  /// once, without a loader, and read again only once older than
+  /// [staleAfter], or when [force]d. Without a cacheKey, or anything kept,
+  /// a plain [load].
+  Future<bool> loadCached({ListQuery? query, bool force = false}) async {
+    final key = _cacheKeyOf(query);
+    final kept = key == null
+        ? null
+        : ReadCache.peek(key) ?? await ReadCache.read(key);
+    final value = kept?.value;
+
+    if (kept == null || value is! Map || value['items'] is! List) {
+      return load(query: query);
+    }
+
+    final seed = <T>[
+      for (final row in value['items'] as List)
+        if (row is Map) api.fromJson(Map<String, dynamic>.from(row)),
+    ];
+    _kept = seed;
+
+    return load(
+      query: query,
+      seed: seed,
+      seedTotal: value['total'] is int ? value['total'] as int : null,
+      reread: force || kept.isStale(staleAfter),
+    );
+  }
+
+  String? _cacheKeyOf(ListQuery? query) {
+    final key = cacheKey;
+
+    return key == null
+        ? null
+        : '$key:${jsonEncode([ApiHelpers.encodeFields(query?.fields), query?.filter, query?.orderBy, query?.size ?? query?.limit])}';
+  }
+
+  @override
+  void notifyListeners() {
+    _keep();
+    super.notifyListeners();
+  }
+
+  void _keep() {
+    final key = _cacheKeyOf(_query);
+
+    if (key == null || !_loaded || _isLoading || identical(_items, _kept)) {
+      return;
+    }
+
+    _kept = _items;
+    unawaited(
+      ReadCache.write(key, {
+        'items': [for (final row in _items) row.toJson()],
+        'total': _total,
+      }),
+    );
   }
 
   /// Reads the first page of [query].

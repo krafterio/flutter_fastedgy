@@ -5,6 +5,7 @@
 
 export 'api_collection.dart';
 export 'api_record.dart';
+export 'read_cache.dart';
 export 'record_form.dart';
 export 'record_form_controller.dart';
 export 'local_writes.dart';
