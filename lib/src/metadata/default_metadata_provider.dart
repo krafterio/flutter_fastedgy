@@ -147,6 +147,10 @@ class DefaultMetadataProvider implements MetadataProvider {
     } on HttpError catch (e) {
       if (isServerUnavailable(e) && await _restore(scope)) {
         _logger.fine('Metadata served from the local mirror');
+      } else if (e is UnauthorizedError) {
+        // No session left: they are read again once signed in.
+        _logger.fine('Metadata not fetched: session not authenticated');
+        _error = e;
       } else {
         // Nothing mirrored yet (first launch offline): the caller is told the
         // schema is missing. The log pipeline degrades an unanswered server.

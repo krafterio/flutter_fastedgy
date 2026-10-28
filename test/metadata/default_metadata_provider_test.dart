@@ -28,6 +28,7 @@ class _AcmeWorkspace implements OfflineContextParamsResolver {
 
 class _ScriptedAdapter implements HttpClientAdapter {
   bool offline = false;
+  bool signedOut = false;
   final Map<String, Map<String, dynamic> Function(RequestOptions options)>
   routes = {};
 
@@ -42,6 +43,16 @@ class _ScriptedAdapter implements HttpClientAdapter {
         requestOptions: options,
         type: DioExceptionType.connectionError,
         error: 'offline',
+      );
+    }
+
+    if (signedOut) {
+      return ResponseBody.fromString(
+        '{"detail": "Not authenticated"}',
+        401,
+        headers: {
+          Headers.contentTypeHeader: [Headers.jsonContentType],
+        },
       );
     }
 
@@ -299,6 +310,36 @@ void main() {
       expect(provider.error, isNotNull);
     });
   });
+
+  test(
+    'a session the server no longer knows is not reported as a failure',
+    () async {
+      adapter.signedOut = true;
+      final provider = DefaultMetadataProvider(
+        Fetcher.create(
+          dio: Dio(BaseOptions(baseUrl: 'http://localhost'))
+            ..httpClientAdapter = adapter,
+          bus: getService<Bus>(),
+          enableAuth: false,
+          enableTimezone: false,
+          enableRefreshToken: false,
+          enableConnectionRetry: false,
+          enableLogging: false,
+        ),
+        _MockAuthProvider(),
+        getService<Bus>(),
+      );
+      final severe = <LogRecord>[];
+      final subscription = Logger.root.onRecord
+          .where((record) => record.level >= Level.SEVERE)
+          .listen(severe.add);
+      addTearDown(subscription.cancel);
+
+      expect(await provider.getMetadatas(), isNull);
+      expect(provider.error, isA<UnauthorizedError>());
+      expect(severe, isEmpty);
+    },
+  );
 
   group('DefaultMetadataProvider single-flight', () {
     test('serves concurrent callers from one request', () async {
