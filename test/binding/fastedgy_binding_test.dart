@@ -1,4 +1,6 @@
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart' show SizedBox;
 import 'package:flutter_fastedgy/flutter_fastedgy.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -70,5 +72,24 @@ void main() {
     TextInputMessenger(recorder).send('flutter/navigation', message);
 
     expect(recorder.sent['flutter/navigation'], same(message));
+  });
+
+  testWidgets('a pointer finds nothing to hit in a view not laid out yet', (
+    tester,
+  ) async {
+    await tester.pumpWidget(const SizedBox());
+    final viewId = tester.view.viewId;
+    final waiting = RenderView(
+      view: tester.view,
+      child: RenderConstrainedBox(
+        additionalConstraints: const BoxConstraints(),
+      ),
+    );
+
+    expect(FastEdgyBinding.awaitsLayout([waiting], viewId), isTrue);
+    expect(
+      FastEdgyBinding.awaitsLayout(tester.binding.renderViews, viewId),
+      isFalse,
+    );
   });
 }

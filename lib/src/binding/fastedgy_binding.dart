@@ -3,15 +3,22 @@
  * MIT License (see LICENSE file).
  */
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 /// The [WidgetsFlutterBinding] of a FastEdgy application, created in place of
 /// it at the start of `main`.
 ///
-/// What it adds: the text handed to the system keyboard and to the clipboard is
-/// always valid UTF-16. iOS decodes it as JSON and stops the app on half a
-/// surrogate pair (an emoji cut in two), a native crash no Dart code can catch.
+/// What it adds:
+/// - the text handed to the system keyboard and to the clipboard is always
+///   valid UTF-16. iOS decodes it as JSON and stops the app on half a
+///   surrogate pair (an emoji cut in two), a native crash no Dart code can
+///   catch;
+/// - a pointer that comes before its view was first laid out (the mouse over a
+///   desktop window as the app starts) hits nothing, where the framework would
+///   read the size the root does not have yet.
 class FastEdgyBinding extends WidgetsFlutterBinding {
   static FastEdgyBinding? _instance;
 
@@ -20,6 +27,21 @@ class FastEdgyBinding extends WidgetsFlutterBinding {
   @override
   BinaryMessenger createBinaryMessenger() =>
       TextInputMessenger(super.createBinaryMessenger());
+
+  @override
+  void hitTestInView(HitTestResult result, Offset position, int viewId) {
+    if (awaitsLayout(renderViews, viewId)) {
+      return;
+    }
+
+    super.hitTestInView(result, position, viewId);
+  }
+
+  /// Whether the root of the view [viewId] among [views] was never laid out.
+  @visibleForTesting
+  static bool awaitsLayout(Iterable<RenderView> views, int viewId) => views.any(
+    (view) => view.flutterView.viewId == viewId && view.child?.hasSize == false,
+  );
 }
 
 /// Hands every message on to [messenger], those of the text input and of the
