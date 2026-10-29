@@ -9,17 +9,20 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
 import 'package:go_router/go_router.dart';
 
+import 'shell_back.dart';
+
 final _configs = Expando<RouterConfig<RouteMatchList>>();
 
 /// [router], whose way back to the previous entry of the browser history is
-/// that entry rather than a new one.
+/// that entry rather than a new one, and whose back button stops at a shell
+/// left out of the tree ([ShellBackRouterDelegate]).
 RouterConfig<RouteMatchList> historyBackRouterConfig(GoRouter router) =>
     _configs[router] ??= RouterConfig(
       routeInformationProvider: HistoryBackRouteInformationProvider(
         router.routeInformationProvider,
       ),
       routeInformationParser: router.routeInformationParser,
-      routerDelegate: router.routerDelegate,
+      routerDelegate: ShellBackRouterDelegate(router.routerDelegate),
       backButtonDispatcher: router.backButtonDispatcher,
     );
 
