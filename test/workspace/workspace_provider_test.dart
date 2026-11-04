@@ -29,17 +29,6 @@ class _Provider extends WorkspaceProvider<_Workspace> {
   Future<void> loadRelated() async => related.add(slug);
 }
 
-class _Session implements AuthProvider {
-  bool signedIn = true;
-
-  @override
-  Future<bool> isAuthenticated() async => signedIn;
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      throw UnimplementedError('${invocation.memberName}');
-}
-
 Map<String, dynamic> _list(List<String> slugs) => {
   'items': [
     for (final (index, slug) in slugs.indexed) {'id': index + 1, 'slug': slug},
@@ -133,7 +122,9 @@ void main() {
     await pumpEventQueue();
     expect(sent, ['GET /workspaces']);
 
-    getService<Bus>().fire(const AuthLogoutEvent());
+    getService<Bus>()
+      ..fire(const AuthLogoutEvent())
+      ..fire(const AuthLoggedEvent());
     await pumpEventQueue();
 
     final opened = workspaces.load();
@@ -148,10 +139,7 @@ void main() {
 
   test('sends nothing for a request under a workspace once signed out, and '
       'reads the list at the next sign-in', () async {
-    final auth = _Session();
-    container.registerSingleton<AuthProvider>(auth);
     await workspaces.load();
-    auth.signedIn = false;
     getService<Bus>().fire(const AuthLogoutEvent());
     await pumpEventQueue();
     sent.clear();
@@ -163,7 +151,8 @@ void main() {
     expect(sent, isEmpty);
     expect(workspaces.loaded, isFalse);
 
-    auth.signedIn = true;
+    getService<Bus>().fire(const AuthLoggedEvent());
+    await pumpEventQueue();
     await workspaces.load();
 
     expect(sent, ['GET /workspaces']);

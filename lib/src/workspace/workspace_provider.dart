@@ -11,7 +11,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../api/api_model_engine.dart';
 import '../api/base_model.dart';
 import '../auth/auth_events.dart';
-import '../auth/auth_provider.dart';
 import '../auth/user_provider.dart';
 import '../bus/bus.dart';
 import '../bus/events.dart';
@@ -98,7 +97,11 @@ class WorkspaceProvider<T extends BaseModel<T>> extends ChangeNotifier {
     this.fields = 'id,name,slug',
   }) {
     final bus = getService<Bus>();
-    bus.on<AuthLogoutEvent>().listen((_) => reset());
+    bus.on<AuthLoggedEvent>().listen((_) => _signedOut = false);
+    bus.on<AuthLogoutEvent>().listen((_) {
+      _signedOut = true;
+      reset();
+    });
     bus.on<ResourceChangedEvent>().listen((event) {
       if (_loaded) {
         onResourceChanged(event);
@@ -175,6 +178,9 @@ class WorkspaceProvider<T extends BaseModel<T>> extends ChangeNotifier {
   /// Bumped by a sign-out: a read for the account that left answers for nobody.
   int _generation = 0;
 
+  /// From a sign-out to the next sign-in: no account to read the list of.
+  bool _signedOut = false;
+
   /// Each list read and each local change takes a number: a read answering
   /// after a more recent one, or after a local change, tells an older list.
   int _sequence = 0;
@@ -247,6 +253,10 @@ class WorkspaceProvider<T extends BaseModel<T>> extends ChangeNotifier {
   /// passes, and reading again there would turn a server that does not answer
   /// into a loop of requests. Nothing opened yet, the read opens the choice.
   Future<T?> load() {
+    if (_signedOut) {
+      return Future.value();
+    }
+
     if (_loaded) {
       return Future.value(current);
     }
@@ -258,12 +268,6 @@ class WorkspaceProvider<T extends BaseModel<T>> extends ChangeNotifier {
     _loading = true;
 
     try {
-      // No session: no account to read the workspaces of, and nothing marked
-      // read, the sign-in reads them.
-      if (!await _signedIn()) {
-        return null;
-      }
-
       await _readRemembered();
       await _readAccount();
 
@@ -567,11 +571,6 @@ class WorkspaceProvider<T extends BaseModel<T>> extends ChangeNotifier {
       ),
     );
   }
-
-  /// An app without an [AuthProvider] tells no session: its list is read.
-  Future<bool> _signedIn() async =>
-      !hasService<AuthProvider>() ||
-      await getService<AuthProvider>().isAuthenticated();
 
   /// A failure of the account read is the list's to report: its read runs
   /// into the same.

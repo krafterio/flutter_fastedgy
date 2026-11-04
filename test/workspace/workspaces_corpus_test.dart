@@ -147,7 +147,9 @@ void main() {
         } else if (step.containsKey('makeDefault')) {
           await provider.makeDefault(step['makeDefault'] as String);
         } else if (step['logout'] == true) {
-          bus.fire(const AuthLogoutEvent());
+          bus
+            ..fire(const AuthLogoutEvent())
+            ..fire(const AuthLoggedEvent());
         } else if (step.containsKey('request')) {
           final [method, path] = (step['request'] as String).split(' ');
 
