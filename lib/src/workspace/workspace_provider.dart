@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../api/api_model_engine.dart';
 import '../api/base_model.dart';
 import '../auth/auth_events.dart';
+import '../auth/auth_provider.dart';
 import '../auth/user_provider.dart';
 import '../bus/bus.dart';
 import '../bus/events.dart';
@@ -257,6 +258,12 @@ class WorkspaceProvider<T extends BaseModel<T>> extends ChangeNotifier {
     _loading = true;
 
     try {
+      // No session: no account to read the workspaces of, and nothing marked
+      // read, the sign-in reads them.
+      if (!await _signedIn()) {
+        return null;
+      }
+
       await _readRemembered();
       await _readAccount();
 
@@ -560,6 +567,11 @@ class WorkspaceProvider<T extends BaseModel<T>> extends ChangeNotifier {
       ),
     );
   }
+
+  /// An app without an [AuthProvider] tells no session: its list is read.
+  Future<bool> _signedIn() async =>
+      !hasService<AuthProvider>() ||
+      await getService<AuthProvider>().isAuthenticated();
 
   /// A failure of the account read is the list's to report: its read runs
   /// into the same.
