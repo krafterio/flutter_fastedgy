@@ -270,6 +270,7 @@ Future<void> initializeFastEdgy({
   OfflineDatabase? offlineDb;
   OfflineDatabase sharedDb() =>
       offlineDb ??= OfflineDatabase.open(offlineDbName ?? 'data.db');
+  closeOnExit(() => offlineDb);
 
   // A store that holds its bytes in a file of its own opens a second database,
   // which drift reads as this class built twice.

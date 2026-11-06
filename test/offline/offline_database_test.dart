@@ -6,10 +6,15 @@
 import 'dart:io';
 
 import 'package:drift/native.dart';
+
+import 'dart:ui' show AppExitResponse;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_fastedgy/flutter_fastedgy.dart';
 
 void main() {
+  _closesOnExit();
+
   late Directory directory;
   late OfflineDatabase db;
 
@@ -44,5 +49,24 @@ void main() {
 
       expect(row.read<int>('timeout'), greaterThan(0));
     });
+  });
+}
+
+void _closesOnExit() {
+  testWidgets('the shared database is closed when the app is asked to exit', (
+    tester,
+  ) async {
+    OfflineDatabase.allowMultipleInstances();
+    final database = OfflineDatabase(NativeDatabase.memory());
+    final listener = closeOnExit(() => database);
+    addTearDown(listener.dispose);
+    await database.customSelect('select 1').get();
+
+    expect(await tester.binding.handleRequestAppExit(), AppExitResponse.exit);
+
+    await expectLater(
+      database.customSelect('select 1').get(),
+      throwsA(anything),
+    );
   });
 }

@@ -3,10 +3,13 @@
  * MIT License (see LICENSE file).
  */
 
+import 'dart:ui' show AppExitResponse;
+
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb, visibleForTesting;
+import 'package:flutter/widgets.dart' show AppLifecycleListener;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqlite3/common.dart';
 
@@ -57,6 +60,15 @@ class OfflineDatabase extends GeneratedDatabase {
   @override
   int get schemaVersion => 1;
 }
+
+AppLifecycleListener closeOnExit(OfflineDatabase? Function() database) =>
+    AppLifecycleListener(
+      onExitRequested: () async {
+        await database()?.close();
+
+        return AppExitResponse.exit;
+      },
+    );
 
 /// The folder of the native database file, or null to keep drift's default,
 /// the app documents directory.
