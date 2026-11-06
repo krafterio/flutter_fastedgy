@@ -351,6 +351,22 @@ void main() {
   );
 
   test(
+    'a workspace the server does not know is not reported as a failure',
+    () async {
+      final severe = <LogRecord>[];
+      final subscription = Logger.root.onRecord
+          .where((record) => record.level >= Level.SEVERE)
+          .listen(severe.add);
+      addTearDown(subscription.cancel);
+
+      expect(await provider.getMetadatas(), isNull);
+      expect(provider.error, isA<HttpError>());
+      expect((provider.error! as HttpError).statusCode, 404);
+      expect(severe, isEmpty);
+    },
+  );
+
+  test(
     'a local store that refuses the write keeps the metadata read',
     () async {
       adapter.routes['GET /dataset/metadatas'] = (options) => _metadatasPayload;

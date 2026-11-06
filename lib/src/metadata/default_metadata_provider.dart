@@ -151,6 +151,9 @@ class DefaultMetadataProvider implements MetadataProvider {
         // No session left: they are read again once signed in.
         _logger.fine('Metadata not fetched: session not authenticated');
         _error = e;
+      } else if (e.statusCode == 404) {
+        _logger.fine('Metadata not fetched: workspace not found');
+        _error = e;
       } else {
         // Nothing mirrored yet (first launch offline): the caller is told the
         // schema is missing. The log pipeline degrades an unanswered server.
