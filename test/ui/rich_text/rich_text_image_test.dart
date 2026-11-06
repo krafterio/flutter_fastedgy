@@ -909,6 +909,26 @@ void main() {
       },
     );
 
+    test('goes after the table when the caret sits in a cell', () async {
+      final state = stateOf([
+        TableNode.fromList([
+          [paragraphNode()],
+        ]).node,
+      ]);
+
+      await insertImage(
+        state,
+        Selection.collapsed(Position(path: [0, 0, 0])),
+        attachmentImageUrl(7),
+      );
+
+      expect(state.document.root.children.map((block) => block.type), [
+        TableBlockKeys.type,
+        ImageBlockKeys.type,
+      ]);
+      expect(state.getNodeAtPath([0, 0])?.children.single.type, 'paragraph');
+    });
+
     test('goes after a block that holds something', () async {
       final state = stateOf([
         paragraphNode(delta: Delta()..insert('Un texte')),

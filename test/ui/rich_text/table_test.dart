@@ -729,6 +729,29 @@ void main() {
     expect(theirs - ours, 10);
   });
 
+  test('a table asked for in a cell goes after the table', () async {
+    final state = EditorState(
+      document: Document.blank()
+        ..insert(
+          [0],
+          [
+            TableNode.fromList([
+              [paragraphNode()],
+            ]).node,
+          ],
+        ),
+    )..selection = Selection.collapsed(Position(path: [0, 0, 0]));
+    addTearDown(state.dispose);
+
+    await const TableFeature().actions.single.run(state);
+
+    expect(state.document.root.children.map((block) => block.type), [
+      TableBlockKeys.type,
+      TableBlockKeys.type,
+    ]);
+    expect(state.getNodeAtPath([0, 0])?.children.single.type, 'paragraph');
+  });
+
   group('through markdown', () {
     const codec = MarkdownRichTextCodec(features: defaultRichTextFeatures);
 

@@ -12,6 +12,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/widgets.dart' show KeyEventResult;
 import 'package:flutter_fastedgy/core.dart' show getLogger, t;
 
+import 'rich_text_caret.dart';
 import 'rich_text_codec.dart';
 import 'rich_text_feature.dart';
 
@@ -173,11 +174,13 @@ Future<void> _insertBlocks(EditorState editorState, List<Node> nodes) async {
 
   final at = selection.end.path;
   final node = editorState.getNodeAtPath(at);
+  final outside = node == null ? null : pathAfterTable(node);
   final replaceable =
+      outside == null &&
       node != null &&
       node.type == ParagraphBlockKeys.type &&
       (node.delta?.isEmpty ?? true);
-  final path = replaceable ? at : at.next;
+  final path = outside ?? (replaceable ? at : at.next);
   final transaction = editorState.transaction..insertNodes(path, nodes);
 
   if (replaceable) {

@@ -4,6 +4,7 @@
  */
 
 import '../../rich_text_action.dart';
+import '../../rich_text_caret.dart';
 import '../../rich_text_feature.dart';
 
 import 'package:appflowy_editor/appflowy_editor.dart';
@@ -74,8 +75,10 @@ class TableFeature extends RichTextFeature {
         final transaction = editorState.transaction;
         // An empty line is where it goes, rather than something to keep above
         // it — which is what the "/" menu leaves behind on that line.
-        final blank = node.delta?.isEmpty ?? false;
-        final at = blank ? selection.end.path : selection.end.path.next;
+        final outside = pathAfterTable(node);
+        final blank = outside == null && (node.delta?.isEmpty ?? false);
+        final at =
+            outside ?? (blank ? selection.end.path : selection.end.path.next);
 
         transaction.insertNode(at, table.node);
 

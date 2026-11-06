@@ -11,6 +11,7 @@ import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_fastedgy/core.dart' show getLogger, t;
 
+import '../../rich_text_caret.dart';
 import '../../rich_text_controls.dart';
 import '../../../icons.dart';
 import '../../rich_text_popover.dart';
@@ -65,7 +66,9 @@ Future<void> insertImage(
 ) async {
   final at = selection.end.path;
   final node = editorState.getNodeAtPath(at);
+  final outside = node == null ? null : pathAfterTable(node);
   final replaceable =
+      outside == null &&
       node != null &&
       node.type == ParagraphBlockKeys.type &&
       (node.delta?.isEmpty ?? true);
@@ -75,7 +78,7 @@ Future<void> insertImage(
     transaction.insertNode(at, imageNode(url: url));
     transaction.deleteNode(node);
   } else {
-    transaction.insertNode(at.next, imageNode(url: url));
+    transaction.insertNode(outside ?? at.next, imageNode(url: url));
   }
 
   await editorState.apply(transaction);

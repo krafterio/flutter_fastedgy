@@ -94,3 +94,15 @@ Position _shift(Position position, Path removed) {
 
   return Position(path: [...path]..[depth] -= 1, offset: position.offset);
 }
+
+Path? pathAfterTable(Node node) {
+  Node? table;
+
+  for (var parent = node.parent; parent != null; parent = parent.parent) {
+    if (parent.type == TableBlockKeys.type) {
+      table = parent;
+    }
+  }
+
+  return table?.path.next;
+}

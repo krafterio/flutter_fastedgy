@@ -167,6 +167,31 @@ void main() {
       );
     });
 
+    test('a picture pasted in a cell goes after the table', () async {
+      final state = EditorState(
+        document: Document.blank()
+          ..insert(
+            [0],
+            [
+              TableNode.fromList([
+                [paragraphNode()],
+              ]).node,
+            ],
+          ),
+      )..selection = Selection.collapsed(Position(path: [0, 0, 0]));
+      addTearDown(state.dispose);
+
+      await pasteMarkdown(
+        state,
+        '![](https://example.org/a.png)',
+        features: defaultRichTextFeatures,
+        fetchImage: (_) async => _png,
+      );
+
+      expect(blocksOf(state), [TableBlockKeys.type, ImageBlockKeys.type]);
+      expect(state.getNodeAtPath([0, 0])?.children.single.type, 'paragraph');
+    });
+
     test('a picture on its own takes the place of the blank line', () async {
       final state = blank();
 
