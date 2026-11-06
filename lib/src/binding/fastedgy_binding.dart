@@ -68,12 +68,53 @@ class TextInputMessenger extends BinaryMessenger {
     }
 
     final call = _codec.decodeMethodCall(message);
+    final arguments = _whole(call.arguments);
 
     return messenger.send(
       channel,
-      _codec.encodeMethodCall(MethodCall(call.method, _whole(call.arguments))),
+      _codec.encodeMethodCall(
+        MethodCall(
+          call.method,
+          call.method == 'TextInput.setEditingState' && arguments is Map
+              ? _offPairs(arguments)
+              : arguments,
+        ),
+      ),
     );
   }
+
+  static const _offsets = {
+    'selectionBase',
+    'selectionExtent',
+    'composingBase',
+    'composingExtent',
+  };
+
+  static Map<Object?, Object?> _offPairs(Map<Object?, Object?> state) {
+    final text = state['text'];
+
+    if (text is! String) {
+      return state;
+    }
+
+    bool splits(Object? offset) =>
+        offset is int &&
+        offset > 0 &&
+        offset < text.length &&
+        _isHigh(text.codeUnitAt(offset - 1)) &&
+        _isLow(text.codeUnitAt(offset));
+
+    return {
+      for (final entry in state.entries)
+        entry.key: _offsets.contains(entry.key) && splits(entry.value)
+            ? (entry.value! as int) - 1
+            : entry.value,
+    };
+  }
+
+  static bool _isHigh(int unit) => unit >= 0xD800 && unit <= 0xDBFF;
+
+  static bool _isLow(int unit) => unit >= 0xDC00 && unit <= 0xDFFF;
 
   static Object? _whole(Object? value) => switch (value) {
     String() => value.replaceAll(_halfPair, '\uFFFD'),

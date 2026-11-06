@@ -52,6 +52,39 @@ void main() {
     );
   });
 
+  test('the keyboard never gets a caret between the halves of a pair', () {
+    final recorder = _Recorder();
+
+    TextInputMessenger(recorder).send(
+      SystemChannels.textInput.name,
+      codec.encodeMethodCall(
+        const MethodCall('TextInput.setEditingState', {
+          'text': 'a😀b',
+          'selectionBase': 2,
+          'selectionExtent': 2,
+          'composingBase': 2,
+          'composingExtent': 4,
+        }),
+      ),
+    );
+
+    final state =
+        codec
+                .decodeMethodCall(recorder.sent[SystemChannels.textInput.name])
+                .arguments
+            as Map;
+
+    expect(
+      [
+        state['selectionBase'],
+        state['selectionExtent'],
+        state['composingBase'],
+        state['composingExtent'],
+      ],
+      [1, 1, 1, 4],
+    );
+  });
+
   test('the clipboard gets half an emoji as a replacement character', () {
     final recorder = _Recorder();
 
