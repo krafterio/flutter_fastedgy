@@ -383,8 +383,12 @@ class RichTextEditorState extends State<RichTextEditor> {
     // The caret also moves without a transaction — a tap, an arrow key, a
     // selection put back by hand — and a field that scrolls has to follow it
     // there too.
-    _watched?.selectionNotifier.removeListener(_revealCaret);
-    _watched = widget.editorState..selectionNotifier.addListener(_revealCaret);
+    _watched?.selectionNotifier
+      ?..removeListener(_revealCaret)
+      ..removeListener(_keepCaretOnABlock);
+    _watched = widget.editorState
+      ..selectionNotifier.addListener(_revealCaret)
+      ..selectionNotifier.addListener(_keepCaretOnABlock);
 
     _edits = widget.editorState.transactionStream.listen((_) {
       _forgetUntouched();
@@ -442,6 +446,8 @@ class RichTextEditorState extends State<RichTextEditor> {
   ///
   /// After the frame: the line that has just been typed has no size until it is
   /// laid out, and there is nothing to bring back into view before that.
+  void _keepCaretOnABlock() => keepCaretOnABlock(widget.editorState);
+
   void _revealCaret() {
     if (!_capped) {
       return;
@@ -536,7 +542,9 @@ class RichTextEditorState extends State<RichTextEditor> {
     _stripHeight.dispose();
     _contextMenuOpen.dispose();
     unawaited(_edits?.cancel());
-    _watched?.selectionNotifier.removeListener(_revealCaret);
+    _watched?.selectionNotifier
+      ?..removeListener(_revealCaret)
+      ..removeListener(_keepCaretOnABlock);
     _slash.dispose();
 
     // A frame late, and it has to be: the list under the editor answers a

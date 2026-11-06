@@ -106,3 +106,24 @@ Path? pathAfterTable(Node node) {
 
   return table?.path.next;
 }
+
+void keepCaretOnABlock(EditorState editorState) {
+  final selection = editorState.selection;
+
+  if (selection == null ||
+      (editorState.getNodeAtPath(selection.start.path) != null &&
+          editorState.getNodeAtPath(selection.end.path) != null)) {
+    return;
+  }
+
+  final path = selection.end.path;
+  final previous = path.isNotEmpty && path.last > 0
+      ? editorState.getNodeAtPath(path.previous)
+      : null;
+
+  if (previous != null) {
+    editorState.selection = Selection.collapsed(
+      Position(path: previous.path, offset: previous.delta?.length ?? 0),
+    );
+  }
+}

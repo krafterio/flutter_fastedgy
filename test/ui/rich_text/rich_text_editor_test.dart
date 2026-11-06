@@ -34,6 +34,40 @@ void main() {
     await tester.pump();
   }
 
+  testWidgets(
+    'a caret left on a block gone moves to the end of the one before',
+    (tester) async {
+      final state = EditorState(
+        document: Document.blank()
+          ..insert(
+            [0],
+            [
+              paragraphNode(delta: Delta()..insert('Avant')),
+              imageNode(url: 'attachment:1'),
+            ],
+          ),
+      );
+      addTearDown(state.dispose);
+      await pump(
+        tester,
+        RichTextEditor(features: defaultRichTextFeatures, editorState: state),
+      );
+
+      await state.apply(
+        state.transaction
+          ..deleteNode(state.getNodeAtPath([1])!)
+          ..afterSelection = Selection.collapsed(Position(path: [1])),
+      );
+
+      expect(
+        state.selection,
+        Selection.collapsed(Position(path: [0], offset: 5)),
+      );
+      expect(state.getNodesInSelection(state.selection!), isNotEmpty);
+      await tester.pump(const Duration(seconds: 1));
+    },
+  );
+
   testWidgets('read-only renders where the height is unbounded, as in a list', (
     tester,
   ) async {
