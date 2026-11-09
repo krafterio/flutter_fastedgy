@@ -26,6 +26,7 @@ import '../offline/offline_mode.dart';
 import '../offline/outbox.dart';
 import '../offline/pending_upload_store.dart';
 import 'models.dart';
+import 'storage_helper.dart';
 
 /// Service for uploading files to FastEdgy storage
 ///
@@ -176,7 +177,7 @@ class StorageUploader {
       _logger.finer('Uploading original file without compression');
       fileBytes = await file.readAsBytes();
       fileName = path.basename(file.path);
-      mimeType = _getMimeType(file.path);
+      mimeType = _mimeTypeOf(file.path);
     }
 
     return _uploadModelFieldBytes(
@@ -223,7 +224,7 @@ class StorageUploader {
       field,
       bytes,
       fileName,
-      mimeType ?? _getMimeTypeFromFilename(fileName),
+      mimeType ?? _mimeTypeOf(fileName),
       onProgress,
       cache,
     );
@@ -330,27 +331,6 @@ class StorageUploader {
   bool _isImage(String filePath) {
     final ext = path.extension(filePath).toLowerCase();
     return ['.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif'].contains(ext);
-  }
-
-  /// Get MIME type from file extension
-  String? _getMimeType(String filePath) {
-    final ext = path.extension(filePath).toLowerCase().replaceAll('.', '');
-    switch (ext) {
-      case 'jpg':
-      case 'jpeg':
-        return 'image/jpeg';
-      case 'png':
-        return 'image/png';
-      case 'webp':
-        return 'image/webp';
-      case 'heic':
-      case 'heif':
-        return 'image/heic';
-      case 'pdf':
-        return 'application/pdf';
-      default:
-        return null;
-    }
   }
 
   /// Compress an image file
@@ -483,7 +463,7 @@ class StorageUploader {
     return _CompressedFile(
       bytes: await file.readAsBytes(),
       fileName: path.basename(file.path),
-      mimeType: _getMimeType(file.path) ?? 'application/octet-stream',
+      mimeType: _mimeTypeOf(file.path) ?? 'application/octet-stream',
     );
   }
 
@@ -517,7 +497,7 @@ class StorageUploader {
 
     for (final entry in filesBytes.entries) {
       final fileName = filenames[entry.key] ?? '${entry.key}.bin';
-      final mimeType = _getMimeTypeFromFilename(fileName);
+      final mimeType = _mimeTypeOf(fileName);
 
       final multipartFile = MultipartFile.fromBytes(
         entry.value,
@@ -595,7 +575,7 @@ class StorageUploader {
 
     for (final entry in filesBytes.entries) {
       final fileName = filenames[entry.key] ?? '${entry.key}.bin';
-      final mimeType = _getMimeTypeFromFilename(fileName);
+      final mimeType = _mimeTypeOf(fileName);
       final values = _attachmentMetaFor(meta, entry.key);
       final buffered = await store.put(
         entry.value,
@@ -680,36 +660,10 @@ class StorageUploader {
     return sequence.nextTempId(_attachmentModel);
   }
 
-  /// Get MIME type from filename
-  String? _getMimeTypeFromFilename(String fileName) {
-    final ext = path.extension(fileName).toLowerCase().replaceAll('.', '');
-    switch (ext) {
-      case 'jpg':
-      case 'jpeg':
-        return 'image/jpeg';
-      case 'png':
-        return 'image/png';
-      case 'webp':
-        return 'image/webp';
-      case 'heic':
-      case 'heif':
-        return 'image/heic';
-      case 'pdf':
-        return 'application/pdf';
-      case 'doc':
-      case 'docx':
-        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-      case 'xls':
-      case 'xlsx':
-        return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-      case 'txt':
-        return 'text/plain';
-      case 'zip':
-        return 'application/zip';
-      default:
-        return null;
-    }
-  }
+  /// The type of [fileName], read from its extension by the package's one table: a copy kept here had drifted
+  /// from it and sent a `.doc` as a `.docx`. Null leaves dio to look it up.
+  String? _mimeTypeOf(String fileName) =>
+      getMimeTypeFromExtension(path.extension(fileName));
 }
 
 /// Internal class for compressed file data
