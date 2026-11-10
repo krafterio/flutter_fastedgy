@@ -106,7 +106,14 @@ class SyncStateProbe {
           if (models != null && models.isNotEmpty) 'models': models.join(','),
         },
       );
-      final items = (response.data['items'] as List?) ?? const [];
+      final items = response.data is Map ? response.data['items'] : null;
+
+      // Without the list there is no answer, and an empty answer would read
+      // as every model being out of reach.
+      if (items is! List) {
+        return null;
+      }
+
       final states = {
         for (final item in items.whereType<Map<String, dynamic>>())
           '${item['model']}': SyncModelState.fromJson(item),

@@ -515,7 +515,15 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
     // all when the caller already asked for every model at once. A mirror with
     // no replica has nowhere to keep a cursor, so it has nothing to compare and
     // does not ask.
-    final serverState = ctx == null ? null : state ?? await _serverState();
+    final answer = ctx == null || state != null ? null : await _serverState();
+
+    // The route leaves out a model the caller cannot read: its list route
+    // would refuse the walk below.
+    if (answer != null && !answer.readable) {
+      return;
+    }
+
+    final serverState = ctx == null ? null : state ?? answer?.state;
     final cursor = ctx == null
         ? null
         : await ctx.replica.store.cursor(ctx.model.name, ctx.scope);
@@ -674,8 +682,8 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
   ///
   /// Null when it cannot say (a server without the route, an unreachable one):
   /// the caller walks the manifest rather than trusting numbers it does not
-  /// have.
-  Future<SyncModelState?> _serverState() async {
+  /// have. An answer without the model says the caller cannot read it.
+  Future<({bool readable, SyncModelState? state})?> _serverState() async {
     // The metadata name is what the route answers to; a model that did not
     // declare one is named after the api name it was read under.
     final name = owner.modelName ?? (await owner.metadata())?.name;
@@ -688,7 +696,11 @@ class OfflineApiModelEngine<T extends BaseModel<T>> extends ApiModelEngine<T> {
         ? getService<SyncStateProbe>()
         : SyncStateProbe(fetcher: owner.fetcher);
 
-    return (await probe.fetch(models: [name]))?[name];
+    final states = await probe.fetch(models: [name]);
+
+    return states == null
+        ? null
+        : (readable: states.containsKey(name), state: states[name]);
   }
 
   /// Every record matching [rule], paginated with the sync field selection.

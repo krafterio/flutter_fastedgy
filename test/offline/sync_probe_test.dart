@@ -318,6 +318,16 @@ void main() {
     },
   );
 
+  test('a model the state leaves out is not walked', () async {
+    adapter.routes['GET /dataset/sync-state'] = (_) => {'items': []};
+    adapter.routes['GET /items'] = (_) => _page([one, two]);
+
+    await api.sync();
+
+    expect(adapter.paths, ['/dataset/sync-state']);
+    expect(await api.cachedList(), isEmpty);
+  });
+
   test(
     'a server that cannot answer the state keeps the manifest walk',
     () async {
