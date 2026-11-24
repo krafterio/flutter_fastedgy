@@ -3,10 +3,15 @@
  * MIT License (see LICENSE file).
  */
 
+import 'dart:async';
+
 import '../api/api_model.dart';
 import '../api/base/dataset_api.dart';
+import '../container/container.dart';
 import '../logging/logger.dart';
 import '../metadata/models.dart';
+import '../realtime/origin.dart';
+import '../realtime/realtime_socket.dart';
 
 final _log = getLogger('Sortable');
 
@@ -95,7 +100,10 @@ class Sortable {
   }
 
   /// Saves the order of [ids] of the model of [of], kept in its [field], where
-  /// the `/dataset` routes of this list answer: the records of an axis.
+  /// the `/dataset` routes of this list answer: the records of an axis. The
+  /// server writes the records one by one, each answering on the socket: their
+  /// echoes are left aside, and the change is announced once on the next
+  /// timer, as the api layer announces a write.
   Future<void> resequenceOf(
     ApiModel of,
     List<int> ids, {
@@ -110,6 +118,12 @@ class Sortable {
       throw StateError('The model of ${of.basePath} is unknown');
     }
 
+    final origin = requestOrigin();
+
+    if (ids.isNotEmpty && hasService<RealtimeSocket>()) {
+      getService<RealtimeSocket>().expectEach(origin, model, ids);
+    }
+
     await DatasetApi<GenericBaseModel>(
       of.fetcher,
       basePath: _prefix,
@@ -122,6 +136,14 @@ class Sortable {
         groupField: groupField,
         groupValue: groupValue,
       ),
+      headers: {originHeader: origin},
+    );
+
+    Timer.run(
+      () => of.notifyChanged(ResourceChangeType.updated, null, {
+        field,
+        ?groupField,
+      }),
     );
   }
 }

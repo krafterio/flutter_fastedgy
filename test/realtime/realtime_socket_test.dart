@@ -258,6 +258,42 @@ void main() {
     await socket.dispose();
   });
 
+  testSocket('leaves alone the echo of each record it expected, once each', (
+    tester,
+  ) async {
+    final socket = socketOf();
+    final link = await connect(tester, socket);
+    final origin = requestOrigin();
+
+    socket.expectEach(origin, 'flow', [7, 8]);
+    link
+      ..receive({
+        'type': 'flow.updated',
+        'data': {'id': 8},
+        'origin': origin,
+      })
+      ..receive({
+        'type': 'flow.updated',
+        'data': {'id': 7},
+        'origin': origin,
+      })
+      ..receive({
+        'type': 'flow.updated',
+        'data': {'id': 7},
+        'origin': origin,
+      })
+      ..receive({
+        'type': 'flow.updated',
+        'data': {'id': 9},
+        'origin': origin,
+      });
+    await flush(tester);
+
+    expect(changes().map((change) => change.id), [7, 9]);
+
+    await socket.dispose();
+  });
+
   testSocket(
     'hears what a signal wrote on another record while serving an expected request',
     (tester) async {

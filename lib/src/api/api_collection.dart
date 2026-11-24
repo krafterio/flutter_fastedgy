@@ -574,6 +574,11 @@ class ApiCollection<T extends BaseModel<T>> extends ChangeNotifier
     options: fields == null ? null : FieldsOptions(fields: fields),
   );
 
+  /// Tells the collection it reads again on its own: what it heard so far, and
+  /// the writes of this instance announced on the next timer, are answered by
+  /// that read.
+  void caughtUp() => _watch?.caughtUp();
+
   /// Re-reads the loaded range without a loading state, keeping the current
   /// rows if it fails. The refresh path of a holder driven from outside (a
   /// mutation elsewhere, connectivity coming back).

@@ -807,6 +807,7 @@ class DataIterator<T extends BaseModel<T>> extends ChangeNotifier
         groupField: groupField,
         groupValue: groupValue,
       );
+      _groupBy == null ? _collection.caughtUp() : _grouped?.caughtUp();
       await refresh();
     } catch (_) {
       await refresh();

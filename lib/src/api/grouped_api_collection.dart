@@ -532,6 +532,11 @@ class GroupedApiCollection<T extends BaseModel<T>> extends ChangeNotifier
   /// Re-reads the rows every bucket holds, without a loading state.
   Future<void> refresh() => _refreshEntries();
 
+  /// Tells the groups they read again on their own: what their rows heard so
+  /// far, and the writes of this instance announced on the next timer, are
+  /// answered by that read.
+  void caughtUp() => _rows.caughtUp();
+
   /// Reads the axis again, the buckets that came onto it and those whose rule
   /// changed with their record.
   Future<void> reloadAxis() => _reloadAxis();

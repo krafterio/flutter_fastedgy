@@ -92,6 +92,24 @@ void main() {
       list.dispose();
     });
 
+    test(
+      'reads the rows once after an order, the change it announces included',
+      () async {
+        final list = DataIterator<Thing>(api);
+
+        await settle();
+        final reads = server.lists.length;
+
+        await list.resequence([2, 1]);
+        await Future<void>.delayed(const Duration(milliseconds: 310));
+        await settle();
+
+        expect(server.lists, hasLength(reads + 1));
+
+        list.dispose();
+      },
+    );
+
     test('sends the order where it is told the dataset routes are', () async {
       final list = DataIterator<Thing>(api, datasetPrefix: '');
 

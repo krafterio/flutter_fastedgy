@@ -7,6 +7,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_fastedgy/flutter_fastedgy.dart';
+import 'package:flutter_fastedgy/list.dart' show Sortable;
 import 'package:flutter_fastedgy/testing.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -171,6 +172,45 @@ void main() {
       hasLength(1),
       reason: 'the delete is heard once, from the api that made it',
     );
+  });
+
+  test('an order the server writes record by record is heard once, '
+      'from the list that sent it', () async {
+    final fetcher = createMockFetcher(
+      (request) async {
+        if (request.method == 'PUT') {
+          for (final id in [9, 8, 7]) {
+            receive({
+              'type': 'thing.updated',
+              'data': {'id': id},
+              'changed': ['sequence'],
+              'origin': request.headers[originHeader],
+            });
+          }
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+
+          return const MockResponse.json({'model_name': 'thing'});
+        }
+
+        return const MockResponse.json({'id': 7, 'name': 'Krafter'});
+      },
+      enableAuth: false,
+      enableTimezone: false,
+      enableRefreshToken: false,
+    );
+    final sortable = Sortable(
+      _PathOnlyThingApi(fetcher: fetcher),
+      sortable: true,
+    );
+    await sortable.ready;
+
+    await sortable.resequence([9, 8, 7]);
+    await settle();
+
+    expect(heard, hasLength(1));
+    expect(heard.single.type, ResourceChangeType.updated);
+    expect(heard.single.id, isNull);
+    expect(heard.single.fields, {'sequence'});
   });
 
   test('the delete of another client still reaches the holders', () async {

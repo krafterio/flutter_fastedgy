@@ -77,10 +77,14 @@ class DatasetApi<R extends DynamicSchema<R>> {
 
   DatasetApi(this._fetcher, {this.basePath});
 
-  Future<Resequence> resequence(ResequenceRequest request) async {
+  Future<Resequence> resequence(
+    ResequenceRequest request, {
+    Map<String, dynamic>? headers,
+  }) async {
     final response = await _fetcher.put(
       '${basePath ?? ''}/dataset/resequence',
       request.toJson(),
+      headers: headers,
     );
     return Resequence<R>(response.data);
   }

@@ -50,10 +50,13 @@ class RealtimeConnection {
 }
 
 class _Expectation {
-  _Expectation(this.model, this.id, this.at);
+  _Expectation(this.model, this.ids, this.at);
 
   final String model;
-  final Object? id;
+
+  /// The records whose echo is still awaited; null for the first record of
+  /// [model], whatever its id.
+  final Set<String>? ids;
   final DateTime at;
 }
 
@@ -260,12 +263,21 @@ class RealtimeSocket with WidgetsBindingObserver {
   /// Expects the echo of a write about to leave under [origin], the request's
   /// own: the frame answering it is dropped once, the api layer announcing that
   /// change when the request answers.
-  void expect(String origin, String model, [Object? id]) {
+  void expect(String origin, String model, [Object? id]) =>
+      _await(origin, model, id == null ? null : {'$id'});
+
+  /// Expects the echoes of a write about to leave under [origin] that the
+  /// server applies to each record of [ids] in turn: the frame of each one is
+  /// dropped once, the caller announcing the change when the request answers.
+  void expectEach(String origin, String model, Iterable<Object> ids) =>
+      _await(origin, model, {for (final id in ids) '$id'});
+
+  void _await(String origin, String model, Set<String>? ids) {
     final now = clock.now();
 
     _expected
       ..removeWhere((_, one) => now.difference(one.at) > _expectationLifetime)
-      ..[origin] = _Expectation(model, id, now);
+      ..[origin] = _Expectation(model, ids, now);
   }
 
   Future<void> dispose() async {
@@ -662,11 +674,15 @@ class RealtimeSocket with WidgetsBindingObserver {
       return false;
     }
 
-    if (expected.id != null && (id == null || '${expected.id}' != '$id')) {
+    final ids = expected.ids;
+
+    if (ids != null && (id == null || !ids.remove('$id'))) {
       return false;
     }
 
-    _expected.remove(origin);
+    if (ids == null || ids.isEmpty) {
+      _expected.remove(origin);
+    }
 
     return true;
   }
