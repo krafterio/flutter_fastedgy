@@ -20,11 +20,9 @@ packages:
   appflowy_editor:
     dependency: "direct main"
     description:
-      path: "."
-      ref: a9697798f6aa8f45802029601c46c55d56c6b65f
-      resolved-ref: a9697798f6aa8f45802029601c46c55d56c6b65f
-      url: "https://github.com/AppFlowy-IO/appflowy-editor.git"
-    source: git
+      path: "../flutter_appflowy_editor"
+      relative: true
+    source: path
     version: "6.1.0"
   archive:
     dependency: transitive
