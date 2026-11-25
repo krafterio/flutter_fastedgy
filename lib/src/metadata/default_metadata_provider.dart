@@ -154,6 +154,10 @@ class DefaultMetadataProvider implements MetadataProvider {
       } else if (e.statusCode == 404) {
         _logger.fine('Metadata not fetched: workspace not found');
         _error = e;
+      } else if (e.statusCode == 403) {
+        // A scope the session is not let into, an app closed to it for one.
+        _logger.fine('Metadata not fetched: access refused');
+        _error = e;
       } else {
         // Nothing mirrored yet (first launch offline): the caller is told the
         // schema is missing. The log pipeline degrades an unanswered server.

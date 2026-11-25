@@ -29,6 +29,7 @@ class _AcmeWorkspace implements OfflineContextParamsResolver {
 class _ScriptedAdapter implements HttpClientAdapter {
   bool offline = false;
   bool signedOut = false;
+  bool forbidden = false;
   final Map<String, Map<String, dynamic> Function(RequestOptions options)>
   routes = {};
 
@@ -50,6 +51,16 @@ class _ScriptedAdapter implements HttpClientAdapter {
       return ResponseBody.fromString(
         '{"detail": "Not authenticated"}',
         401,
+        headers: {
+          Headers.contentTypeHeader: [Headers.jsonContentType],
+        },
+      );
+    }
+
+    if (forbidden) {
+      return ResponseBody.fromString(
+        '{"detail": "Forbidden"}',
+        403,
         headers: {
           Headers.contentTypeHeader: [Headers.jsonContentType],
         },
@@ -362,6 +373,22 @@ void main() {
       expect(await provider.getMetadatas(), isNull);
       expect(provider.error, isA<HttpError>());
       expect((provider.error! as HttpError).statusCode, 404);
+      expect(severe, isEmpty);
+    },
+  );
+
+  test(
+    'a scope the session is not let into is not reported as a failure',
+    () async {
+      adapter.forbidden = true;
+      final severe = <LogRecord>[];
+      final subscription = Logger.root.onRecord
+          .where((record) => record.level >= Level.SEVERE)
+          .listen(severe.add);
+      addTearDown(subscription.cancel);
+
+      expect(await provider.getMetadatas(), isNull);
+      expect((provider.error! as HttpError).statusCode, 403);
       expect(severe, isEmpty);
     },
   );
