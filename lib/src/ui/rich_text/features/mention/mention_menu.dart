@@ -92,6 +92,7 @@ void showMentionMenu(
           width: _width,
           height: _maxHeight,
           avoidToolbar: false,
+          bounds: _visibleOf(MediaQuery.of(context)),
         ),
         child: _MentionMenu(
           controller: controller,
@@ -106,6 +107,17 @@ void showMentionMenu(
   controller.addListener(onChanged);
   overlay.insert(entry!);
 }
+
+/// What of the screen can be read: under the status bar, over the keyboard.
+Rect _visibleOf(MediaQueryData media) => Rect.fromLTRB(
+  0,
+  media.padding.top,
+  media.size.width,
+  media.size.height -
+      (media.viewInsets.bottom > media.padding.bottom
+          ? media.viewInsets.bottom
+          : media.padding.bottom),
+);
 
 class _MentionMenu extends StatelessWidget {
   final MentionController controller;

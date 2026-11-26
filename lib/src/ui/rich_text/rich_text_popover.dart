@@ -378,6 +378,14 @@ class RichTextPopoverLayout extends SingleChildLayoutDelegate {
   /// A card offering something to read or fill in does the opposite.
   final bool preferAbove;
 
+  /// What the card has to stay inside top to bottom, in place of the editor.
+  ///
+  /// A field of one line is shorter than anything hung from it: measured
+  /// against the field, a list never fits under it and is sent above, off the
+  /// top of the screen. The list of a field says what is visible instead, and
+  /// goes under the line whenever the screen has the room.
+  final Rect? bounds;
+
   const RichTextPopoverLayout({
     required this.selection,
     required this.editor,
@@ -386,6 +394,7 @@ class RichTextPopoverLayout extends SingleChildLayoutDelegate {
     this.avoidToolbar = true,
     this.preferAbove = false,
     this.reserveAbove = 0,
+    this.bounds,
   });
 
   @override
@@ -421,6 +430,25 @@ class RichTextPopoverLayout extends SingleChildLayoutDelegate {
         (avoidToolbar && !toolbarBelow ? RichTextStyle.toolbarHeight : 0);
     final above = ceiling - childSize.height;
 
+    final within = bounds;
+
+    if (within != null) {
+      if (below + childSize.height <= within.bottom) {
+        return Offset(left, below);
+      }
+
+      if (above >= within.top) {
+        return Offset(left, above);
+      }
+
+      final lowest = max(within.top, within.bottom - childSize.height);
+
+      return Offset(
+        left,
+        within.bottom - below >= ceiling - within.top ? lowest : within.top,
+      );
+    }
+
     if (preferAbove) {
       return above >= 0
           ? Offset(left, above)
@@ -441,5 +469,6 @@ class RichTextPopoverLayout extends SingleChildLayoutDelegate {
       oldDelegate.width != width ||
       oldDelegate.height != height ||
       oldDelegate.avoidToolbar != avoidToolbar ||
-      oldDelegate.preferAbove != preferAbove;
+      oldDelegate.preferAbove != preferAbove ||
+      oldDelegate.bounds != bounds;
 }
