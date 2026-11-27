@@ -19,13 +19,22 @@ import 'realtime_socket.dart';
 /// last event. Anything asking every holder to read again, a socket coming
 /// back for one, calls [onChanged] at once with an event naming no type and no
 /// id.
+///
+/// [related] names the models whose records hang off the one watched, each by
+/// its metadata name, with the column of theirs that names it:
+/// `{'calendar_event_participant': 'event'}`. A write on one of them that can
+/// be about the record watched calls [onChanged] with an event naming no type
+/// and no id, which asks for a read. The server sends those writes on the
+/// channel of the record when the model declares the relation
+/// (`@realtime_model(fields=["event"], relations=["event"])`).
 ResourceWatch watchResource(
   ApiModel<dynamic> api,
   void Function(ResourceChangedEvent event) onChanged, {
   Object? id,
   bool Function(ResourceChangedEvent event)? where,
   Duration refreshDelay = const Duration(milliseconds: 250),
-}) => ResourceWatch._(api, onChanged, id, where, refreshDelay);
+  Map<String, String> related = const {},
+}) => ResourceWatch._(api, onChanged, id, where, refreshDelay, related);
 
 class ResourceWatch {
   ResourceWatch._(
@@ -34,6 +43,7 @@ class ResourceWatch {
     this._id,
     this._where,
     this._refreshDelay,
+    this._related,
   ) : _socket = hasService<RealtimeSocket>()
           ? getService<RealtimeSocket>()
           : null {
@@ -48,6 +58,7 @@ class ResourceWatch {
   final void Function(ResourceChangedEvent event) _onChanged;
   final bool Function(ResourceChangedEvent event)? _where;
   final Duration _refreshDelay;
+  final Map<String, String> _related;
   final RealtimeSocket? _socket;
 
   late final StreamSubscription<ResourceChangedEvent> _changes;
@@ -128,15 +139,20 @@ class ResourceWatch {
       ResourceChangedEvent(_api.resolvedBasePath, model: _api.modelName);
 
   void _heard(ResourceChangedEvent event) {
-    if (_cancelled ||
-        !event.isAbout(_api) ||
-        (_catchingUp && event.origin == originId)) {
+    if (_cancelled || (_catchingUp && event.origin == originId)) {
       return;
     }
 
     final id = _id;
+    final own = event.isAbout(_api);
+    final column = own ? null : _related[event.model];
 
-    if (id != null && event.id != null && '${event.id}' != '$id') {
+    if (!own) {
+      // What hangs off the record watched: its write is news of the record.
+      if (column == null || id == null || !event.mayBeAbout({column: id})) {
+        return;
+      }
+    } else if (id != null && event.id != null && '${event.id}' != '$id') {
       return;
     }
 
@@ -151,21 +167,24 @@ class ResourceWatch {
       return;
     }
 
-    if (_where?.call(event) == false) {
+    if (own && _where?.call(event) == false) {
       return;
     }
+
+    // The write of a related record names that record, not the one watched.
+    final told = own ? event : _staleEvent;
 
     _pending?.cancel();
 
     if (_refreshDelay == Duration.zero) {
-      _deliver(event);
+      _deliver(told);
 
       return;
     }
 
     _pending = Timer(_refreshDelay, () {
       _pending = null;
-      _deliver(event);
+      _deliver(told);
     });
   }
 

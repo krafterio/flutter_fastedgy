@@ -37,6 +37,7 @@ class ApiRecord<T extends BaseModel<T>> extends ChangeNotifier
     dynamic fields,
     this.cacheKey,
     this.staleAfter = const Duration(minutes: 5),
+    this.related = const {},
   }) : _configFields = fields {
     listenAvailability();
     followPatches();
@@ -53,6 +54,12 @@ class ApiRecord<T extends BaseModel<T>> extends ChangeNotifier
 
   /// How old the kept record may be before [loadCached] reads it again.
   final Duration staleAfter;
+
+  /// The models whose records the record carries in its fields, each by its
+  /// metadata name, with the column of theirs that names the record:
+  /// `{'calendar_event_participant': 'event'}`. A write on one of them reads
+  /// the record again, silently ([watchResource]).
+  final Map<String, String> related;
 
   /// The record last written to the [ReadCache], not to be written again.
   T? _kept;
@@ -222,6 +229,7 @@ class ApiRecord<T extends BaseModel<T>> extends ChangeNotifier
         _onResourceChanged,
         id: id,
         refreshDelay: Duration.zero,
+        related: related,
       )..active = _active;
     } else {
       watch.id = id;

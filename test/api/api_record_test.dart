@@ -199,6 +199,44 @@ void main() {
     expect(requests.length, before);
   });
 
+  test('reads again on a write of a record that hangs off it', () async {
+    final record = ApiRecord<_Thing>(api, related: const {'part': 'thing'});
+
+    addTearDown(record.dispose);
+    await record.load(7);
+    final before = requests.length;
+
+    fire(
+      const ResourceChangedEvent(
+        null,
+        model: 'part',
+        type: ResourceChangeType.deleted,
+        id: 3,
+        data: {'model': 'part', 'id': 3, 'thing': 7},
+        announced: true,
+      ),
+    );
+    await settle();
+
+    expect(requests.length, before + 1);
+    expect(record.isDeleted, isFalse);
+
+    fire(
+      const ResourceChangedEvent(
+        null,
+        model: 'part',
+        type: ResourceChangeType.updated,
+        id: 4,
+        data: {'model': 'part', 'id': 4, 'thing': 8},
+        announced: true,
+      ),
+    );
+    fire(const ResourceChangedEvent(null, model: 'other', id: 7));
+    await settle();
+
+    expect(requests.length, before + 1);
+  });
+
   test('follows the id it is loaded with', () async {
     final record = await loaded();
 
