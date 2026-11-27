@@ -57,6 +57,7 @@ export 'src/ui/rich_text/rich_text_features.dart';
 export 'src/ui/rich_text/rich_text_focus.dart';
 export 'src/ui/rich_text/rich_text_nesting.dart';
 export 'src/ui/rich_text/rich_text_paste.dart';
+export 'src/ui/rich_text/rich_text_html.dart';
 export 'src/ui/rich_text/rich_text_plain.dart';
 export 'src/ui/rich_text/rich_text_popover.dart';
 export 'src/ui/rich_text/rich_text_markdown.dart';
